@@ -37,6 +37,52 @@ struct TextPane: View {
                 .disabled(model.isValidatingPolish || (!model.polishAvailable && !model.polishEnabled))
             }
 
+            SettingsRow {
+                VStack(alignment: .leading, spacing: 6) {
+                    Toggle(
+                        L10n.string(
+                            "settings.text.auto_polish.cb",
+                            fallback: "Polish dictated text automatically"
+                        ),
+                        isOn: Binding(
+                            get: { model.autoPolishEnabled },
+                            set: { model.requestAutoPolishEnabled($0) }
+                        )
+                    )
+                    .disabled(
+                        model.isValidatingPolish
+                            || (!model.polishAvailable && !model.autoPolishEnabled)
+                    )
+                    Text(L10n.string(
+                        "settings.text.auto_polish.note",
+                        fallback: "Local dictation only. Runs the same on-device proofread before the text is inserted. The raw transcript is kept if polishing fails or times out."
+                    ))
+                    .font(.caption)
+                    .foregroundStyle(.secondary)
+                    .fixedSize(horizontal: false, vertical: true)
+                }
+            }
+
+            SettingsRow(L10n.string(
+                "settings.text.auto_polish.excluded_label",
+                fallback: "Excluded apps:"
+            )) {
+                VStack(alignment: .leading, spacing: 6) {
+                    Button(L10n.string(
+                        "settings.text.auto_polish.choose_apps",
+                        fallback: "Choose Apps…"
+                    )) {
+                        AutoPolishExclusionPicker.present(model: model)
+                    }
+                    .buttonStyle(.bordered)
+                    .disabled(!model.autoPolishEnabled)
+                    Text(excludedSummary)
+                        .font(.caption)
+                        .foregroundStyle(.secondary)
+                        .fixedSize(horizontal: false, vertical: true)
+                }
+            }
+
             SettingsRow(L10n.string("settings.text.instructions", fallback: "Polish instructions:")) {
                 VStack(alignment: .leading, spacing: 6) {
                     Button(L10n.string("common.button.open_in_textedit", fallback: "Open in TextEdit")) {
@@ -96,7 +142,7 @@ struct TextPane: View {
             SettingsRow {
                 Text(L10n.string(
                     "settings.text.note",
-                    fallback: "Auto picks the opposite of the detected language. Both features share the Right ⌥ key: one tap translates, two taps proofread."
+                    fallback: "Auto picks the opposite of the detected language. Selection translation and selection proofreading share the Right ⌥ key: one tap translates, two taps proofread."
                 ))
                 .font(.caption)
                 .foregroundStyle(.secondary)
@@ -135,6 +181,24 @@ struct TextPane: View {
             (L10n.string("picker.autonym.de", fallback: "Deutsch"), "de"),
             (L10n.string("picker.autonym.es", fallback: "Español"), "es"),
         ]
+    }
+
+    private var excludedSummary: String {
+        let bundleIDs = model.excludedBundleIDs
+        guard !bundleIDs.isEmpty else {
+            return L10n.string(
+                "settings.text.auto_polish.excluded_none",
+                fallback: "No apps excluded. Dictation is polished everywhere."
+            )
+        }
+        var names = bundleIDs.prefix(4).map(AutoPolishAppNameResolver.displayName)
+        if bundleIDs.count > 4 { names.append("…") }
+        return L10n.plural(
+            "settings.text.auto_polish.excluded_summary",
+            count: bundleIDs.count,
+            fallback: "%1$ld excluded: %2$@",
+            arguments: [bundleIDs.count, names.joined(separator: ", ")]
+        )
     }
 
 }

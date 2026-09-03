@@ -91,6 +91,10 @@ final class SettingsMenuStructureTests: XCTestCase {
             storage: .init(
                 readPolishEnabled: { false },
                 writePolishEnabled: { _ in },
+                readAutoPolishEnabled: { false },
+                writeAutoPolishEnabled: { _ in },
+                readExcludedBundleIDs: { [] },
+                writeExcludedBundleIDs: { _ in },
                 readTranslationEnabled: { false },
                 writeTranslationEnabled: { _ in },
                 readTranslationTarget: { nil },

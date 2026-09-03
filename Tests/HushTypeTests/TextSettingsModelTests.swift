@@ -4,6 +4,8 @@ import XCTest
 final class TextSettingsModelTests: XCTestCase {
     private final class StateBox {
         var polish = false
+        var autoPolish = false
+        var excluded: [String] = []
         var translation = false
         var target: String?
         var warmups = 0
@@ -59,6 +61,73 @@ final class TextSettingsModelTests: XCTestCase {
         XCTAssertEqual(box.warmups, 0)
     }
 
+    func testAutoPolishValidationEnablesAndWarmsUp() async {
+        let box = StateBox()
+        let model = makeModel(box: box, validation: .ok)
+
+        await model.setAutoPolishEnabled(true)
+
+        XCTAssertTrue(box.autoPolish)
+        XCTAssertTrue(model.autoPolishEnabled)
+        XCTAssertTrue(model.polishAvailable)
+        XCTAssertEqual(box.warmups, 1)
+    }
+
+    func testUnavailableAutoPolishStaysOffAndPresentsReason() async {
+        let box = StateBox()
+        let model = makeModel(
+            box: box,
+            validation: .unavailable(reason: "Apple Intelligence is off")
+        )
+
+        await model.setAutoPolishEnabled(true)
+
+        XCTAssertFalse(box.autoPolish)
+        XCTAssertFalse(model.autoPolishEnabled)
+        XCTAssertFalse(model.polishAvailable)
+        XCTAssertEqual(box.alerts, ["Apple Intelligence is off"])
+    }
+
+    func testAutoPolishDisableReleasesOnlyWhenManualPolishIsOff() async {
+        let manualOn = StateBox()
+        manualOn.polish = true
+        manualOn.autoPolish = true
+        let first = makeModel(box: manualOn, validation: .ok)
+        await first.setAutoPolishEnabled(false)
+        XCTAssertEqual(manualOn.releases, 0)
+
+        let manualOff = StateBox()
+        manualOff.autoPolish = true
+        let second = makeModel(box: manualOff, validation: .ok)
+        await second.setAutoPolishEnabled(false)
+        XCTAssertEqual(manualOff.releases, 1)
+    }
+
+    func testManualPolishDisableDoesNotReleaseWhileAutoPolishIsOn() async {
+        let box = StateBox()
+        box.polish = true
+        box.autoPolish = true
+        let model = makeModel(box: box, validation: .ok)
+
+        await model.setPolishEnabled(false)
+
+        XCTAssertEqual(box.releases, 0)
+    }
+
+    func testExclusionsPersistNormalizedAndCanBeRemoved() {
+        let box = StateBox()
+        let model = makeModel(box: box, validation: .ok)
+
+        model.setExcluded(" Com.Example.Editor ", excluded: true)
+        model.setExcluded("COM.EXAMPLE.EDITOR", excluded: true)
+        model.setExcluded("com.example.other", excluded: true)
+        XCTAssertEqual(box.excluded, ["com.example.editor", "com.example.other"])
+        XCTAssertEqual(model.excludedBundleIDs, box.excluded)
+
+        model.removeExcluded(" COM.EXAMPLE.EDITOR ")
+        XCTAssertEqual(box.excluded, ["com.example.other"])
+    }
+
     func testTranslationEnableAndTargetPersistAndRefreshMenu() {
         let box = StateBox()
         let model = makeModel(box: box, validation: .ok)
@@ -100,6 +169,10 @@ final class TextSettingsModelTests: XCTestCase {
             storage: .init(
                 readPolishEnabled: { box.polish },
                 writePolishEnabled: { box.polish = $0 },
+                readAutoPolishEnabled: { box.autoPolish },
+                writeAutoPolishEnabled: { box.autoPolish = $0 },
+                readExcludedBundleIDs: { box.excluded },
+                writeExcludedBundleIDs: { box.excluded = $0 },
                 readTranslationEnabled: { box.translation },
                 writeTranslationEnabled: { box.translation = $0 },
                 readTranslationTarget: { box.target },

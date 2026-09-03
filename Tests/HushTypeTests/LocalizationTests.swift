@@ -2,7 +2,7 @@ import XCTest
 import Foundation
 @testable import HushType
 
-/// Gate C Slice 1 — localization infrastructure tests (SPEC §12.1).
+/// Gate C Slice 1 - localization infrastructure tests (SPEC §12.1).
 ///
 /// Covers: ordered resolver mappings, persisted-preference semantics,
 /// explicit en / zh-Hant-TW lookup under BOTH lookup strategies (macOS 15.4+
@@ -33,7 +33,7 @@ final class LocalizationTests: XCTestCase {
     // MARK: - Bundle selection
 
     func testBaseBundleIsModuleForNonAppBundle() {
-        // Under swift test the main bundle is .xctest, not .app — the
+        // Under swift test the main bundle is .xctest, not .app - the
         // runtime rule must select Bundle.module, which carries our tables.
         XCTAssertEqual(L10n.baseBundle(), Bundle.module)
     }
@@ -125,7 +125,7 @@ final class LocalizationTests: XCTestCase {
     // MARK: - Lookup under both strategies
 
     /// Run a block with both forced strategies (15.4+ API and legacy
-    /// .lproj) so the tests exercise the macOS 15.0–15.3 path on this
+    /// .lproj) so the tests exercise the macOS 15.0-15.3 path on this
     /// newer machine.
     private func underBothStrategies(_ body: (String) -> Void) {
         for strategy in ["modern", "legacy"] {
@@ -143,7 +143,7 @@ final class LocalizationTests: XCTestCase {
             XCTAssertEqual(L10n.string("common.button.ok", fallback: "OK"), "OK")
             XCTAssertEqual(L10n.string("menu.quit", fallback: "Quit Lamitype"), "Quit Lamitype")
 
-            // zh-Hant-TW process tag — exact frozen catalog values
+            // zh-Hant-TW process tag - exact frozen catalog values
             defaults.set("zh-Hant-TW", forKey: "hushtype.interfaceLanguage")
             L10n.resetLaunchStateForTests()
             XCTAssertEqual(L10n.string("menu.about", fallback: "About Lamitype"), "關於 Lamitype")
@@ -210,7 +210,7 @@ final class LocalizationTests: XCTestCase {
     }
 
     func testMissingRequestedKeyWithEnglishPresent() {
-        // Key absent from zh-Hant-TW only (present in en) — both languages
+        // Key absent from zh-Hant-TW only (present in en) - both languages
         // share the same key set, so this is proven with the fixture that
         // has a reduced zh table.
         defaults.set("zh-Hant-TW", forKey: "hushtype.interfaceLanguage")
@@ -228,7 +228,7 @@ final class LocalizationTests: XCTestCase {
         defaults.set("zh-Hant-TW", forKey: "hushtype.interfaceLanguage")
         L10n.resetLaunchStateForTests()
         underBothStrategies { _ in
-            // Catalog: zh-Hant-TW uses "US$" — a generic process-locale
+            // Catalog: zh-Hant-TW uses "US$" - a generic process-locale
             // formatter could not be trusted to produce that.
             let s = L10n.format("format.usd_total", "$%.2f", arguments: [3.5])
             XCTAssertEqual(s, "US$3.50")
@@ -276,6 +276,36 @@ final class LocalizationTests: XCTestCase {
             XCTAssertEqual(L10n.plural("menu.dictionary.entries_loaded", 1, fallback: "%d entries loaded"), "已載入 1 個項目")
             XCTAssertEqual(L10n.plural("menu.dictionary.entries_loaded", 2, fallback: "%d entries loaded"), "已載入 2 個項目")
             XCTAssertEqual(L10n.plural("menu.dictionary.entries_loaded", 42, fallback: "%d entries loaded"), "已載入 42 個項目")
+        }
+    }
+
+    func testAutoPolishExcludedSummaryUsesPluralTableWithNames() {
+        defaults.set("en", forKey: "hushtype.interfaceLanguage")
+        L10n.resetLaunchStateForTests()
+        underBothStrategies { _ in
+            XCTAssertEqual(
+                L10n.plural(
+                    "settings.text.auto_polish.excluded_summary",
+                    count: 2,
+                    fallback: "%1$ld excluded: %2$@",
+                    arguments: [2, "Terminal, Notes"]
+                ),
+                "2 excluded: Terminal, Notes"
+            )
+        }
+
+        defaults.set("zh-Hant-TW", forKey: "hushtype.interfaceLanguage")
+        L10n.resetLaunchStateForTests()
+        underBothStrategies { _ in
+            XCTAssertEqual(
+                L10n.plural(
+                    "settings.text.auto_polish.excluded_summary",
+                    count: 2,
+                    fallback: "%1$ld excluded: %2$@",
+                    arguments: [2, "Terminal, Notes"]
+                ),
+                "已排除 2 個：Terminal, Notes"
+            )
         }
     }
 

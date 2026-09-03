@@ -8,6 +8,10 @@
 
 "common.button.cancel" = "Cancel";
 
+/* Closes a live-edit picker after changes have already been saved. */
+
+"common.button.done" = "Done";
+
 /* Opens the relevant Lamitype settings window. */
 
 "common.button.open_settings" = "Open Settings";
@@ -938,6 +942,22 @@
 
 "picker.system_audio.load_failed" = "Couldn't load running apps:\n%1$@";
 
+/* Auto Polish exclusion picker. */
+
+"window.auto_polish_picker.title" = "Excluded Apps for Auto Polish";
+
+"picker.auto_polish.heading" = "Choose apps to exclude";
+
+"picker.auto_polish.description" = "Dictation into these apps is inserted exactly as transcribed, without the on-device proofread. Everything else is polished.";
+
+"picker.auto_polish.section.running" = "Running apps";
+
+"picker.auto_polish.section.not_running" = "Excluded but not running";
+
+"picker.auto_polish.empty" = "No running apps found.";
+
+"picker.auto_polish.remove" = "Remove";
+
 /* Argument 1 is a running-app identifier/name and remains untouched. */
 
 "error.system_audio.app_not_running" = "App %1$@ is not running. Pick a different source.";
@@ -1217,6 +1237,10 @@
 /* Preserve exact 30-second timeout. */
 
 "error.polish.timeout" = "Apple Intelligence timed out after 30 seconds.";
+
+/* Auto Polish has a shorter caller-return budget than manual Text Polish. */
+
+"error.polish.timeout_dictation" = "Apple Intelligence timed out after 8 seconds.";
 
 /* Unknown future FoundationModels availability case. */
 
@@ -1513,6 +1537,17 @@
 /* Text Polish enable checkbox. */
 "settings.text.polish.cb" = "Proofread selection on double-tap Right ⌥";
 
+/* Auto Polish for local dictation. */
+"settings.text.auto_polish.cb" = "Polish dictated text automatically";
+
+"settings.text.auto_polish.note" = "Local dictation only. Runs the same on-device proofread before the text is inserted. The raw transcript is kept if polishing fails or times out.";
+
+"settings.text.auto_polish.excluded_label" = "Excluded apps:";
+
+"settings.text.auto_polish.choose_apps" = "Choose Apps…";
+
+"settings.text.auto_polish.excluded_none" = "No apps excluded. Dictation is polished everywhere.";
+
 /* Text Polish instructions row label. */
 "settings.text.instructions" = "Polish instructions:";
 
@@ -1529,4 +1564,4 @@
 "settings.text.translate_to" = "Translate to:";
 
 /* Shared Right Option behavior note. */
-"settings.text.note" = "Auto picks the opposite of the detected language. Both features share the Right ⌥ key: one tap translates, two taps proofread.";
+"settings.text.note" = "Auto picks the opposite of the detected language. Selection translation and selection proofreading share the Right ⌥ key: one tap translates, two taps proofread.";

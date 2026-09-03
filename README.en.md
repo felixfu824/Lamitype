@@ -77,6 +77,7 @@
 |---|---|---|
 | **Translate**: tap Right ⌥ to translate selected text | OFF | macOS 15+ |
 | **Polish**: double-tap Right ⌥ to polish selected text (proofread in place) | **ON** | macOS 26 + Apple Intelligence |
+| **Auto Polish**: proofread local dictation before it is inserted, with a per-app exclusion list | OFF | macOS 26 + Apple Intelligence |
 
 ### Output Post-Processing
 
@@ -247,7 +248,7 @@ make install
 - **General**: interface language, floating indicator, and shortcuts
 - **Dictation**: Local / OpenAI / Gemini engines and models, recognition language, Number Conversion, punctuation cleanup, and the customized dictionary
 - **Caption**: caption panel, Live Translated Caption target language, and auto-stop time
-- **Text**: Text Polish, `polish_rules.txt`, and Text Translation
+- **Text**: Text Polish, Auto Polish for dictation (with the excluded-apps list), `polish_rules.txt`, and Text Translation
 - **Cloud**: daily spend cap, today's usage, and OpenAI / Gemini key files
 - **iOS**: the untested iOS server controls
 
@@ -318,6 +319,8 @@ On-device proofreading via Apple's Foundation Models framework: the Apple Intell
 **Speed:** typically ~1-3 s. Lamitype keeps a prewarmed model session on standby, so the prompt-processing cost is paid before you double-tap, not after.
 
 **Custom rules:** menu bar → **Settings… → Text → Polish instructions → Open file in TextEdit** opens `~/Library/Application Support/Lamitype/polish_rules.txt`. One short imperative rule per line (`#` for comments), merged into the built-in prompt, e.g. `Use the Oxford comma.` or `一律用台灣用語`. Saves hot-reload; no restart.
+
+**Auto Polish for dictation (v0.5.13+, off by default):** menu bar → **Settings… → Text**, check "Polish dictated text automatically", and every local dictation result runs through the same on-device proofread (same `polish_rules.txt`) before it reaches your cursor, so what gets inserted is already corrected. Only the text from that utterance is touched; nothing else in the field. If polishing fails, trips an output guard, or takes more than 8 seconds, the raw transcript is inserted as-is with no alert: an unpolished sentence beats a lost one. For apps where you never want corrections (a terminal, say), add them under "Excluded apps → Choose Apps…"; everywhere else stays polished. Local engine only; OpenAI / Gemini dictation skips this step. Adds roughly 0.7 to 1.5 s per utterance.
 
 **Requirements:** macOS 26 (Tahoe) + Apple Intelligence enabled + Apple Silicon. On by default; on Macs without Foundation Models the double-tap stays inactive, and the **Services → Polish with Lamitype** entry reports why. Toggle from the menu bar (**Text Polish**) or via `defaults`.
 
@@ -474,6 +477,13 @@ defaults write com.felix.hushtype hushtype.floatingOverlayEnabled -bool false
 # (default: true, requires macOS 26 + Apple Intelligence)
 defaults write com.felix.hushtype hushtype.textPolishEnabled -bool false
 
+# Auto Polish: proofread local dictation before it is inserted
+# (default: false, requires macOS 26 + Apple Intelligence)
+defaults write com.felix.hushtype hushtype.autoPolishDictationEnabled -bool true
+
+# Apps excluded from Auto Polish (array of bundle identifiers, default: empty)
+defaults write com.felix.hushtype hushtype.autoPolishExcludedBundleIDs -array com.apple.Terminal com.googlecode.iterm2
+
 # Text Translation via Apple Translation Framework (default: false)
 defaults write com.felix.hushtype hushtype.textTranslationEnabled -bool true
 
@@ -551,7 +561,7 @@ Lamitype/
 │   │   ├── GeneralPane.swift             General preferences + permissions
 │   │   ├── DictationPane.swift           Dictation engine + recognition settings
 │   │   ├── CaptionPane.swift             Caption panel + translated-caption settings
-│   │   ├── TextPane.swift                Text Polish + Translation settings
+│   │   ├── TextPane.swift                Text Polish, Auto Polish + Translation settings
 │   │   ├── CloudPane.swift               Spend guardrails + provider keys
 │   │   ├── IOSServerPane.swift           Experimental iOS server controls
 │   │   └── AboutPane.swift               Version, project links, update check
@@ -561,6 +571,9 @@ Lamitype/
 │   ├── DictionaryReplacer.swift       Customized dictionary (final post-processing step)
 │   ├── TextInserter.swift             Clipboard + Cmd+V paste (result persists on clipboard)
 │   ├── TextPolisher.swift             Text Polish orchestration + output guards
+│   ├── AutoPolishPolicy.swift         Auto Polish decision (toggle, engine, excluded apps)
+│   ├── DictationPolishStage.swift     Polish-before-insert stage with raw-transcript fallback
+│   ├── AutoPolishExclusionPicker.swift Excluded-apps picker for Auto Polish
 │   ├── FoundationModelsPolisher.swift macOS 26+ Apple FM proofread (prewarmed session pool)
 │   ├── PolishPrompt.swift             Proofread-only prompt + polish_rules.txt merge
 │   ├── PolishCardWindow.swift         Floating polish result card NSPanel

@@ -77,6 +77,7 @@
 |---|---|---|
 | **翻譯**：輕按 Right ⌥ 翻譯選取的文字 | OFF | macOS 15+ |
 | **校對**：雙擊 Right ⌥ 校對選取的文字，就地修正 | **ON** | macOS 26 + Apple Intelligence |
+| **自動校對聽寫文字**：本機聽寫結果插入前先經同一個校對流程，可排除特定 App | OFF | macOS 26 + Apple Intelligence |
 
 ### 文字輸出調教（Output Post-Processing）
 
@@ -248,7 +249,7 @@ make install
 - **一般**：介面語言、浮動指示條與快捷鍵
 - **語音輸入**：本機 / OpenAI / Gemini 引擎與模型、辨識語言、Number Conversion、標點清理及自訂字典
 - **字幕**：字幕面板、Live Translated Caption 目標語言與自動停止時間
-- **文字**：Text Polish、`polish_rules.txt` 及 Text Translation
+- **文字**：Text Polish、自動校對聽寫文字（含排除的 App 清單）、`polish_rules.txt` 及 Text Translation
 - **雲端**：每日費用上限、今日用量，以及 OpenAI / Gemini 金鑰檔案
 - **iOS**：尚未測試的 iOS 伺服器控制
 
@@ -319,6 +320,8 @@ make install
 **速度：** 通常約 1-3 秒。Lamitype 會維持一個預熱好的待命模型 session，把 prompt 處理成本在你雙擊之前先付掉。
 
 **自訂規則：** 選單列 → **設定… → 文字 → Polish instructions → Open file in TextEdit**，開啟 `~/Library/Application Support/Lamitype/polish_rules.txt`。一行一條短規則（`#` 開頭為註解），會合併進內建 prompt，例如 `一律用台灣用語` 或 `Use the Oxford comma.`。存檔即生效，不用重啟。
+
+**自動校對聽寫文字（v0.5.13 起，預設關閉）：** 選單列 → **設定… → 文字**，勾選「自動校對聽寫文字」之後，本機聽寫的結果在插入游標之前會先跑同一個裝置端校對（同樣套用 `polish_rules.txt`），插入的就是修好的句子；只處理這一次聽寫產生的文字，欄位裡其他內容一律不動。校對失敗、被輸出防護擋下或超過 8 秒，就原樣插入逐字稿，不跳警示：漏修一句總比丟掉一句好。不想在某些 App 裡被校對（例如終端機），用「排除的 App → 選擇 App…」把它們加進排除清單，其他 App 照常校對。僅限本機引擎；OpenAI / Gemini 聽寫不經過這一步。每句多花約 0.7 到 1.5 秒。
 
 **需求：** macOS 26（Tahoe）+ 已啟用 Apple Intelligence + Apple Silicon。預設開啟；沒有 Foundation Models 的 Mac 上雙擊不會有反應，改用 **服務 → Polish with Lamitype** 會顯示清楚的原因。可從選單列（**Text Polish**）或 `defaults` 開關。
 
@@ -474,6 +477,13 @@ defaults write com.felix.hushtype hushtype.floatingOverlayEnabled -bool false
 # Text Polish：雙擊 Right ⌥ 就地校對選取文字
 # （預設:true,需要 macOS 26 + Apple Intelligence）
 defaults write com.felix.hushtype hushtype.textPolishEnabled -bool false
+
+# 自動校對聽寫文字：本機聽寫結果插入前先校對
+# （預設:false,需要 macOS 26 + Apple Intelligence）
+defaults write com.felix.hushtype hushtype.autoPolishDictationEnabled -bool true
+
+# 自動校對排除的 App（bundle identifier 陣列,預設:空）
+defaults write com.felix.hushtype hushtype.autoPolishExcludedBundleIDs -array com.apple.Terminal com.googlecode.iterm2
 
 # 透過 Apple Translation Framework 的文字翻譯（預設:false）
 defaults write com.felix.hushtype hushtype.textTranslationEnabled -bool true
