@@ -1565,3 +1565,119 @@
 
 /* 共用右 Option 行為說明。 */
 "settings.text.note" = "「自動」會翻成偵測語言的另一邊。選取文字翻譯與選取文字校對共用右 ⌥：點一下翻譯，點兩下校對。";
+
+/* 校對實驗室選單與狀態。 */
+"menu.eval_mode" = "校對實驗室";
+"menu.eval_mode.on" = "啟用（本次執行期間）";
+"menu.eval_mode.subtitle_off" = "看看校對改了什麼。";
+"menu.eval_mode.subtitle_on" = "啟用中 · %1$@";
+"menu.eval_mode.subtitle_full" = "已滿（500 筆），請刪除部分。";
+"menu.eval_mode.show_window" = "顯示視窗…";
+"status.eval_mode_suffix" = " · 校對實驗室";
+
+/* 校對實驗室首次啟用說明。 */
+"eval.intro.title" = "校對實驗室會把你的文字留在這台 Mac 上";
+"eval.intro.body" = "啟用期間，你聽寫或校對的文字會以純文字存放在 Lamitype 的 Application Support 資料夾（已排除的 App 與安全輸入期間除外）。不會上傳到任何地方。隨時可在視窗或設定中刪除。";
+"eval.intro.turn_on" = "啟用";
+
+/* 校對實驗室設定。 */
+"settings.text.eval.header" = "校對實驗室";
+"settings.text.eval.note" = "請從選單列啟用校對實驗室。它會把你的聽寫與校對結果留在這台 Mac 上，讓你看到改了什麼，並試試自己的校對指示。只存文字，不存錄音，也不會上傳。結束 Lamitype 後自動停用。";
+"settings.text.eval.entries_label" = "項目：";
+"settings.text.eval.entries_summary" = "%1$@，佔用 %2$@";
+"settings.text.eval.show_window" = "顯示視窗…";
+"settings.text.eval.reveal" = "在 Finder 中顯示";
+"settings.text.eval.delete_all" = "刪除所有實驗室資料…";
+"eval.delete_all.confirm" = "要刪除 %1$@（%2$@）嗎？此動作無法復原。";
+"eval.delete_all.button" = "刪除";
+"eval.delete_oldest" = "刪除最舊 100 筆";
+"eval.delete_oldest.confirm" = "要刪除最舊 100 筆嗎？此動作無法復原。";
+
+/* 校對實驗室視窗。 */
+"window.eval.title" = "校對實驗室";
+"eval.header.on" = "校對實驗室啟用中。%1$@。";
+"eval.header.off" = "校對實驗室已停用。%1$@。";
+"eval.header.turn_on" = "啟用";
+"eval.header.turn_off" = "停用";
+"eval.header.unlabelled" = "%1$ld 筆未標記";
+"eval.header.suppressed" = "%1$ld 筆未擷取";
+"eval.header.suppressed_tooltip" = "安全輸入、已排除或無法辨識的 App";
+"eval.filter.outcome.all" = "全部";
+"eval.filter.outcome.polished" = "已校對";
+"eval.filter.outcome.no_change" = "無變更";
+"eval.filter.outcome.kept_original" = "保留原文";
+"eval.filter.outcome.not_polished" = "未校對";
+"eval.filter.label.all" = "全部";
+"eval.filter.label.correct" = "正確";
+"eval.filter.label.over_edited" = "改過頭";
+"eval.filter.label.wrong_or_missed" = "錯誤或漏改";
+"eval.filter.label.unlabelled" = "未標記";
+"eval.pill.polished" = "已校對";
+"eval.pill.no_change" = "無變更";
+"eval.pill.kept_original" = "保留原文";
+"eval.pill.not_polished" = "未校對";
+"eval.label.correct" = "正確";
+"eval.label.over_edited" = "改過頭";
+"eval.label.wrong_or_missed" = "錯誤或漏改";
+"eval.empty.title" = "尚無項目。";
+"eval.empty.body" = "啟用校對實驗室後，進行聽寫或校對選取文字，每次結果都會連同差異顯示在這裡。已排除的 App 與安全輸入期間不會擷取。";
+"eval.detail.original" = "原始文字";
+"eval.detail.result" = "結果";
+"eval.detail.label" = "標記";
+"eval.detail.rerun" = "重跑";
+"eval.detail.no_changes" = "無變更。";
+"eval.detail.not_inserted" = "未插入";
+"eval.detail.rerun_hint_disabled" = "重跑即可看到校對後的結果。";
+"eval.deleted_undo" = "已刪除。復原";
+
+/* 校對實驗室原因說明。 */
+"eval.reason.disabled" = "自動校對未啟用。";
+"eval.reason.unavailable" = "Apple Intelligence 無法使用。";
+"eval.reason.not_local_engine" = "雲端聽寫不做校對。";
+"eval.reason.unknown_target" = "無法辨識前方的 App。";
+"eval.reason.excluded_app" = "此 App 已排除。";
+"eval.reason.empty" = "沒有可校對的內容。";
+"eval.reason.code_detected" = "看起來像程式碼，未做更動。";
+"eval.reason.generation_failed" = "Apple Intelligence 回報錯誤。";
+"eval.reason.timeout" = "校對逾時，保留原文。";
+"eval.reason.empty_output" = "校對沒有回傳內容。";
+"eval.reason.length_guard" = "結果長度變化過大。";
+"eval.reason.script_guard" = "結果切換了文字系統。";
+"eval.reason.mix_guard" = "結果漏掉了其中一種語言。";
+"eval.reason.refusal_guard" = "校對拒絕處理而非校對。";
+
+/* 校對實驗室來源名稱。 */
+"eval.source.dictation" = "聽寫";
+"eval.source.dictation_local_once" = "聽寫（單次本機）";
+"eval.source.polish_hotkey" = "校對（快速鍵）";
+"eval.source.polish_service" = "校對（服務）";
+
+/* 校對實驗室重跑控制。 */
+"eval.rerun.instructions_label" = "額外指示（來自你的校對指示檔）";
+"eval.rerun.instructions_note" = "會改變校對結果。加一行試試，再按重跑。";
+"eval.rerun.placeholder" = "沒有額外指示。重跑會使用 Lamitype 的內建規則。";
+"eval.rerun.override_active" = "已啟用完整提示覆寫，重跑會使用該檔並忽略此欄。";
+"eval.rerun.run" = "重跑";
+"eval.rerun.run_shown" = "重跑顯示中的項目（%1$ld）";
+"eval.rerun.run_shown_capped" = "重跑顯示中的項目（前 50 筆）";
+"eval.rerun.progress" = "%1$ld / %2$ld";
+"eval.rerun.cancel" = "取消";
+"eval.rerun.cancel_note" = "取消會在目前項目完成後停止。";
+"eval.rerun.stopped_dictation" = "已停止：聽寫開始。";
+"eval.rerun.save" = "儲存為校對指示…";
+"eval.rerun.save_confirm" = "要以此內容取代你的校對指示檔嗎？";
+"eval.rerun.save_replace" = "取代";
+"eval.rerun.result_line" = "重跑 · %1$@ · %2$@";
+"eval.rerun.same_as_original" = "與原結果相同";
+"eval.rerun.differs_from_original" = "與原結果不同";
+"eval.rerun.previous" = "先前重跑（%1$ld）";
+"eval.rerun.unavailable" = "重跑需要 Apple Intelligence：%1$@";
+"eval.rerun.busy" = "聽寫或校對進行中，暫停重跑。";
+
+/* 校對實驗室頁尾。 */
+"eval.footer.export" = "匯出…";
+"eval.footer.export_note" = "純文字，內含你的項目。";
+"eval.footer.reveal" = "在 Finder 中顯示";
+"eval.footer.delete_oldest" = "刪除最舊 100 筆";
+"eval.footer.delete_all" = "全部刪除…";
+"eval.error.same_export_path" = "案例檔與結果檔不能使用同一路徑。";

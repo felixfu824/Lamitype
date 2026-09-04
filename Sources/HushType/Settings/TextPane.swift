@@ -102,6 +102,45 @@ struct TextPane: View {
             SettingsDivider()
 
             SettingsSectionHeader(
+                title: L10n.string("settings.text.eval.header", fallback: "Eval Mode"),
+                subtitle: L10n.string(
+                    "settings.text.eval.note",
+                    fallback: "Turn Eval Mode on from the menu bar. It keeps your dictation and its polished result on this Mac so you can see what changed and try your own instructions. Text only, never audio, never sent anywhere. Off again when you quit Lamitype."
+                )
+            )
+
+            SettingsRow(L10n.string("settings.text.eval.entries_label", fallback: "Entries:")) {
+                VStack(alignment: .leading, spacing: 7) {
+                    Text(evalSummary)
+                        .font(.caption)
+                        .foregroundStyle(.secondary)
+                    HStack {
+                        Button(L10n.string(
+                            "settings.text.eval.show_window",
+                            fallback: "Show Window…"
+                        )) { model.showEvalWindow() }
+                        Button(L10n.string(
+                            "settings.text.eval.reveal",
+                            fallback: "Reveal in Finder"
+                        )) { model.revealEvalData() }
+                    }
+                }
+            }
+
+            SettingsRow {
+                Button(
+                    L10n.string(
+                        "settings.text.eval.delete_all",
+                        fallback: "Delete All Eval Data…"
+                    ),
+                    role: .destructive
+                ) { confirmDeleteAllEvalData() }
+                .disabled(model.evalCount == 0)
+            }
+
+            SettingsDivider()
+
+            SettingsSectionHeader(
                 title: L10n.string("menu.text_translation", fallback: "Text Translation"),
                 subtitle: L10n.string(
                     "settings.text.translation_sub",
@@ -154,6 +193,9 @@ struct TextPane: View {
         .onReceive(NotificationCenter.default.publisher(for: NSApplication.didBecomeActiveNotification)) { _ in
             model.refreshFromConfig(polishAvailability: TextPolisher.isAvailableCached)
         }
+        .onReceive(NotificationCenter.default.publisher(for: .evalStoreDidChange)) { _ in
+            model.refreshEvalData()
+        }
     }
 
     static func makeSettingsPane() -> AppSettings.Pane<TextPane> {
@@ -199,6 +241,39 @@ struct TextPane: View {
             fallback: "%1$ld excluded: %2$@",
             arguments: [bundleIDs.count, names.joined(separator: ", ")]
         )
+    }
+
+    private var evalSummary: String {
+        let count = L10n.plural(
+            "eval.entries_count",
+            model.evalCount,
+            fallback: "%ld entries"
+        )
+        let bytes = ByteCountFormatter.string(fromByteCount: model.evalBytes, countStyle: .file)
+        return L10n.format(
+            "settings.text.eval.entries_summary",
+            "%1$@, %2$@ on disk",
+            arguments: [count, bytes]
+        )
+    }
+
+    private func confirmDeleteAllEvalData() {
+        let count = L10n.plural(
+            "eval.entries_count",
+            model.evalCount,
+            fallback: "%ld entries"
+        )
+        let bytes = ByteCountFormatter.string(fromByteCount: model.evalBytes, countStyle: .file)
+        let alert = NSAlert()
+        alert.messageText = L10n.format(
+            "eval.delete_all.confirm",
+            "Delete %1$@ (%2$@)? This cannot be undone.",
+            arguments: [count, bytes]
+        )
+        alert.addButton(withTitle: L10n.string("eval.delete_all.button", fallback: "Delete"))
+        alert.addButton(withTitle: L10n.string("common.button.cancel", fallback: "Cancel"))
+        guard alert.runModal() == .alertFirstButtonReturn else { return }
+        model.deleteAllEvalData()
     }
 
 }

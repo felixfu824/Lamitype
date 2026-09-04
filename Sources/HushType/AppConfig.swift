@@ -32,6 +32,7 @@ final class AppConfig {
         static let cloudDictationModelOpenAI = "hushtype.cloudDictationModelOpenAI"
         static let cloudDictationModelGemini = "hushtype.cloudDictationModelGemini"
         static let interfaceLanguage = "hushtype.interfaceLanguage"
+        static let evalModeIntroShown = "hushtype.evalModeIntroShown"
     }
 
     /// Dictation deliberately persists its engine choice across launches so
@@ -248,6 +249,27 @@ final class AppConfig {
     /// callback drives the menu checkmark.
     var liveCaptionEnabled: Bool = false
 
+    /// Whether Eval Mode captures polish events during this app session.
+    /// SESSION-ONLY and deliberately not persisted, for the same privacy
+    /// rationale as `liveCaptionEnabled`: a relaunch must require a fresh,
+    /// visible opt-in before user text can be written to disk.
+    @MainActor var evalModeEnabled: Bool = false {
+        didSet {
+            guard evalModeEnabled != oldValue else { return }
+            if !evalModeEnabled {
+                EvalCapture.resetSuppressedCount()
+            }
+            NotificationCenter.default.post(name: .evalModeDidChange, object: nil)
+        }
+    }
+
+    /// Whether the user has accepted the one-time plain-text storage notice.
+    /// This remembers only the notice, never the session capture switch.
+    var evalModeIntroShown: Bool {
+        get { defaults.bool(forKey: Keys.evalModeIntroShown) }
+        set { defaults.set(newValue, forKey: Keys.evalModeIntroShown) }
+    }
+
     /// True only when Live Caption is active AND the source is `.mic`. Used
     /// by `AppDelegate.handleHotkeyPress` (running on the CGEvent tap thread,
     /// outside the main actor) to decide whether to gate dictation - system-
@@ -396,4 +418,11 @@ final class AppConfig {
     }
 
     private init() {}
+}
+
+extension Notification.Name {
+    static let evalModeDidChange = Notification.Name("hushtype.evalModeDidChange")
+    static let evalStoreDidChange = Notification.Name("hushtype.evalStoreDidChange")
+    static let evalShowWindowRequested = Notification.Name("hushtype.evalShowWindowRequested")
+    static let evalAppActivityDidChange = Notification.Name("hushtype.evalAppActivityDidChange")
 }

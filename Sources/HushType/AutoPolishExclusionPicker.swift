@@ -160,7 +160,8 @@ enum AutoPolishExclusionPicker {
     private static var window: NSPanel?
     private static var windowDelegate: AutoPolishPickerWindowDelegate?
 
-    static func present(model: TextSettingsModel = .shared) {
+    static func present(model: TextSettingsModel? = nil) {
+        let model = model ?? .shared
         if let window {
             window.makeKeyAndOrderFront(nil)
             return

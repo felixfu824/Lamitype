@@ -21,18 +21,18 @@ final class SettingsMenuStructureTests: XCTestCase {
         let items = controller.statusMenuForTesting.items
         let ordinary = items.filter { !$0.isSeparatorItem }
 
-        XCTAssertEqual(ordinary.count, 9)
+        XCTAssertEqual(ordinary.count, 10)
         XCTAssertEqual(items.filter(\.isSeparatorItem).count, 4)
         XCTAssertEqual(
             items.enumerated().compactMap { $0.element.isSeparatorItem ? $0.offset : nil },
-            [1, 6, 8, 10]
+            [1, 7, 9, 11]
         )
 
         let settingsTitle = L10n.string("menu.settings", fallback: "Settings…")
         let settingsItems = ordinary.filter { $0.title == settingsTitle }
         XCTAssertEqual(settingsItems.count, 1)
-        XCTAssertEqual(ordinary.firstIndex(of: settingsItems[0]), 5)
-        XCTAssertEqual(items.firstIndex(of: settingsItems[0]), 7)
+        XCTAssertEqual(ordinary.firstIndex(of: settingsItems[0]), 6)
+        XCTAssertEqual(items.firstIndex(of: settingsItems[0]), 8)
         XCTAssertEqual(settingsItems[0].keyEquivalent, ",")
         XCTAssertEqual(settingsItems[0].keyEquivalentModifierMask, [.command])
 
@@ -98,7 +98,12 @@ final class SettingsMenuStructureTests: XCTestCase {
                 readTranslationEnabled: { false },
                 writeTranslationEnabled: { _ in },
                 readTranslationTarget: { nil },
-                writeTranslationTarget: { _ in }
+                writeTranslationTarget: { _ in },
+                readEvalCount: { 0 },
+                readEvalBytes: { 0 },
+                deleteAllEval: {},
+                revealEval: {},
+                showEvalWindow: {}
             ),
             initialPolishAvailability: true,
             validatePolish: { .ok },

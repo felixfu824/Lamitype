@@ -1,6 +1,7 @@
 import XCTest
 @testable import HushType
 
+@MainActor
 final class TextSettingsModelTests: XCTestCase {
     private final class StateBox {
         var polish = false
@@ -12,6 +13,11 @@ final class TextSettingsModelTests: XCTestCase {
         var releases = 0
         var alerts: [String] = []
         var refreshes = 0
+        var evalCount = 0
+        var evalBytes: Int64 = 0
+        var evalDeletes = 0
+        var evalReveals = 0
+        var evalShows = 0
     }
 
     func testPolishValidationPublishesValidatingThenEnablesAndWarmsUp() async {
@@ -143,6 +149,19 @@ final class TextSettingsModelTests: XCTestCase {
         XCTAssertEqual(box.refreshes, 2)
     }
 
+    func testDeleteAllEvalInvokesClosureAndRefreshesCounts() {
+        let box = StateBox()
+        box.evalCount = 4
+        box.evalBytes = 120
+        let model = makeModel(box: box, validation: .ok)
+
+        model.deleteAllEvalData()
+
+        XCTAssertEqual(box.evalDeletes, 1)
+        XCTAssertEqual(model.evalCount, 0)
+        XCTAssertEqual(model.evalBytes, 0)
+    }
+
     func testPaneAndStatusBarHandlersUseSharedModelContract() throws {
         let pane = try source(named: "Settings/TextPane.swift")
         let statusBar = try source(named: "StatusBarController.swift")
@@ -176,7 +195,16 @@ final class TextSettingsModelTests: XCTestCase {
                 readTranslationEnabled: { box.translation },
                 writeTranslationEnabled: { box.translation = $0 },
                 readTranslationTarget: { box.target },
-                writeTranslationTarget: { box.target = $0 }
+                writeTranslationTarget: { box.target = $0 },
+                readEvalCount: { box.evalCount },
+                readEvalBytes: { box.evalBytes },
+                deleteAllEval: {
+                    box.evalDeletes += 1
+                    box.evalCount = 0
+                    box.evalBytes = 0
+                },
+                revealEval: { box.evalReveals += 1 },
+                showEvalWindow: { box.evalShows += 1 }
             ),
             initialPolishAvailability: true,
             validatePolish: { validation },

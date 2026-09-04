@@ -94,6 +94,9 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     private var state: AppState = .loading {
         didSet {
             log.info("State: \(String(describing: self.state))")
+            if EvalWindow.isPresented {
+                NotificationCenter.default.post(name: .evalAppActivityDidChange, object: nil)
+            }
         }
     }
 
@@ -148,6 +151,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
             NSApp.terminate(nil)
             return
         }
+        Task { @MainActor in await EvalStore.shared.reload() }
 
         // Cap MLX's GPU buffer recycle pool process-wide. The dictation path
         // never bounds this pool (clearCache() runs only on manual Unload and
@@ -231,6 +235,17 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         LamitypeSettingsWindowController.shared.onResetCaptionPanelFrame = { [weak self] in
             self?.liveCaptionManager?.resetPanelSizeAndPosition()
         }
+        statusBar.onEvalModeToggle = { [weak self] in
+            guard let self else { return }
+            self.requestEvalModeEnabled(!AppConfig.shared.evalModeEnabled)
+        }
+        statusBar.onShowEvalWindow = { [weak self] in self?.openEvalWindow() }
+        NotificationCenter.default.addObserver(
+            self,
+            selector: #selector(openEvalWindowRequested),
+            name: .evalShowWindowRequested,
+            object: nil
+        )
 
         // Wire Live Caption (local) submenu. The manager exists from launch;
         // if Qwen is absent, its local path loads the shared engine lazily.
@@ -729,7 +744,9 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
             return
         }
 
+        #if DEBUG
         print("[Lamitype] Transcription result: '\(text)'")
+        #endif
         print("[Lamitype] Inserting text...")
         state = .inserting
         TextInserter.insert(text)
@@ -854,7 +871,9 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
                     case .success(let (translated, direction)):
                         NSPasteboard.general.clearContents()
                         NSPasteboard.general.setString(translated, forType: .string)
+                        #if DEBUG
                         print("[Lamitype] Translation result (\(direction)): '\(translated.prefix(80))...'")
+                        #endif
                         self.translationCardWindow.show(
                             sourceLanguage: direction,
                             sourceText: text,
@@ -876,6 +895,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     // MARK: - Text Polish
 
     private func handlePolish(source: SelectionSource) {
+        let target = captureInsertionFocus()
         guard state == .idle else {
             log.info("Ignoring polish - state is \(String(describing: self.state), privacy: .public)")
             return
@@ -889,10 +909,27 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
             guard let self else { return }
             let selection = await self.resolveSelection(source, preservingPasteboard: true)
             self.restorePasteboardIfNeeded(selection.priorPasteboardItems)
+            let startedAt = Date()
             let result = await TextPolisher.polish(selection.text)
+            let elapsed = Date().timeIntervalSince(startedAt)
+            let evalSource: EvalSource
+            switch source {
+            case .copySelection: evalSource = .polishHotkey
+            case .provided: evalSource = .polishService
+            }
 
             switch result {
             case .success(let polished, let changed):
+                EvalCapture.record(
+                    source: evalSource,
+                    appBundleID: target?.bundleIdentifier,
+                    original: selection.text,
+                    output: changed ? polished : selection.text,
+                    outcome: changed ? .polished : .unchanged,
+                    reason: nil,
+                    elapsed: elapsed,
+                    abandoned: false
+                )
                 if changed {
                     // The source application must retain focus through the
                     // complete simulated paste before any result window appears.
@@ -907,6 +944,16 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
                 )
 
             case .failure(let error):
+                EvalCapture.record(
+                    source: evalSource,
+                    appBundleID: target?.bundleIdentifier,
+                    original: selection.text,
+                    output: selection.text,
+                    outcome: .keptOriginal,
+                    reason: error.stableToken,
+                    elapsed: elapsed,
+                    abandoned: false
+                )
                 self.finishPolishing()
                 self.showPolishError(error)
             }
@@ -1552,7 +1599,8 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
             guard let insertionText = await prepareLocalDictationText(
                 text,
                 engine: .local,
-                insertionFocus: insertionFocus
+                insertionFocus: insertionFocus,
+                source: .dictationLocalOnce
             ) else { return }
             await finishSuccessfulTranscription(
                 insertionText,
@@ -1581,16 +1629,37 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     private func prepareLocalDictationText(
         _ text: String,
         engine: AppConfig.DictationEngine,
-        insertionFocus: NSRunningApplication?
+        insertionFocus: NSRunningApplication?,
+        source: EvalSource = .dictation
     ) async -> String? {
         switch AutoPolishPolicy.decideNow(
             engine: engine,
             targetBundleID: insertionFocus?.bundleIdentifier
         ) {
         case .skip(.disabled):
+            EvalCapture.record(
+                source: source,
+                appBundleID: insertionFocus?.bundleIdentifier,
+                original: text,
+                output: text,
+                outcome: .notPolished,
+                reason: AutoPolishPolicy.Reason.disabled.stableToken,
+                elapsed: nil,
+                abandoned: false
+            )
             return text
         case .skip(let reason):
             autoPolishLog.info("skip \(reason.stableToken, privacy: .public)")
+            EvalCapture.record(
+                source: source,
+                appBundleID: insertionFocus?.bundleIdentifier,
+                original: text,
+                output: text,
+                outcome: .notPolished,
+                reason: reason.stableToken,
+                elapsed: nil,
+                abandoned: false
+            )
             return text
         case .polish:
             guard state == .transcribing else { return nil }
@@ -1601,7 +1670,29 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         let result = await DictationPolishStage.apply(text) {
             await TextPolisher.polishDictation($0)
         }
-        guard state == .transcribing else { return nil }
+        let abandoned = state != .transcribing
+
+        let evalOutcome: EvalOutcome
+        let evalReason: String?
+        switch result.outcome {
+        case .polished(let changed):
+            evalOutcome = changed ? .polished : .unchanged
+            evalReason = nil
+        case .keptRaw(let reason):
+            evalOutcome = .keptOriginal
+            evalReason = reason
+        }
+        EvalCapture.record(
+            source: source,
+            appBundleID: insertionFocus?.bundleIdentifier,
+            original: text,
+            output: result.text,
+            outcome: evalOutcome,
+            reason: evalReason,
+            elapsed: result.elapsed,
+            abandoned: abandoned
+        )
+        guard !abandoned else { return nil }
 
         let elapsedMS = Int(result.elapsed * 1_000)
         switch result.outcome {
@@ -1615,6 +1706,43 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
             )
         }
         return result.text
+    }
+
+    @objc private func openEvalWindowRequested() {
+        openEvalWindow()
+    }
+
+    private func openEvalWindow() {
+        EvalWindow.present(
+            isAppIdle: { [weak self] in self?.state == .idle },
+            requestEvalEnabled: { [weak self] enabled in
+                self?.requestEvalModeEnabled(enabled)
+            }
+        )
+    }
+
+    private func requestEvalModeEnabled(_ enabled: Bool) {
+        if !enabled {
+            AppConfig.shared.evalModeEnabled = false
+            return
+        }
+        if !AppConfig.shared.evalModeIntroShown {
+            let alert = NSAlert()
+            alert.messageText = L10n.string(
+                "eval.intro.title",
+                fallback: "Eval Mode keeps your text on this Mac"
+            )
+            alert.informativeText = L10n.string(
+                "eval.intro.body",
+                fallback: "While it is on, everything you dictate or polish is saved as plain text in Lamitype's Application Support folder, except in excluded apps and while secure input is active. Nothing is sent anywhere. Delete it any time from the window or Settings."
+            )
+            alert.alertStyle = .warning
+            alert.addButton(withTitle: L10n.string("eval.intro.turn_on", fallback: "Turn On"))
+            alert.addButton(withTitle: L10n.string("common.button.cancel", fallback: "Cancel"))
+            guard alert.runModal() == .alertFirstButtonReturn else { return }
+            AppConfig.shared.evalModeIntroShown = true
+        }
+        AppConfig.shared.evalModeEnabled = true
     }
 
     private func presentCloudFailureAlert(

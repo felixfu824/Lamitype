@@ -33,7 +33,7 @@ final class TextPolisherContractTests: XCTestCase {
         XCTAssertTrue(implementation.contains(
             "if requiresManualToggle, !AppConfig.shared.textPolishEnabled"
         ))
-        XCTAssertTrue(attempt.contains("if requiresManualToggle"))
+        XCTAssertTrue(attempt.contains("if !usesCallerReturnDeadline"))
         XCTAssertTrue(attempt.contains("withDeadline(seconds: deadlineSeconds, work)"))
 
         XCTAssertTrue(source.contains("static let dictationDeadlineSeconds: UInt64 = 8"))
@@ -47,6 +47,14 @@ final class TextPolisherContractTests: XCTestCase {
             "let remaining = remainingBudget(deadlineSeconds: deadlineSeconds, startedAt: startedAt)"
         ))
         XCTAssertTrue(attempt.contains("withCallerReturnDeadline(seconds: remaining, work)"))
+        XCTAssertTrue(source.contains("static func rerun("))
+        XCTAssertTrue(source.contains("budget: RerunBudget"))
+
+        let rerunStart = try XCTUnwrap(source.range(of: "static func rerun(")?.lowerBound)
+        let rerun = String(source[rerunStart..<implementationStart])
+        XCTAssertFalse(rerun.contains("AppConfig.shared.textPolishEnabled"))
+        XCTAssertTrue(rerun.contains("usesCallerReturnDeadline: true"))
+        XCTAssertTrue(rerun.contains("instructions: prompt"))
     }
 
     private func textPolisherSource() throws -> String {

@@ -1565,3 +1565,119 @@
 
 /* Shared Right Option behavior note. */
 "settings.text.note" = "Auto picks the opposite of the detected language. Selection translation and selection proofreading share the Right ⌥ key: one tap translates, two taps proofread.";
+
+/* Eval Mode menu and status. */
+"menu.eval_mode" = "Eval Mode";
+"menu.eval_mode.on" = "Eval Mode On";
+"menu.eval_mode.subtitle_off" = "See what the proofreader changed.";
+"menu.eval_mode.subtitle_on" = "On · %1$@";
+"menu.eval_mode.subtitle_full" = "Full (500). Delete some entries.";
+"menu.eval_mode.show_window" = "Show Window…";
+"status.eval_mode_suffix" = " · Eval Mode";
+
+/* Eval Mode first-run disclosure. */
+"eval.intro.title" = "Eval Mode keeps your text on this Mac";
+"eval.intro.body" = "While it is on, everything you dictate or polish is saved as plain text in Lamitype's Application Support folder, except in excluded apps and while secure input is active. Nothing is sent anywhere. Delete it any time from the window or Settings.";
+"eval.intro.turn_on" = "Turn On";
+
+/* Eval Mode settings. */
+"settings.text.eval.header" = "Eval Mode";
+"settings.text.eval.note" = "Turn Eval Mode on from the menu bar. It keeps your dictation and its polished result on this Mac so you can see what changed and try your own instructions. Text only, never audio, never sent anywhere. Off again when you quit Lamitype.";
+"settings.text.eval.entries_label" = "Entries:";
+"settings.text.eval.entries_summary" = "%1$@, %2$@ on disk";
+"settings.text.eval.show_window" = "Show Window…";
+"settings.text.eval.reveal" = "Reveal in Finder";
+"settings.text.eval.delete_all" = "Delete All Eval Data…";
+"eval.delete_all.confirm" = "Delete %1$@ (%2$@)? This cannot be undone.";
+"eval.delete_all.button" = "Delete";
+"eval.delete_oldest" = "Delete Oldest 100";
+"eval.delete_oldest.confirm" = "Delete the oldest 100 entries? This cannot be undone.";
+
+/* Eval Mode window. */
+"window.eval.title" = "Eval Mode";
+"eval.header.on" = "Eval Mode is on. %1$@.";
+"eval.header.off" = "Eval Mode is off. %1$@.";
+"eval.header.turn_on" = "Turn On";
+"eval.header.turn_off" = "Turn Off";
+"eval.header.unlabelled" = "%1$ld unlabelled";
+"eval.header.suppressed" = "%1$ld not captured";
+"eval.header.suppressed_tooltip" = "Secure input, excluded app, or unknown app";
+"eval.filter.outcome.all" = "All";
+"eval.filter.outcome.polished" = "Polished";
+"eval.filter.outcome.no_change" = "No change";
+"eval.filter.outcome.kept_original" = "Kept original";
+"eval.filter.outcome.not_polished" = "Not polished";
+"eval.filter.label.all" = "All";
+"eval.filter.label.correct" = "Correct";
+"eval.filter.label.over_edited" = "Over-edited";
+"eval.filter.label.wrong_or_missed" = "Wrong or missed";
+"eval.filter.label.unlabelled" = "Unlabelled";
+"eval.pill.polished" = "Polished";
+"eval.pill.no_change" = "No change";
+"eval.pill.kept_original" = "Kept original";
+"eval.pill.not_polished" = "Not polished";
+"eval.label.correct" = "Correct";
+"eval.label.over_edited" = "Over-edited";
+"eval.label.wrong_or_missed" = "Wrong or missed";
+"eval.empty.title" = "No entries yet.";
+"eval.empty.body" = "Turn Eval Mode on, then dictate or polish a selection. Each result shows up here with a diff. Excluded apps and secure input are never captured.";
+"eval.detail.original" = "Original";
+"eval.detail.result" = "Result";
+"eval.detail.label" = "Label";
+"eval.detail.rerun" = "Rerun";
+"eval.detail.no_changes" = "No changes.";
+"eval.detail.not_inserted" = "Not inserted";
+"eval.detail.rerun_hint_disabled" = "Rerun to see what polishing would have done.";
+"eval.deleted_undo" = "Deleted. Undo";
+
+/* Eval Mode reason sentences. */
+"eval.reason.disabled" = "Auto Polish was off.";
+"eval.reason.unavailable" = "Apple Intelligence was not available.";
+"eval.reason.not_local_engine" = "Cloud dictation is not polished.";
+"eval.reason.unknown_target" = "Lamitype could not tell which app was in front.";
+"eval.reason.excluded_app" = "This app is excluded.";
+"eval.reason.empty" = "Nothing to polish.";
+"eval.reason.code_detected" = "Looked like code, so it was left alone.";
+"eval.reason.generation_failed" = "Apple Intelligence returned an error.";
+"eval.reason.timeout" = "Polishing took too long, so the original was kept.";
+"eval.reason.empty_output" = "The proofreader returned nothing.";
+"eval.reason.length_guard" = "The result changed the length too much.";
+"eval.reason.script_guard" = "The result switched writing systems.";
+"eval.reason.mix_guard" = "The result dropped one of your languages.";
+"eval.reason.refusal_guard" = "The proofreader refused instead of proofreading.";
+
+/* Eval Mode source names. */
+"eval.source.dictation" = "Dictation";
+"eval.source.dictation_local_once" = "Dictation (local once)";
+"eval.source.polish_hotkey" = "Text Polish (hotkey)";
+"eval.source.polish_service" = "Text Polish (Services)";
+
+/* Eval Mode rerun controls. */
+"eval.rerun.instructions_label" = "Extra instructions, from your Polish Instructions file";
+"eval.rerun.instructions_note" = "Changes what the proofreader does. Try a line, then Rerun.";
+"eval.rerun.placeholder" = "No extra instructions. Reruns use Lamitype's built-in rules.";
+"eval.rerun.override_active" = "A full prompt override is active, so reruns use it and ignore this box.";
+"eval.rerun.run" = "Rerun";
+"eval.rerun.run_shown" = "Rerun Shown (%1$ld)";
+"eval.rerun.run_shown_capped" = "Rerun Shown (first 50)";
+"eval.rerun.progress" = "%1$ld of %2$ld";
+"eval.rerun.cancel" = "Cancel";
+"eval.rerun.cancel_note" = "Cancel stops after the current entry finishes.";
+"eval.rerun.stopped_dictation" = "Stopped: dictation started.";
+"eval.rerun.save" = "Save as Polish Instructions…";
+"eval.rerun.save_confirm" = "Replace your Polish Instructions file with this text?";
+"eval.rerun.save_replace" = "Replace";
+"eval.rerun.result_line" = "Rerun · %1$@ · %2$@";
+"eval.rerun.same_as_original" = "Same as the original result";
+"eval.rerun.differs_from_original" = "Different from the original result";
+"eval.rerun.previous" = "Previous reruns (%1$ld)";
+"eval.rerun.unavailable" = "Rerun needs Apple Intelligence: %1$@";
+"eval.rerun.busy" = "Paused while dictation or polish is running.";
+
+/* Eval Mode footer. */
+"eval.footer.export" = "Export…";
+"eval.footer.export_note" = "Plain text, includes your entries.";
+"eval.footer.reveal" = "Reveal in Finder";
+"eval.footer.delete_oldest" = "Delete Oldest 100";
+"eval.footer.delete_all" = "Delete All…";
+"eval.error.same_export_path" = "The cases and results files cannot use the same path.";

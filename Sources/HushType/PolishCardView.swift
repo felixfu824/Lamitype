@@ -49,7 +49,7 @@ struct PolishCardView: View {
                     Spacer()
 
                     if diffText != nil {
-                        legend
+                        PolishDiffLegend()
                     }
                 }
             }
@@ -73,7 +73,7 @@ struct PolishCardView: View {
 
                 Text(L10n.string(
                     "polish.card.privacy",
-                    fallback: "On-device Apple Intelligence — nothing leaves your Mac."
+                    fallback: "On-device Apple Intelligence; nothing leaves your Mac."
                 ))
                     .font(.system(size: 9))
                     .foregroundStyle(.tertiary)
@@ -90,19 +90,5 @@ struct PolishCardView: View {
                 .stroke(Color.primary.opacity(0.08), lineWidth: 0.5)
         )
         .shadow(color: .black.opacity(0.18), radius: 12, x: 0, y: 4)
-    }
-
-    private var legend: some View {
-        HStack(spacing: 4) {
-            Text(L10n.string("polish.card.legend.removed", fallback: "removed"))
-                .strikethrough()
-                .foregroundStyle(Color(nsColor: .systemRed))
-            Text("·")
-                .foregroundStyle(.secondary)
-            Text(L10n.string("polish.card.legend.added", fallback: "added"))
-                .underline()
-                .foregroundStyle(Color(nsColor: .systemGreen))
-        }
-        .font(.caption)
     }
 }

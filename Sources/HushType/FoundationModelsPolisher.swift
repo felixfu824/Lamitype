@@ -16,7 +16,7 @@ enum FoundationModelsPolisher {
     /// KV cache across `LanguageModelSession` instances (measured 2026-07-22:
     /// identical vs unique instructions both ~690 ms), so a discarded warmup
     /// session buys nothing. Instead we keep one prewarmed standby, consume it
-    /// for exactly one respond (statelessness preserved — no transcript
+    /// for exactly one respond (statelessness preserved, with no transcript
     /// accumulation), and prewarm a replacement afterwards. Measured saving:
     /// ~290 ms per polish; back-to-back polishes land on an in-flight prewarm
     /// and degrade gracefully to baseline, never worse.
@@ -42,7 +42,7 @@ enum FoundationModelsPolisher {
 
     static func validate() async -> ValidationResult {
         if let reason = availabilityReason() {
-            log.info("Validation: framework unavailable — \(reason, privacy: .public)")
+            log.info("Validation: framework unavailable: \(reason, privacy: .public)")
             return .unavailable(reason: reason)
         }
 
@@ -57,7 +57,7 @@ enum FoundationModelsPolisher {
             return .ok
         } catch {
             let reason = error.localizedDescription
-            log.error("Validation: round-trip failed — \(reason, privacy: .public)")
+            log.error("Validation: round-trip failed: \(reason, privacy: .public)")
             return .unavailable(reason: reason)
         }
     }
@@ -75,6 +75,10 @@ enum FoundationModelsPolisher {
         log.info("Text Polish standby session released")
     }
 
+    #if DEBUG
+    static var standbyFingerprintForTesting: Int? { standbyFingerprint }
+    #endif
+
     private static func replenishStandby(prompt: String) {
         guard poolingEnabled else { return }
         let session = LanguageModelSession(instructions: prompt)
@@ -85,34 +89,45 @@ enum FoundationModelsPolisher {
         standbyFingerprint = prompt.hashValue
     }
 
-    static func polish(_ text: String, mixRetry: Bool = false) async -> Result<String, Error> {
-        let prompt = PolishPrompt.activePrompt()
+    static func polish(
+        _ text: String,
+        mixRetry: Bool = false,
+        instructions: String? = nil
+    ) async -> Result<String, Error> {
+        let prompt = instructions ?? PolishPrompt.activePrompt()
         let fingerprint = prompt.hashValue
+        let bypassStandby = instructions != nil
 
         // Consume the standby if its instructions match the current prompt
         // (a polish_rules.txt edit changes the fingerprint and forces a cold
-        // session). One respond per session — never reuse across polishes.
+        // session). One respond per session, never reused across polishes.
         let session: LanguageModelSession
         let standbyHit: Bool
-        if let standby = standbySession, standbyFingerprint == fingerprint {
+        if !bypassStandby,
+           let standby = standbySession,
+           standbyFingerprint == fingerprint {
             session = standby
             standbyHit = true
         } else {
             session = LanguageModelSession(instructions: prompt)
             standbyHit = false
         }
-        standbySession = nil
-        standbyFingerprint = nil
+        if !bypassStandby {
+            standbySession = nil
+            standbyFingerprint = nil
+        }
 
         let options = GenerationOptions(temperature: 0.0)
         let reminder = mixRetry ? PolishPrompt.mixRetryReminder : ""
         // Chinese-dominant mixed selections get a strong English instruction
-        // BEFORE the input — the only placement the model obeys — to stop it
+        // BEFORE the input, the only placement the model obeys, to stop it
         // from translating the embedded English (see PolishPrompt).
         let preReminder = PolishPrompt.isChineseDominantMix(text) ? PolishPrompt.mixPreReminder : ""
         let userPrompt = preReminder + "Input: <selection>\(text)</selection>\(reminder)\nOutput:"
 
-        defer { replenishStandby(prompt: prompt) }
+        defer {
+            if !bypassStandby { replenishStandby(prompt: prompt) }
+        }
         do {
             let response = try await session.respond(to: userPrompt, options: options)
             log.debug("Polish response fingerprint=\(fingerprint, privacy: .public) standby_hit=\(standbyHit, privacy: .public) transcript_entries=\(response.transcriptEntries.count, privacy: .public)")
@@ -122,7 +137,7 @@ enum FoundationModelsPolisher {
             // unsupported language. An English pre-reminder changes that
             // detection outcome (probe-verified 2026-07-29), so retry once
             // with it forced before surfacing the error.
-            log.info("unsupportedLanguageOrLocale — retrying once with mix pre-reminder")
+            log.info("unsupportedLanguageOrLocale: retrying once with mix pre-reminder")
             do {
                 let retrySession = LanguageModelSession(instructions: prompt)
                 let retryPrompt = PolishPrompt.mixPreReminder

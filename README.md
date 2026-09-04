@@ -78,6 +78,7 @@
 | **翻譯**：輕按 Right ⌥ 翻譯選取的文字 | OFF | macOS 15+ |
 | **校對**：雙擊 Right ⌥ 校對選取的文字，就地修正 | **ON** | macOS 26 + Apple Intelligence |
 | **自動校對聽寫文字**：本機聽寫結果插入前先經同一個校對流程，可排除特定 App | OFF | macOS 26 + Apple Intelligence |
+| **校對實驗室**：檢視差異、用指示重跑、標記並匯出本機校對案例 | 每次啟動皆為 OFF | 重跑需 macOS 26 + Apple Intelligence |
 
 ### 文字輸出調教（Output Post-Processing）
 
@@ -322,6 +323,10 @@ make install
 **自訂規則：** 選單列 → **設定… → 文字 → Polish instructions → Open file in TextEdit**，開啟 `~/Library/Application Support/Lamitype/polish_rules.txt`。一行一條短規則（`#` 開頭為註解），會合併進內建 prompt，例如 `一律用台灣用語` 或 `Use the Oxford comma.`。存檔即生效，不用重啟。
 
 **自動校對聽寫文字（v0.5.13 起，預設關閉）：** 選單列 → **設定… → 文字**，勾選「自動校對聽寫文字」之後，本機聽寫的結果在插入游標之前會先跑同一個裝置端校對（同樣套用 `polish_rules.txt`），插入的就是修好的句子；只處理這一次聽寫產生的文字，欄位裡其他內容一律不動。校對失敗、被輸出防護擋下或超過 8 秒，就原樣插入逐字稿，不跳警示：漏修一句總比丟掉一句好。不想在某些 App 裡被校對（例如終端機），用「排除的 App → 選擇 App…」把它們加進排除清單，其他 App 照常校對。僅限本機引擎；OpenAI / Gemini 聽寫不經過這一步。每句多花約 0.7 到 1.5 秒。
+
+**校對實驗室：** 想檢查真實校對結果時，從選單列啟用**校對實驗室**。啟用期間，Lamitype 會把每次本機聽寫的校對決策和每次手動文字校對存成純文字，以原始文字與結果的追蹤修訂差異呈現，並讓你修改校對指示後重跑、標記、匯出案例集，或刪除資料。開關只限本次執行期間，結束、強制結束或當機後都會恢復關閉；已存項目則保留到你刪除為止。
+
+實驗室資料位於 `~/Library/Application Support/Lamitype/eval.noindex/`，每個項目是一個只有使用者可讀的 JSON 檔。內容包含文字與目標 App 識別碼，不含錄音、截圖、剪貼簿歷程或按鍵內容。Lamitype 沒有分析工具或當機回報，也不會把這些資料送到任何地方。資料夾不會被 Spotlight 索引，但可能隨其他 Application Support 資料納入 Time Machine 備份。自動校對排除清單也會阻止實驗室擷取，而且清單一開始是空的，所以剛安裝時，只要校對實驗室開著，所有可辨識 App 都會擷取，直到你自行加入排除項目。macOS 回報安全輸入時也不會擷取，例如有啟用這項保護的 App 密碼欄位；並非每個 App 都會啟用。無法辨識前方 App 時會採取保守作法，不擷取內容。匯出檔是純文字，且不包含 App 識別碼。
 
 **需求：** macOS 26（Tahoe）+ 已啟用 Apple Intelligence + Apple Silicon。預設開啟；沒有 Foundation Models 的 Mac 上雙擊不會有反應，改用 **服務 → Polish with Lamitype** 會顯示清楚的原因。可從選單列（**Text Polish**）或 `defaults` 開關。
 

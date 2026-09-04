@@ -2,6 +2,7 @@ import AppKit
 import Combine
 import Foundation
 
+@MainActor
 final class TextSettingsModel: ObservableObject {
     struct Storage {
         var readPolishEnabled: () -> Bool
@@ -14,6 +15,11 @@ final class TextSettingsModel: ObservableObject {
         var writeTranslationEnabled: (Bool) -> Void
         var readTranslationTarget: () -> String?
         var writeTranslationTarget: (String?) -> Void
+        var readEvalCount: @MainActor () -> Int
+        var readEvalBytes: @MainActor () -> Int64
+        var deleteAllEval: @MainActor () -> Void
+        var revealEval: @MainActor () -> Void
+        var showEvalWindow: @MainActor () -> Void
 
         static let app = Storage(
             readPolishEnabled: { AppConfig.shared.textPolishEnabled },
@@ -25,7 +31,17 @@ final class TextSettingsModel: ObservableObject {
             readTranslationEnabled: { AppConfig.shared.textTranslationEnabled },
             writeTranslationEnabled: { AppConfig.shared.textTranslationEnabled = $0 },
             readTranslationTarget: { AppConfig.shared.translateTargetLanguage },
-            writeTranslationTarget: { AppConfig.shared.translateTargetLanguage = $0 }
+            writeTranslationTarget: { AppConfig.shared.translateTargetLanguage = $0 },
+            readEvalCount: { EvalStore.shared.count },
+            readEvalBytes: { EvalStore.shared.bytesOnDisk },
+            deleteAllEval: { EvalStore.shared.deleteAll() },
+            revealEval: {
+                EvalStore.shared.ensureDirectories()
+                NSWorkspace.shared.activateFileViewerSelecting([AppSupportPaths.evalDirectoryURL])
+            },
+            showEvalWindow: {
+                NotificationCenter.default.post(name: .evalShowWindowRequested, object: nil)
+            }
         )
     }
 
@@ -58,6 +74,8 @@ final class TextSettingsModel: ObservableObject {
     @Published private(set) var isValidatingPolish = false
     @Published private(set) var translationEnabled: Bool
     @Published private(set) var translationTarget: String?
+    @Published private(set) var evalCount: Int
+    @Published private(set) var evalBytes: Int64
 
     /// The status-bar controller uses this callback to refresh its native
     /// menu items. SwiftUI observes the published properties directly.
@@ -91,6 +109,8 @@ final class TextSettingsModel: ObservableObject {
         polishAvailable = initialPolishAvailability
         translationEnabled = storage.readTranslationEnabled()
         translationTarget = storage.readTranslationTarget()
+        evalCount = storage.readEvalCount()
+        evalBytes = storage.readEvalBytes()
     }
 
     func refreshFromConfig(polishAvailability: Bool? = nil) {
@@ -99,6 +119,7 @@ final class TextSettingsModel: ObservableObject {
         excludedBundleIDs = AutoPolishPolicy.normalizedUnique(storage.readExcludedBundleIDs())
         translationEnabled = storage.readTranslationEnabled()
         translationTarget = storage.readTranslationTarget()
+        refreshEvalData()
         if let polishAvailability {
             polishAvailable = polishAvailability
         }
@@ -221,6 +242,24 @@ final class TextSettingsModel: ObservableObject {
 
     func editPolishInstructions() {
         openInstructions()
+    }
+
+    func refreshEvalData() {
+        evalCount = storage.readEvalCount()
+        evalBytes = storage.readEvalBytes()
+    }
+
+    func showEvalWindow() {
+        storage.showEvalWindow()
+    }
+
+    func revealEvalData() {
+        storage.revealEval()
+    }
+
+    func deleteAllEvalData() {
+        storage.deleteAllEval()
+        refreshEvalData()
     }
 
     @MainActor

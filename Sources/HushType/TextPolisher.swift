@@ -148,6 +148,11 @@ private final class CallerReturnRace<Value: Sendable>: @unchecked Sendable {
 
 enum TextPolisher {
     static let dictationDeadlineSeconds: UInt64 = 8
+
+    enum RerunBudget: UInt64, Sendable {
+        case dictation = 8
+        case polish = 30
+    }
     enum ValidationResult {
         case ok
         case unavailable(reason: String)
@@ -206,8 +211,10 @@ enum TextPolisher {
         await polish(
             text,
             requiresManualToggle: true,
+            usesCallerReturnDeadline: false,
             deadlineSeconds: 30,
-            startedAt: Date()
+            startedAt: Date(),
+            instructions: nil
         )
     }
 
@@ -215,16 +222,36 @@ enum TextPolisher {
         await polish(
             text,
             requiresManualToggle: false,
+            usesCallerReturnDeadline: true,
             deadlineSeconds: dictationDeadlineSeconds,
-            startedAt: Date()
+            startedAt: Date(),
+            instructions: nil
+        )
+    }
+
+    static func rerun(
+        _ text: String,
+        instructions: String?,
+        budget: RerunBudget
+    ) async -> PolishResult {
+        let prompt = PolishPrompt.rerunPrompt(withRules: instructions)
+        return await polish(
+            text,
+            requiresManualToggle: false,
+            usesCallerReturnDeadline: true,
+            deadlineSeconds: budget.rawValue,
+            startedAt: Date(),
+            instructions: prompt
         )
     }
 
     private static func polish(
         _ text: String,
         requiresManualToggle: Bool,
+        usesCallerReturnDeadline: Bool,
         deadlineSeconds: UInt64,
-        startedAt: Date
+        startedAt: Date,
+        instructions: String?
     ) async -> PolishResult {
         if requiresManualToggle, !AppConfig.shared.textPolishEnabled {
             return .failure(.disabled)
@@ -245,12 +272,13 @@ enum TextPolisher {
         let modelResult = await modelAttempt(
             text,
             mixRetry: false,
-            requiresManualToggle: requiresManualToggle,
+            usesCallerReturnDeadline: usesCallerReturnDeadline,
             deadlineSeconds: deadlineSeconds,
-            startedAt: startedAt
+            startedAt: startedAt,
+            instructions: instructions
         )
         guard let modelResult else {
-            return .failure(timeoutError(forManualPolish: requiresManualToggle))
+            return .failure(timeoutError(forManualPolish: !usesCallerReturnDeadline))
         }
 
         switch modelResult {
@@ -260,19 +288,20 @@ enum TextPolisher {
             let validated = validateOutput(polished, input: text)
             if case .failure(let guardError) = validated,
                guardError.isLanguageGuard {
-                if !requiresManualToggle,
+                if usesCallerReturnDeadline,
                    remainingBudget(deadlineSeconds: deadlineSeconds, startedAt: startedAt) < 1 {
                     return validated
                 }
                 let retryResult = await modelAttempt(
                     text,
                     mixRetry: true,
-                    requiresManualToggle: requiresManualToggle,
+                    usesCallerReturnDeadline: usesCallerReturnDeadline,
                     deadlineSeconds: deadlineSeconds,
-                    startedAt: startedAt
+                    startedAt: startedAt,
+                    instructions: instructions
                 )
                 guard let retryResult else {
-                    return requiresManualToggle
+                    return !usesCallerReturnDeadline
                         ? validated
                         : .failure(timeoutError(forManualPolish: false))
                 }
@@ -288,20 +317,25 @@ enum TextPolisher {
     private static func modelAttempt(
         _ text: String,
         mixRetry: Bool,
-        requiresManualToggle: Bool,
+        usesCallerReturnDeadline: Bool,
         deadlineSeconds: UInt64,
-        startedAt: Date
+        startedAt: Date,
+        instructions: String?
     ) async -> Result<String, Error>? {
         let work: @Sendable () async -> Result<String, Error> = {
             if #available(macOS 26.0, *) {
-                return await FoundationModelsPolisher.polish(text, mixRetry: mixRetry)
+                return await FoundationModelsPolisher.polish(
+                    text,
+                    mixRetry: mixRetry,
+                    instructions: instructions
+                )
             }
             return .failure(PolishError.unavailable(L10n.string(
                 "error.polish.macos_too_old",
                 fallback: "This Mac is running an earlier version of macOS."
             )))
         }
-        if requiresManualToggle {
+        if !usesCallerReturnDeadline {
             // The established manual path intentionally gets a fresh 30-second
             // deadline for each attempt.
             return await withDeadline(seconds: deadlineSeconds, work)

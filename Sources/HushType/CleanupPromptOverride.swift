@@ -65,7 +65,7 @@ enum CleanupPromptOverride {
             return nil
         }
 
-        let parsed = parseOverrideFile(contents)
+        let parsed = parse(contents: contents)
         cacheByFilename[filename] = CacheEntry(mtime: mtime, result: parsed, fileExists: true)
 
         if !previousFileExists {
@@ -77,7 +77,7 @@ enum CleanupPromptOverride {
         return parsed
     }
 
-    private static func parseOverrideFile(_ contents: String) -> String? {
+    static func parse(contents: String) -> String? {
         let kept = contents
             .split(separator: "\n", omittingEmptySubsequences: false)
             .filter { line in
@@ -92,4 +92,10 @@ enum CleanupPromptOverride {
 
         return joined.isEmpty ? nil : joined
     }
+
+    #if DEBUG
+    static func resetForTesting() {
+        cacheByFilename.removeAll()
+    }
+    #endif
 }

@@ -78,6 +78,7 @@
 | **Translate**: tap Right ⌥ to translate selected text | OFF | macOS 15+ |
 | **Polish**: double-tap Right ⌥ to polish selected text (proofread in place) | **ON** | macOS 26 + Apple Intelligence |
 | **Auto Polish**: proofread local dictation before it is inserted, with a per-app exclusion list | OFF | macOS 26 + Apple Intelligence |
+| **Eval Mode**: inspect diffs, rerun with instructions, label, and export local polish cases | OFF each launch | macOS 26 + Apple Intelligence for reruns |
 
 ### Output Post-Processing
 
@@ -321,6 +322,10 @@ On-device proofreading via Apple's Foundation Models framework: the Apple Intell
 **Custom rules:** menu bar → **Settings… → Text → Polish instructions → Open file in TextEdit** opens `~/Library/Application Support/Lamitype/polish_rules.txt`. One short imperative rule per line (`#` for comments), merged into the built-in prompt, e.g. `Use the Oxford comma.` or `一律用台灣用語`. Saves hot-reload; no restart.
 
 **Auto Polish for dictation (v0.5.13+, off by default):** menu bar → **Settings… → Text**, check "Polish dictated text automatically", and every local dictation result runs through the same on-device proofread (same `polish_rules.txt`) before it reaches your cursor, so what gets inserted is already corrected. Only the text from that utterance is touched; nothing else in the field. If polishing fails, trips an output guard, or takes more than 8 seconds, the raw transcript is inserted as-is with no alert: an unpolished sentence beats a lost one. For apps where you never want corrections (a terminal, say), add them under "Excluded apps → Choose Apps…"; everywhere else stays polished. Local engine only; OpenAI / Gemini dictation skips this step. Adds roughly 0.7 to 1.5 s per utterance.
+
+**Eval Mode / local polish workbench:** turn **Eval Mode** on from the menu bar when you want to inspect real results. While it is on, Lamitype saves every local dictation polish decision and every manual Text Polish event as plain text, shows Original and Result with a track-changes diff, and lets you rerun entries with edited Polish Instructions, label them, export a case set, or delete the data. The switch is session-only and is off again after quit, force quit, or crash; the saved entries remain until you delete them.
+
+Eval data stays at `~/Library/Application Support/Lamitype/eval.noindex/`, one user-readable JSON file per entry. It contains text and the destination app identifier, never audio, screenshots, clipboard history, or keystrokes. Lamitype has no analytics or crash reporter and sends none of this data anywhere. The directory is excluded from Spotlight but can be included in Time Machine backups. The Auto Polish exclusion list also blocks Eval capture and starts empty, so a fresh install captures every identifiable app while Eval Mode is on until you add exclusions. Capture also stops when macOS reports secure input, such as password fields in apps that enable that protection; not every app does. Unknown frontmost apps fail closed and are not captured. Export files are plain text and omit app identifiers.
 
 **Requirements:** macOS 26 (Tahoe) + Apple Intelligence enabled + Apple Silicon. On by default; on Macs without Foundation Models the double-tap stays inactive, and the **Services → Polish with Lamitype** entry reports why. Toggle from the menu bar (**Text Polish**) or via `defaults`.
 
