@@ -1,5 +1,7 @@
 PRODUCT_NAME = HushType
 APP_NAME = Lamitype
+APP_VERSION := $(shell /usr/libexec/PlistBuddy -c 'Print :CFBundleShortVersionString' Resources/Info.plist)
+DMG_NAME = $(APP_NAME)-v$(APP_VERSION).dmg
 EXECUTABLE_NAME = Lamitype
 ICON_NAME = Lamitype
 BUILD_DIR = .build/release
@@ -189,15 +191,16 @@ dmg-release: check-release-signing
 
 # Packaging only: the app's final signature is never modified here.
 create-dmg:
-	@rm -f "$(APP_NAME).dmg"
+	@test -n "$(APP_VERSION)" || { echo "error: missing app version" >&2; exit 1; }
+	@rm -f "$(DMG_NAME)"
 	@rm -rf dmg_staging
 	@mkdir -p dmg_staging
 	@cp -R "$(BUNDLE_DIR)" dmg_staging/
 	@ln -s /Applications dmg_staging/Applications
-	@hdiutil create -volname "$(APP_NAME)" -srcfolder dmg_staging -ov -format UDZO "$(APP_NAME).dmg"
+	@hdiutil create -volname "$(APP_NAME)" -srcfolder dmg_staging -ov -format UDZO "$(DMG_NAME)"
 	@rm -rf dmg_staging
-	@echo "Created $(APP_NAME).dmg"
+	@echo "Created $(DMG_NAME)"
 
 clean:
 	swift package clean
-	rm -rf HushType.app Lamitype.app HushType.dmg Lamitype.dmg dmg_staging
+	rm -rf HushType.app Lamitype.app HushType.dmg Lamitype.dmg "$(DMG_NAME)" dmg_staging
