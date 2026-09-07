@@ -27,7 +27,7 @@ struct TextPane: View {
                 Toggle(
                     L10n.string(
                         "settings.text.polish.cb",
-                        fallback: "Proofread selection on double-tap Right ⌥"
+                        fallback: "Enable Text Polish"
                     ),
                     isOn: Binding(
                         get: { model.polishEnabled },
@@ -51,11 +51,12 @@ struct TextPane: View {
                     )
                     .disabled(
                         model.isValidatingPolish
+                            || !model.polishEnabled
                             || (!model.polishAvailable && !model.autoPolishEnabled)
                     )
                     Text(L10n.string(
                         "settings.text.auto_polish.note",
-                        fallback: "Local dictation only. Runs the same on-device proofread before the text is inserted. The raw transcript is kept if polishing fails or times out."
+                        fallback: "Local dictation only. When off, double-tap Right ⌥ to polish a selection. If automatic polishing fails, the transcript is kept."
                     ))
                     .font(.caption)
                     .foregroundStyle(.secondary)
@@ -75,7 +76,6 @@ struct TextPane: View {
                         AutoPolishExclusionPicker.present(model: model)
                     }
                     .buttonStyle(.bordered)
-                    .disabled(!model.autoPolishEnabled)
                     Text(excludedSummary)
                         .font(.caption)
                         .foregroundStyle(.secondary)
@@ -83,15 +83,15 @@ struct TextPane: View {
                 }
             }
 
-            SettingsRow(L10n.string("settings.text.instructions", fallback: "Polish instructions:")) {
+            SettingsRow(L10n.string("settings.text.instructions", fallback: "Polish prompt:")) {
                 VStack(alignment: .leading, spacing: 6) {
-                    Button(L10n.string("common.button.open_in_textedit", fallback: "Open in TextEdit")) {
+                    Button(L10n.string("settings.text.prompt.edit", fallback: "Edit Polish Prompt…")) {
                         model.editPolishInstructions()
                     }
                     .buttonStyle(.bordered)
                     Text(L10n.string(
                         "settings.text.instructions.note",
-                        fallback: "Plain-text instructions sent with every proofread request."
+                        fallback: "Edit the complete prompt shared by manual and automatic polishing. Test changes in Eval Mode before saving."
                     ))
                     .font(.caption)
                     .foregroundStyle(.secondary)
@@ -105,7 +105,7 @@ struct TextPane: View {
                 title: L10n.string("settings.text.eval.header", fallback: "Eval Mode"),
                 subtitle: L10n.string(
                     "settings.text.eval.note",
-                    fallback: "Turn Eval Mode on from the menu bar. It keeps your dictation and its polished result on this Mac so you can see what changed and try your own instructions. Text only, never audio, never sent anywhere. Off again when you quit Lamitype."
+                    fallback: "Inspect local dictation and polish results, then try your own prompt. Text only, never uploaded. Entries are cleared on normal quit, or next launch after a crash or force quit. Export cases before quitting to keep them. Saved prompts and exports remain."
                 )
             )
 
@@ -230,7 +230,7 @@ struct TextPane: View {
         guard !bundleIDs.isEmpty else {
             return L10n.string(
                 "settings.text.auto_polish.excluded_none",
-                fallback: "No apps excluded. Dictation is polished everywhere."
+                fallback: "No apps excluded. Exclusions apply to Auto Polish and Eval Mode."
             )
         }
         var names = bundleIDs.prefix(4).map(AutoPolishAppNameResolver.displayName)

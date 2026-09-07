@@ -13,6 +13,8 @@ final class EvalStore {
     private let ioQueue = DispatchQueue(label: "com.felix.hushtype.eval-store")
     private let encoder: JSONEncoder
     private let decoder: JSONDecoder
+    private var lifecycleGeneration: UInt64 = 0
+    private(set) var acceptsWrites = true
 
     private(set) var entries: [EvalEntry] = []
     private(set) var bytesOnDisk: Int64 = 0
@@ -28,12 +30,12 @@ final class EvalStore {
         encoder.outputFormatting = [.prettyPrinted, .sortedKeys]
         decoder = JSONDecoder()
         decoder.dateDecodingStrategy = .iso8601
-        ensureDirectories()
+        acceptsWrites = prepareDirectories()
     }
 
     @discardableResult
     func append(_ entry: EvalEntry) -> Bool {
-        guard !isFull else { return false }
+        guard validateBoundaryOrFailClosed(), !isFull else { return false }
         let normalized = normalizedEntry(entry)
         guard let data = try? encoder.encode(normalized) else {
             evalStoreLog.error("Could not encode Eval Mode entry")
@@ -50,10 +52,24 @@ final class EvalStore {
     }
 
     func reload() async {
+        guard validateBoundaryOrFailClosed() else {
+            clearMemoryAndNotify()
+            return
+        }
+        let generation = lifecycleGeneration
+        let directory = directory
         let entriesDirectory = entriesDirectory
         let decoder = decoder
-        let loaded = await withCheckedContinuation { continuation in
+        let loaded: (entries: [(EvalEntry, Int64)], corrupt: Int, safe: Bool) =
+            await withCheckedContinuation { continuation in
             ioQueue.async {
+                guard Self.hasSafeManagedBoundary(
+                    directory: directory,
+                    entriesDirectory: entriesDirectory
+                ) else {
+                    continuation.resume(returning: ([], 0, false))
+                    return
+                }
                 var decoded: [(EvalEntry, Int64)] = []
                 var corrupt = 0
                 let urls = (try? FileManager.default.contentsOfDirectory(
@@ -74,8 +90,15 @@ final class EvalStore {
                         corrupt += 1
                     }
                 }
-                continuation.resume(returning: (decoded, corrupt))
+                continuation.resume(returning: (decoded, corrupt, true))
             }
+        }
+        guard loaded.2 else {
+            failClosedForUnsafeBoundary()
+            return
+        }
+        guard acceptsWrites, generation == lifecycleGeneration else {
+            return
         }
         entries = loaded.0.map(\.0).sorted { $0.capturedAt > $1.capturedAt }
         diskBytesByID = Dictionary(
@@ -91,7 +114,8 @@ final class EvalStore {
 
     @discardableResult
     func update(_ entry: EvalEntry) -> Bool {
-        guard let index = entries.firstIndex(where: { $0.id == entry.id }) else { return false }
+        guard validateBoundaryOrFailClosed(),
+              let index = entries.firstIndex(where: { $0.id == entry.id }) else { return false }
         let normalized = normalizedEntry(entry)
         guard let data = try? encoder.encode(normalized) else { return false }
         let previousSize = diskBytesByID[normalized.id] ?? encodedSize(entries[index])
@@ -106,19 +130,28 @@ final class EvalStore {
 
     @discardableResult
     func delete(id: String) -> EvalEntry? {
-        guard let index = entries.firstIndex(where: { $0.id == id }) else { return nil }
+        guard validateBoundaryOrFailClosed(),
+              let index = entries.firstIndex(where: { $0.id == id }) else { return nil }
         let removed = entries.remove(at: index)
         let removedBytes = diskBytesByID.removeValue(forKey: id) ?? encodedSize(removed)
         bytesOnDisk = max(0, bytesOnDisk - removedBytes)
         notifyChange()
         let url = fileURL(id: id)
-        ioQueue.async { try? FileManager.default.removeItem(at: url) }
+        let directory = directory
+        let entriesDirectory = entriesDirectory
+        ioQueue.async {
+            guard Self.hasSafeManagedBoundary(
+                directory: directory,
+                entriesDirectory: entriesDirectory
+            ) else { return }
+            try? FileManager.default.removeItem(at: url)
+        }
         return removed
     }
 
     @discardableResult
     func deleteOldest(_ n: Int) -> [EvalEntry] {
-        guard n > 0 else { return [] }
+        guard validateBoundaryOrFailClosed(), n > 0 else { return [] }
         let removed = Array(entries.sorted { $0.capturedAt < $1.capturedAt }.prefix(n))
         let ids = Set(removed.map(\.id))
         entries.removeAll { ids.contains($0.id) }
@@ -128,17 +161,28 @@ final class EvalStore {
         bytesOnDisk = max(0, bytesOnDisk - removedBytes)
         notifyChange()
         let urls = removed.map { fileURL(id: $0.id) }
-        ioQueue.async { urls.forEach { try? FileManager.default.removeItem(at: $0) } }
+        let directory = directory
+        let entriesDirectory = entriesDirectory
+        ioQueue.async {
+            guard Self.hasSafeManagedBoundary(
+                directory: directory,
+                entriesDirectory: entriesDirectory
+            ) else { return }
+            urls.forEach { try? FileManager.default.removeItem(at: $0) }
+        }
         return removed
     }
 
     func deleteAll() {
-        entries.removeAll()
-        diskBytesByID.removeAll()
-        bytesOnDisk = 0
-        notifyChange()
+        guard validateBoundaryOrFailClosed() else { return }
+        clearMemoryAndNotify()
+        let directory = directory
         let entriesDirectory = entriesDirectory
         ioQueue.async {
+            guard Self.hasSafeManagedBoundary(
+                directory: directory,
+                entriesDirectory: entriesDirectory
+            ) else { return }
             try? FileManager.default.removeItem(at: entriesDirectory)
             try? FileManager.default.createDirectory(
                 at: entriesDirectory,
@@ -153,6 +197,68 @@ final class EvalStore {
     }
 
     func ensureDirectories() {
+        guard validateBoundaryOrFailClosed() else { return }
+        if !prepareDirectories() {
+            acceptsWrites = false
+            lifecycleGeneration &+= 1
+            clearMemoryAndNotify()
+        }
+    }
+
+    /// Starts a fresh process session. This removes entries left by a crash or
+    /// SIGKILL before any reload/capture can expose them. Failure leaves the
+    /// store empty and disabled for the process.
+    @discardableResult
+    func beginNewSessionClearingOrphans() -> Bool {
+        acceptsWrites = false
+        lifecycleGeneration &+= 1
+        clearMemoryAndNotify()
+        let directory = directory
+        let entriesDirectory = entriesDirectory
+        let succeeded = ioQueue.sync {
+            Self.replaceManagedEntries(
+                directory: directory,
+                entriesDirectory: entriesDirectory,
+                recreate: true
+            )
+        }
+        acceptsWrites = succeeded
+        if !succeeded {
+            evalStoreLog.error("Could not clear orphaned Eval Mode session data")
+        }
+        return succeeded
+    }
+
+    /// Called only from applicationWillTerminate, after termination can no
+    /// longer be canceled by an unsaved-draft window prompt.
+    @discardableResult
+    func endSessionAndClear() -> Bool {
+        acceptsWrites = false
+        lifecycleGeneration &+= 1
+        clearMemoryAndNotify()
+        let directory = directory
+        let entriesDirectory = entriesDirectory
+        let succeeded = ioQueue.sync {
+            Self.replaceManagedEntries(
+                directory: directory,
+                entriesDirectory: entriesDirectory,
+                recreate: false
+            )
+        }
+        if !succeeded {
+            evalStoreLog.error("Could not clear Eval Mode data at termination")
+        }
+        return succeeded
+    }
+
+    private func prepareDirectories() -> Bool {
+        guard Self.hasSafeManagedBoundary(
+            directory: directory,
+            entriesDirectory: entriesDirectory
+        ) else {
+            evalStoreLog.error("Refusing symlinked Eval Mode storage boundary")
+            return false
+        }
         for url in [directory, entriesDirectory] {
             do {
                 try FileManager.default.createDirectory(
@@ -166,8 +272,10 @@ final class EvalStore {
                 )
             } catch {
                 evalStoreLog.error("Could not prepare Eval Mode directory: \(error.localizedDescription, privacy: .private)")
+                return false
             }
         }
+        return true
     }
 
     func waitForPendingIO() async {
@@ -178,7 +286,19 @@ final class EvalStore {
 
     private func write(_ data: Data, id: String) {
         let destination = fileURL(id: id)
+        let generation = lifecycleGeneration
+        let directory = directory
+        let entriesDirectory = entriesDirectory
         ioQueue.async {
+            guard Self.hasSafeManagedBoundary(
+                directory: directory,
+                entriesDirectory: entriesDirectory
+            ) else {
+                Task { @MainActor [weak self] in
+                    self?.failClosedForUnsafeBoundary()
+                }
+                return
+            }
             do {
                 try data.write(to: destination, options: .atomic)
                 try FileManager.default.setAttributes(
@@ -189,7 +309,11 @@ final class EvalStore {
                     forKeys: [.totalFileAllocatedSizeKey]
                 ).totalFileAllocatedSize
                 Task { @MainActor [weak self] in
-                    self?.applyWrittenSize(Int64(allocated ?? data.count), id: id)
+                    self?.applyWrittenSize(
+                        Int64(allocated ?? data.count),
+                        id: id,
+                        generation: generation
+                    )
                 }
             } catch {
                 evalStoreLog.error("Could not write Eval Mode entry: \(error.localizedDescription, privacy: .private)")
@@ -197,8 +321,11 @@ final class EvalStore {
         }
     }
 
-    private func applyWrittenSize(_ size: Int64, id: String) {
-        guard entries.contains(where: { $0.id == id }), let previous = diskBytesByID[id] else {
+    private func applyWrittenSize(_ size: Int64, id: String, generation: UInt64) {
+        guard acceptsWrites,
+              generation == lifecycleGeneration,
+              entries.contains(where: { $0.id == id }),
+              let previous = diskBytesByID[id] else {
             return
         }
         diskBytesByID[id] = size
@@ -239,5 +366,91 @@ final class EvalStore {
 
     private func notifyChange() {
         NotificationCenter.default.post(name: .evalStoreDidChange, object: self)
+    }
+
+    private func clearMemoryAndNotify() {
+        entries.removeAll()
+        diskBytesByID.removeAll()
+        bytesOnDisk = 0
+        notifyChange()
+    }
+
+    private func validateBoundaryOrFailClosed() -> Bool {
+        guard acceptsWrites else { return false }
+        guard Self.hasSafeManagedBoundary(
+            directory: directory,
+            entriesDirectory: entriesDirectory
+        ) else {
+            failClosedForUnsafeBoundary()
+            return false
+        }
+        return true
+    }
+
+    private func failClosedForUnsafeBoundary() {
+        if acceptsWrites {
+            acceptsWrites = false
+            lifecycleGeneration &+= 1
+        }
+        clearMemoryAndNotify()
+        evalStoreLog.error("Disabled Eval Mode storage because a managed boundary is a symlink")
+    }
+
+    nonisolated private static func replaceManagedEntries(
+        directory: URL,
+        entriesDirectory: URL,
+        recreate: Bool
+    ) -> Bool {
+        let fm = FileManager.default
+        do {
+            guard hasSafeManagedBoundary(
+                directory: directory,
+                entriesDirectory: entriesDirectory
+            ) else { return false }
+            var rootIsDirectory: ObjCBool = false
+            if fm.fileExists(atPath: directory.path, isDirectory: &rootIsDirectory),
+               !rootIsDirectory.boolValue {
+                // A malformed root file cannot contain user exports. Replace
+                // it so the known entries directory can be prepared.
+                try fm.removeItem(at: directory)
+            } else if fm.fileExists(atPath: entriesDirectory.path) {
+                // Only this child is managed session data. Preserve exports or
+                // any other unexpected files saved in the Eval root itself.
+                try fm.removeItem(at: entriesDirectory)
+            }
+            if recreate {
+                try fm.createDirectory(
+                    at: entriesDirectory,
+                    withIntermediateDirectories: true,
+                    attributes: [.posixPermissions: 0o700]
+                )
+                try fm.setAttributes(
+                    [.posixPermissions: 0o700],
+                    ofItemAtPath: directory.path
+                )
+                try fm.setAttributes(
+                    [.posixPermissions: 0o700],
+                    ofItemAtPath: entriesDirectory.path
+                )
+            }
+            return true
+        } catch {
+            return false
+        }
+    }
+
+    nonisolated private static func hasSafeManagedBoundary(
+        directory: URL,
+        entriesDirectory: URL
+    ) -> Bool {
+        !isSymbolicLink(directory) && !isSymbolicLink(entriesDirectory)
+    }
+
+    nonisolated private static func isSymbolicLink(_ url: URL) -> Bool {
+        guard let attributes = try? FileManager.default.attributesOfItem(atPath: url.path),
+              let type = attributes[.type] as? FileAttributeType else {
+            return false
+        }
+        return type == .typeSymbolicLink
     }
 }

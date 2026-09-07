@@ -93,6 +93,18 @@ enum CleanupPromptOverride {
         return joined.isEmpty ? nil : joined
     }
 
+    /// Full prompts are opaque text. Markdown headings are instructions too,
+    /// so only whitespace-only documents are rejected.
+    static func parseFullPrompt(contents: String) -> String? {
+        contents.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
+            ? nil
+            : contents
+    }
+
+    static func invalidate(filename: String) {
+        cacheByFilename.removeValue(forKey: filename)
+    }
+
     #if DEBUG
     static func resetForTesting() {
         cacheByFilename.removeAll()

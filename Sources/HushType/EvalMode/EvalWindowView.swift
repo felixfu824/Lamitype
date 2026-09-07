@@ -19,6 +19,9 @@ struct EvalWindowView: View {
         .frame(minWidth: 760, minHeight: 520)
         .background(Color(nsColor: .windowBackgroundColor))
         .overlay(alignment: .bottom) { undoBar }
+        .sheet(isPresented: $model.promptEditorPresented) {
+            PromptEditorView(model: model)
+        }
         .background {
             Group {
                 Button("") { model.setLabel(nil) }
@@ -59,8 +62,19 @@ struct EvalWindowView: View {
                 }
                 .font(.caption)
                 .foregroundStyle(.secondary)
+                if model.entries.count >= EvalStore.maximumEntries {
+                    Text(L10n.string(
+                        "eval.header.capture_limit",
+                        fallback: "500-entry limit reached. Delete entries to capture more."
+                    ))
+                    .font(.caption)
+                    .foregroundStyle(.orange)
+                }
             }
             Spacer()
+            Button(L10n.string("eval.prompt.edit", fallback: "Edit Polish Prompt")) {
+                model.showPromptEditor()
+            }
             Button(model.evalEnabled
                    ? L10n.string("eval.header.turn_off", fallback: "Turn Off")
                    : L10n.string("eval.header.turn_on", fallback: "Turn On")) {
@@ -101,13 +115,13 @@ struct EvalWindowView: View {
     private var entriesPane: some View {
         VStack(spacing: 0) {
             HStack(spacing: 8) {
-                Picker("", selection: $model.outcomeFilter) {
+                Picker(L10n.string("eval.filter.outcome_title", fallback: "Outcome"), selection: $model.outcomeFilter) {
                     ForEach(EvalWindowModel.OutcomeFilter.allCases, id: \.self) {
                         Text(outcomeFilterText($0)).tag($0)
                     }
                 }
                 .labelsHidden()
-                Picker("", selection: $model.labelFilter) {
+                Picker(L10n.string("eval.detail.label", fallback: "Label"), selection: $model.labelFilter) {
                     ForEach(EvalWindowModel.LabelFilter.allCases, id: \.self) {
                         Text(labelFilterText($0)).tag($0)
                     }
@@ -119,7 +133,11 @@ struct EvalWindowView: View {
             Divider()
 
             if model.filteredEntries.isEmpty {
-                emptyState
+                if model.entries.isEmpty {
+                    emptyState
+                } else {
+                    filteredEmptyState
+                }
             } else {
                 ScrollView {
                     LazyVStack(spacing: 0) {
@@ -131,6 +149,24 @@ struct EvalWindowView: View {
             }
         }
         .background(Color(nsColor: .controlBackgroundColor))
+    }
+
+    private var filteredEmptyState: some View {
+        VStack(spacing: 10) {
+            Spacer()
+            Image(systemName: "line.3.horizontal.decrease.circle")
+                .font(.system(size: 28))
+                .foregroundStyle(.secondary)
+            Text(L10n.string("eval.filter.empty", fallback: "No entries match these filters."))
+                .font(.headline)
+                .multilineTextAlignment(.center)
+            Button(L10n.string("eval.filter.reset", fallback: "Clear Filters")) {
+                model.outcomeFilter = .all
+                model.labelFilter = .all
+            }
+            Spacer()
+        }
+        .padding(24)
     }
 
     private var emptyState: some View {
@@ -288,40 +324,13 @@ struct EvalWindowView: View {
         DisclosureGroup(isExpanded: $rerunExpanded) {
             VStack(alignment: .leading, spacing: 8) {
                 Text(L10n.string(
-                    "eval.rerun.instructions_label",
-                    fallback: "Extra instructions, from your Polish Instructions file"
-                ))
-                .font(.caption.weight(.semibold))
-                Text(L10n.string(
                     "eval.rerun.instructions_note",
-                    fallback: "Changes what the proofreader does. Try a line, then Rerun."
+                    fallback: "Reruns use the current prompt draft. Saving makes it active for future requests."
                 ))
                 .font(.caption).foregroundStyle(.secondary)
-
-                ZStack(alignment: .topLeading) {
-                    TextEditor(text: $model.instructionsText)
-                        .font(.system(.body, design: .monospaced))
-                        .frame(minHeight: 90)
-                        .disabled(model.fullOverrideActive)
-                    if model.instructionsText.isEmpty {
-                        Text(L10n.string(
-                            "eval.rerun.placeholder",
-                            fallback: "No extra instructions. Reruns use Lamitype's built-in rules."
-                        ))
-                        .font(.system(.caption, design: .monospaced))
-                        .foregroundStyle(.tertiary)
-                        .padding(7)
-                        .allowsHitTesting(false)
-                    }
-                }
-                .overlay(RoundedRectangle(cornerRadius: 5).stroke(Color(nsColor: .separatorColor)))
-
-                if model.fullOverrideActive {
-                    Text(L10n.string(
-                        "eval.rerun.override_active",
-                        fallback: "A full prompt override is active, so reruns use it and ignore this box."
-                    ))
-                    .font(.caption).foregroundStyle(.secondary)
+                if model.hasUnsavedPromptDraft {
+                    Text(L10n.string("eval.prompt.unsaved", fallback: "Unsaved draft"))
+                        .font(.caption).foregroundStyle(.orange)
                 }
 
                 if let reason = model.rerunUnavailableReason {
@@ -359,11 +368,9 @@ struct EvalWindowView: View {
                     }
 
                     Spacer()
-                    Button(L10n.string(
-                        "eval.rerun.save",
-                        fallback: "Save as Polish Instructions…"
-                    )) { model.saveInstructions() }
-                    .disabled(model.fullOverrideActive)
+                    Button(L10n.string("eval.prompt.edit", fallback: "Edit Polish Prompt")) {
+                        model.showPromptEditor()
+                    }
                 }
 
                 if model.batchProgress != nil {
@@ -445,7 +452,7 @@ struct EvalWindowView: View {
                 .disabled(model.filteredEntries.isEmpty)
                 Text(L10n.string(
                     "eval.footer.export_note",
-                    fallback: "Plain text, includes your entries."
+                    fallback: "Entries clear on quit. Export to keep a copy."
                 ))
                 .font(.caption2).foregroundStyle(.secondary)
             }
@@ -615,6 +622,50 @@ struct EvalWindowView: View {
         formatter.timeStyle = .medium
         return formatter
     }()
+}
+
+private struct PromptEditorView: View {
+    @ObservedObject var model: EvalWindowModel
+    @FocusState private var editorFocused: Bool
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 12) {
+            Text(L10n.string("eval.prompt.title", fallback: "Polish Prompt"))
+                .font(.title2.weight(.semibold))
+            Text(L10n.string(
+                "eval.prompt.note",
+                fallback: "This complete prompt is used by manual polish, Auto Polish Dictation, and Eval reruns. Reruns can test this unsaved draft."
+            ))
+            .font(.caption)
+            .foregroundStyle(.secondary)
+            TextEditor(text: $model.instructionsText)
+                .font(.system(.body, design: .monospaced))
+                .focused($editorFocused)
+                .frame(minWidth: 680, minHeight: 340)
+                .overlay(RoundedRectangle(cornerRadius: 5).stroke(Color(nsColor: .separatorColor)))
+            if let error = model.promptSaveError {
+                Text(error).font(.caption).foregroundStyle(.red)
+            } else if model.hasUnsavedPromptDraft {
+                Text(L10n.string("eval.prompt.unsaved", fallback: "Unsaved draft"))
+                    .font(.caption).foregroundStyle(.orange)
+            }
+            HStack {
+                Button(L10n.string("eval.prompt.done", fallback: "Done")) {
+                    model.requestClosePromptEditor()
+                }
+                Spacer()
+                Button(L10n.string("eval.prompt.restore", fallback: "Restore Default")) {
+                    model.restoreDefaultDraft()
+                }
+                Button(L10n.string("eval.prompt.save", fallback: "Save Prompt")) {
+                    _ = model.savePrompt()
+                }
+                .buttonStyle(.borderedProminent)
+            }
+        }
+        .padding(18)
+        .onAppear { editorFocused = true }
+    }
 }
 
 @MainActor

@@ -3,6 +3,19 @@ import XCTest
 
 @MainActor
 final class TextSettingsModelTests: XCTestCase {
+    private actor ValidationGate {
+        private var continuation: CheckedContinuation<TextPolisher.ValidationResult, Never>?
+
+        func wait() async -> TextPolisher.ValidationResult {
+            await withCheckedContinuation { continuation = $0 }
+        }
+
+        func succeed() {
+            continuation?.resume(returning: .ok)
+            continuation = nil
+        }
+    }
+
     private final class StateBox {
         var polish = false
         var autoPolish = false
@@ -18,6 +31,7 @@ final class TextSettingsModelTests: XCTestCase {
         var evalDeletes = 0
         var evalReveals = 0
         var evalShows = 0
+        var evalPromptFocusRequests: [Bool] = []
     }
 
     func testPolishValidationPublishesValidatingThenEnablesAndWarmsUp() async {
@@ -67,8 +81,37 @@ final class TextSettingsModelTests: XCTestCase {
         XCTAssertEqual(box.warmups, 0)
     }
 
+    func testDisablingMasterClearsAutomaticAndEnablingReturnsToManual() async {
+        let box = StateBox()
+        box.polish = true
+        box.autoPolish = true
+        let model = makeModel(box: box, validation: .ok)
+
+        await model.setPolishEnabled(false)
+        XCTAssertFalse(box.polish)
+        XCTAssertFalse(box.autoPolish)
+        XCTAssertFalse(model.autoPolishEnabled)
+
+        await model.setPolishEnabled(true)
+        XCTAssertTrue(box.polish)
+        XCTAssertFalse(box.autoPolish)
+        XCTAssertFalse(model.autoPolishEnabled)
+    }
+
+    func testLegacyMasterOffAutomaticOnNormalizesToDisabled() {
+        let box = StateBox()
+        box.autoPolish = true
+
+        let model = makeModel(box: box, validation: .ok)
+
+        XCTAssertFalse(model.polishEnabled)
+        XCTAssertFalse(model.autoPolishEnabled)
+        XCTAssertFalse(box.autoPolish)
+    }
+
     func testAutoPolishValidationEnablesAndWarmsUp() async {
         let box = StateBox()
+        box.polish = true
         let model = makeModel(box: box, validation: .ok)
 
         await model.setAutoPolishEnabled(true)
@@ -81,6 +124,7 @@ final class TextSettingsModelTests: XCTestCase {
 
     func testUnavailableAutoPolishStaysOffAndPresentsReason() async {
         let box = StateBox()
+        box.polish = true
         let model = makeModel(
             box: box,
             validation: .unavailable(reason: "Apple Intelligence is off")
@@ -94,22 +138,78 @@ final class TextSettingsModelTests: XCTestCase {
         XCTAssertEqual(box.alerts, ["Apple Intelligence is off"])
     }
 
-    func testAutoPolishDisableReleasesOnlyWhenManualPolishIsOff() async {
+    func testAutoPolishDisableKeepsSessionWhileMasterIsOn() async {
         let manualOn = StateBox()
         manualOn.polish = true
         manualOn.autoPolish = true
         let first = makeModel(box: manualOn, validation: .ok)
         await first.setAutoPolishEnabled(false)
         XCTAssertEqual(manualOn.releases, 0)
-
-        let manualOff = StateBox()
-        manualOff.autoPolish = true
-        let second = makeModel(box: manualOff, validation: .ok)
-        await second.setAutoPolishEnabled(false)
-        XCTAssertEqual(manualOff.releases, 1)
     }
 
-    func testManualPolishDisableDoesNotReleaseWhileAutoPolishIsOn() async {
+    func testLateValidationCannotReEnableDisabledMaster() async {
+        let box = StateBox()
+        let gate = ValidationGate()
+        let model = makeModel(box: box, validatePolish: { await gate.wait() })
+
+        let enabling = Task { @MainActor in await model.setPolishEnabled(true) }
+        await Task.yield()
+        XCTAssertTrue(model.isValidatingPolish)
+
+        await model.setPolishEnabled(false)
+        await gate.succeed()
+        await enabling.value
+
+        XCTAssertFalse(box.polish)
+        XCTAssertFalse(model.polishEnabled)
+        XCTAssertFalse(model.isValidatingPolish)
+        XCTAssertEqual(box.warmups, 0)
+    }
+
+    func testMenuRefreshDoesNotCancelPendingValidation() async {
+        let box = StateBox()
+        let gate = ValidationGate()
+        let model = makeModel(box: box, validatePolish: { await gate.wait() })
+
+        let enabling = Task { @MainActor in await model.setPolishEnabled(true) }
+        await Task.yield()
+        XCTAssertTrue(model.isValidatingPolish)
+
+        model.refreshFromConfig(polishAvailability: true)
+        XCTAssertTrue(model.isValidatingPolish)
+
+        await gate.succeed()
+        await enabling.value
+
+        XCTAssertTrue(box.polish)
+        XCTAssertTrue(model.polishEnabled)
+        XCTAssertFalse(model.isValidatingPolish)
+        XCTAssertEqual(box.warmups, 1)
+    }
+
+    func testLateAutoValidationCannotSurviveMasterDisable() async {
+        let box = StateBox()
+        box.polish = true
+        let gate = ValidationGate()
+        let model = makeModel(box: box, validatePolish: { await gate.wait() })
+
+        let enabling = Task { @MainActor in await model.setAutoPolishEnabled(true) }
+        await Task.yield()
+        XCTAssertTrue(model.isValidatingPolish)
+
+        await model.setPolishEnabled(false)
+        await gate.succeed()
+        await enabling.value
+
+        XCTAssertFalse(box.polish)
+        XCTAssertFalse(box.autoPolish)
+        XCTAssertFalse(model.polishEnabled)
+        XCTAssertFalse(model.autoPolishEnabled)
+        XCTAssertFalse(model.isValidatingPolish)
+        XCTAssertEqual(box.warmups, 0)
+    }
+
+    func testManualPolishDisableClearsAutoAndReleases() async {
         let box = StateBox()
         box.polish = true
         box.autoPolish = true
@@ -117,7 +217,9 @@ final class TextSettingsModelTests: XCTestCase {
 
         await model.setPolishEnabled(false)
 
-        XCTAssertEqual(box.releases, 0)
+        XCTAssertFalse(box.autoPolish)
+        XCTAssertFalse(model.autoPolishEnabled)
+        XCTAssertEqual(box.releases, 1)
     }
 
     func testExclusionsPersistNormalizedAndCanBeRemoved() {
@@ -162,6 +264,26 @@ final class TextSettingsModelTests: XCTestCase {
         XCTAssertEqual(model.evalBytes, 0)
     }
 
+    func testEditPolishInstructionsOpensUnifiedEvalWindow() {
+        let box = StateBox()
+        let model = makeModel(box: box)
+
+        model.editPolishInstructions()
+
+        XCTAssertEqual(box.evalShows, 1)
+        XCTAssertEqual(box.evalPromptFocusRequests, [true])
+    }
+
+    func testShowEvalWindowDoesNotRequestPromptFocus() {
+        let box = StateBox()
+        let model = makeModel(box: box)
+
+        model.showEvalWindow()
+
+        XCTAssertEqual(box.evalShows, 1)
+        XCTAssertEqual(box.evalPromptFocusRequests, [false])
+    }
+
     func testPaneAndStatusBarHandlersUseSharedModelContract() throws {
         let pane = try source(named: "Settings/TextPane.swift")
         let statusBar = try source(named: "StatusBarController.swift")
@@ -173,7 +295,7 @@ final class TextSettingsModelTests: XCTestCase {
         XCTAssertFalse(pane.contains("AppConfig.shared.textPolishEnabled ="))
         XCTAssertFalse(pane.contains("AppConfig.shared.textTranslationEnabled ="))
 
-        XCTAssertTrue(statusBar.contains("textSettingsModel.togglePolish()"))
+        XCTAssertTrue(statusBar.contains("textSettingsModel.toggleAutoPolish()"))
         XCTAssertTrue(statusBar.contains("textSettingsModel.toggleTranslation()"))
         XCTAssertTrue(statusBar.contains("textSettingsModel.setTranslationTarget"))
         XCTAssertFalse(statusBar.contains("AppConfig.shared.textPolishEnabled ="))
@@ -182,7 +304,8 @@ final class TextSettingsModelTests: XCTestCase {
 
     private func makeModel(
         box: StateBox,
-        validation: TextPolisher.ValidationResult
+        validation: TextPolisher.ValidationResult = .ok,
+        validatePolish: (() async -> TextPolisher.ValidationResult)? = nil
     ) -> TextSettingsModel {
         TextSettingsModel(
             storage: .init(
@@ -204,14 +327,16 @@ final class TextSettingsModelTests: XCTestCase {
                     box.evalBytes = 0
                 },
                 revealEval: { box.evalReveals += 1 },
-                showEvalWindow: { box.evalShows += 1 }
+                showEvalWindow: {
+                    box.evalShows += 1
+                    box.evalPromptFocusRequests.append($0)
+                }
             ),
             initialPolishAvailability: true,
-            validatePolish: { validation },
+            validatePolish: validatePolish ?? { validation },
             warmupPolish: { box.warmups += 1 },
             releasePolish: { box.releases += 1 },
-            presentUnavailable: { box.alerts.append($0) },
-            openInstructions: {}
+            presentUnavailable: { box.alerts.append($0) }
         )
     }
 

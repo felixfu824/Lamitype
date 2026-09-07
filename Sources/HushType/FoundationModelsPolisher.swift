@@ -25,6 +25,7 @@ enum FoundationModelsPolisher {
     /// False after releaseSession() so an in-flight polish's replenish can't
     /// resurrect a standby for a feature the user just toggled off.
     private static var poolingEnabled = false
+    private static var promptGeneration: UInt64 = 0
 
     static func availabilityReason() -> String? {
         switch SystemLanguageModel.default.availability {
@@ -75,6 +76,15 @@ enum FoundationModelsPolisher {
         log.info("Text Polish standby session released")
     }
 
+    static func promptDidChange() {
+        promptGeneration &+= 1
+        standbySession = nil
+        standbyFingerprint = nil
+        // Do not issue a prewarm while an older request may still be responding:
+        // the daemon serializes them and can add ~320 ms to that request. The
+        // next ordinary polish cold-starts and replenishes after it completes.
+    }
+
     #if DEBUG
     static var standbyFingerprintForTesting: Int? { standbyFingerprint }
     #endif
@@ -92,11 +102,13 @@ enum FoundationModelsPolisher {
     static func polish(
         _ text: String,
         mixRetry: Bool = false,
-        instructions: String? = nil
+        instructions: String? = nil,
+        allowStandby: Bool = true
     ) async -> Result<String, Error> {
         let prompt = instructions ?? PolishPrompt.activePrompt()
         let fingerprint = prompt.hashValue
-        let bypassStandby = instructions != nil
+        let bypassStandby = !allowStandby
+        let generation = promptGeneration
 
         // Consume the standby if its instructions match the current prompt
         // (a polish_rules.txt edit changes the fingerprint and forces a cold
@@ -126,7 +138,9 @@ enum FoundationModelsPolisher {
         let userPrompt = preReminder + "Input: <selection>\(text)</selection>\(reminder)\nOutput:"
 
         defer {
-            if !bypassStandby { replenishStandby(prompt: prompt) }
+            if !bypassStandby, generation == promptGeneration {
+                replenishStandby(prompt: prompt)
+            }
         }
         do {
             let response = try await session.respond(to: userPrompt, options: options)

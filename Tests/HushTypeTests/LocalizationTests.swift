@@ -257,6 +257,34 @@ final class LocalizationTests: XCTestCase {
         }
     }
 
+    func testPluralLookupInMacOSApplicationBundle() throws {
+        let root = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)
+        let app = root.appendingPathComponent("Fixture.app")
+        let contents = app.appendingPathComponent("Contents")
+        let resources = contents.appendingPathComponent("Resources")
+        try FileManager.default.createDirectory(at: resources, withIntermediateDirectories: true)
+        defer { try? FileManager.default.removeItem(at: root) }
+        let info = ["CFBundleIdentifier": "test.lamitype.localization.\(UUID().uuidString)",
+                    "CFBundlePackageType": "APPL", "CFBundleExecutable": "Fixture"]
+        try PropertyListSerialization.data(fromPropertyList: info, format: .xml, options: 0)
+            .write(to: contents.appendingPathComponent("Info.plist"))
+        for tag in ["en", "zh-Hant-TW"] {
+            let source = try XCTUnwrap(Bundle.module.resourceURL).appendingPathComponent("\(tag).lproj")
+            try FileManager.default.copyItem(at: source, to: resources.appendingPathComponent("\(tag).lproj"))
+        }
+        L10n.overrideBaseBundle = try XCTUnwrap(Bundle(url: app))
+        for (tag, singular, plural) in [("en", "1 entry", "14 entries"),
+                                        ("zh-Hant-TW", "1 筆", "14 筆")] {
+            defaults.set(tag, forKey: "hushtype.interfaceLanguage")
+            L10n.resetLaunchStateForTests()
+            XCTAssertEqual(L10n.plural("eval.entries_count", 1, fallback: "missing"), singular)
+            XCTAssertEqual(L10n.plural("eval.entries_count", 14, fallback: "missing"), plural)
+            L10n.forceLegacyLookupForTests = true
+            XCTAssertEqual(L10n.string("eval.filter.reset", fallback: "missing"),
+                           tag == "en" ? "Clear Filters" : "清除篩選條件")
+        }
+    }
+
     func testPluralEnglishVariants() {
         defaults.set("en", forKey: "hushtype.interfaceLanguage")
         L10n.resetLaunchStateForTests()

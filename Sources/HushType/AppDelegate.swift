@@ -109,6 +109,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     private var liveCaptionManager: LiveCaptionManager?
     private let tapArbiter = TapArbiter()
     private var consecutiveCloudNetworkFailures = 0
+    private var evalStoreSessionStarted = false
 
     private enum SelectionSource {
         case copySelection
@@ -151,7 +152,10 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
             NSApp.terminate(nil)
             return
         }
-        Task { @MainActor in await EvalStore.shared.reload() }
+        evalStoreSessionStarted = true
+        if !EvalStore.shared.beginNewSessionClearingOrphans() {
+            AppConfig.shared.evalModeEnabled = false
+        }
 
         // Cap MLX's GPU buffer recycle pool process-wide. The dictation path
         // never bounds this pool (clearCache() runs only on manual Unload and
@@ -209,12 +213,6 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
             }
         }
 
-        // Wire quit
-        statusBar.onQuit = { [weak self] in
-            self?.hotkeyManager.stop()
-            self?.hideOverlay()
-        }
-
         // Wire unload/reload
         statusBar.onUnloadModel = { [weak self] in
             Task { @MainActor in
@@ -242,7 +240,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         statusBar.onShowEvalWindow = { [weak self] in self?.openEvalWindow() }
         NotificationCenter.default.addObserver(
             self,
-            selector: #selector(openEvalWindowRequested),
+            selector: #selector(openEvalWindowRequested(_:)),
             name: .evalShowWindowRequested,
             object: nil
         )
@@ -342,7 +340,14 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         // benefit from `prewarm()` on relaunch when Text Polish is already on.
     }
 
+    func applicationShouldTerminate(_ sender: NSApplication) -> NSApplication.TerminateReply {
+        EvalWindow.confirmApplicationTermination() ? .terminateNow : .terminateCancel
+    }
+
     func applicationWillTerminate(_ notification: Notification) {
+        if evalStoreSessionStarted {
+            EvalStore.shared.endSessionAndClear()
+        }
         tapArbiter.reset()
         hotkeyManager.stop()
         hideOverlay()
@@ -862,7 +867,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
                 return
             }
 
-            print("[Lamitype] Translating: '\(text.prefix(50))...'")
+            print("[Lamitype] Translating \(text.count) characters")
             self.translationManager.translate(text: text) { [weak self] result in
                 DispatchQueue.main.async {
                     guard let self else { return }
@@ -895,7 +900,17 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     // MARK: - Text Polish
 
     private func handlePolish(source: SelectionSource) {
-        let target = captureInsertionFocus()
+        let target: NSRunningApplication?
+        switch source {
+        case .copySelection:
+            target = captureInsertionFocus()
+        case .provided:
+            // macOS activates this accessory app for Services, while the
+            // sending application retains ownership of the menu bar.
+            let sender = NSWorkspace.shared.menuBarOwningApplication
+            target = sender?.processIdentifier == ProcessInfo.processInfo.processIdentifier
+                ? nil : sender
+        }
         guard state == .idle else {
             log.info("Ignoring polish - state is \(String(describing: self.state), privacy: .public)")
             return
@@ -930,9 +945,9 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
                     elapsed: elapsed,
                     abandoned: false
                 )
-                if changed {
-                    // The source application must retain focus through the
-                    // complete simulated paste before any result window appears.
+                if changed, await self.restoreInsertionFocus(target) {
+                    // Inference and Services can move focus. Paste only after
+                    // the original application confirms it is active again.
                     TextInserter.insert(polished)
                 }
 
@@ -1044,9 +1059,9 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     ) {
         error.pointee = nil
         let text = pboard.string(forType: .string) ?? ""
-        Task { @MainActor [weak self] in
-            self?.handlePolish(source: .provided(text))
-        }
+        // Capture the sender's focus before returning to Services; deferring
+        // this entry point can observe Lamitype after the service activates it.
+        handlePolish(source: .provided(text))
     }
 
     @objc func translateSelection(
@@ -1708,22 +1723,39 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         return result.text
     }
 
-    @objc private func openEvalWindowRequested() {
-        openEvalWindow()
+    @objc private func openEvalWindowRequested(_ notification: Notification) {
+        openEvalWindow(focusPromptEditor: notification.userInfo?["focusPromptEditor"] as? Bool ?? false)
     }
 
-    private func openEvalWindow() {
+    private func openEvalWindow(focusPromptEditor: Bool = false) {
         EvalWindow.present(
             isAppIdle: { [weak self] in self?.state == .idle },
             requestEvalEnabled: { [weak self] enabled in
                 self?.requestEvalModeEnabled(enabled)
-            }
+            },
+            focusPromptEditor: focusPromptEditor
         )
     }
 
     private func requestEvalModeEnabled(_ enabled: Bool) {
         if !enabled {
             AppConfig.shared.evalModeEnabled = false
+            return
+        }
+        guard EvalStore.shared.acceptsWrites else {
+            AppConfig.shared.evalModeEnabled = false
+            let alert = NSAlert()
+            alert.messageText = L10n.string(
+                "eval.storage_unavailable.title",
+                fallback: "Eval storage is unavailable"
+            )
+            alert.informativeText = L10n.string(
+                "eval.storage_unavailable.body",
+                fallback: "Lamitype could not prepare its private Eval storage. Eval Mode remains off. Restart Lamitype to try again."
+            )
+            alert.alertStyle = .warning
+            alert.addButton(withTitle: L10n.string("common.button.ok", fallback: "OK"))
+            alert.runModal()
             return
         }
         if !AppConfig.shared.evalModeIntroShown {
@@ -1734,7 +1766,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
             )
             alert.informativeText = L10n.string(
                 "eval.intro.body",
-                fallback: "While it is on, everything you dictate or polish is saved as plain text in Lamitype's Application Support folder, except in excluded apps and while secure input is active. Nothing is sent anywhere. Delete it any time from the window or Settings."
+                fallback: "While on, local dictation and selection proofreading are saved as plain text on this Mac. Excluded apps and macOS Secure Input are not captured. No apps are excluded by default; choose them in Settings > Text. Entries are deleted when Lamitype quits normally; after a crash or force quit, leftovers are cleared on next launch. Export before quitting to keep cases. Saved prompts and exported files remain. Eval Mode does not upload text."
             )
             alert.alertStyle = .warning
             alert.addButton(withTitle: L10n.string("eval.intro.turn_on", fallback: "Turn On"))

@@ -3,14 +3,16 @@ import XCTest
 
 final class AutoPolishPolicyTests: XCTestCase {
     private func decide(
-        enabled: Bool = true,
+        masterEnabled: Bool = true,
+        automaticEnabled: Bool = true,
         available: Bool = true,
         engine: AppConfig.DictationEngine = .local,
         target: String? = "com.example.editor",
         excluded: [String] = []
     ) -> AutoPolishPolicy.Decision {
         AutoPolishPolicy.decide(
-            enabled: enabled,
+            masterEnabled: masterEnabled,
+            automaticEnabled: automaticEnabled,
             available: available,
             engine: engine,
             targetBundleID: target,
@@ -19,7 +21,8 @@ final class AutoPolishPolicyTests: XCTestCase {
     }
 
     func testDecisionPrecedenceAndHappyPath() {
-        XCTAssertEqual(decide(enabled: false, available: false, engine: .openai), .skip(.disabled))
+        XCTAssertEqual(decide(masterEnabled: false, available: false, engine: .openai), .skip(.disabled))
+        XCTAssertEqual(decide(automaticEnabled: false), .skip(.disabled))
         XCTAssertEqual(decide(available: false, engine: .gemini), .skip(.notLocalEngine))
         XCTAssertEqual(decide(available: false), .skip(.unavailable))
         XCTAssertEqual(decide(), .polish)

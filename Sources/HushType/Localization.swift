@@ -285,7 +285,7 @@ enum L10n {
     /// variant's raw template (before `String(format:)`), or nil when the
     /// locale bundle, table, or key is missing/malformed (SPEC §5.4 step 2).
     static func pluralVariant(_ key: String, count: Int, table: String, tag: String, in base: Bundle) -> String? {
-        let lprojURL = base.bundleURL.appendingPathComponent("\(tag).lproj")
+        let lprojURL = (base.resourceURL ?? base.bundleURL).appendingPathComponent("\(tag).lproj")
         guard let lproj = Bundle(path: lprojURL.path) else {
             return nil
         }
@@ -332,7 +332,7 @@ enum L10n {
     }
 
     private static func legacyLookup(_ key: String, table: String, tag: String, in base: Bundle) -> String? {
-        let lprojURL = base.bundleURL.appendingPathComponent("\(tag).lproj")
+        let lprojURL = (base.resourceURL ?? base.bundleURL).appendingPathComponent("\(tag).lproj")
         guard let lproj = Bundle(path: lprojURL.path) else {
             return nil
         }

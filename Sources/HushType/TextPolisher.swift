@@ -208,24 +208,28 @@ enum TextPolisher {
     }
 
     static func polish(_ text: String) async -> PolishResult {
-        await polish(
+        let prompt = PolishPrompt.effectivePromptSnapshot()
+        return await polish(
             text,
             requiresManualToggle: true,
             usesCallerReturnDeadline: false,
             deadlineSeconds: 30,
             startedAt: Date(),
-            instructions: nil
+            instructions: prompt,
+            allowStandby: true
         )
     }
 
     static func polishDictation(_ text: String) async -> PolishResult {
-        await polish(
+        let prompt = PolishPrompt.effectivePromptSnapshot()
+        return await polish(
             text,
             requiresManualToggle: false,
             usesCallerReturnDeadline: true,
             deadlineSeconds: dictationDeadlineSeconds,
             startedAt: Date(),
-            instructions: nil
+            instructions: prompt,
+            allowStandby: true
         )
     }
 
@@ -241,7 +245,8 @@ enum TextPolisher {
             usesCallerReturnDeadline: true,
             deadlineSeconds: budget.rawValue,
             startedAt: Date(),
-            instructions: prompt
+            instructions: prompt,
+            allowStandby: false
         )
     }
 
@@ -251,7 +256,8 @@ enum TextPolisher {
         usesCallerReturnDeadline: Bool,
         deadlineSeconds: UInt64,
         startedAt: Date,
-        instructions: String?
+        instructions: String?,
+        allowStandby: Bool
     ) async -> PolishResult {
         if requiresManualToggle, !AppConfig.shared.textPolishEnabled {
             return .failure(.disabled)
@@ -275,7 +281,8 @@ enum TextPolisher {
             usesCallerReturnDeadline: usesCallerReturnDeadline,
             deadlineSeconds: deadlineSeconds,
             startedAt: startedAt,
-            instructions: instructions
+            instructions: instructions,
+            allowStandby: allowStandby
         )
         guard let modelResult else {
             return .failure(timeoutError(forManualPolish: !usesCallerReturnDeadline))
@@ -298,7 +305,8 @@ enum TextPolisher {
                     usesCallerReturnDeadline: usesCallerReturnDeadline,
                     deadlineSeconds: deadlineSeconds,
                     startedAt: startedAt,
-                    instructions: instructions
+                    instructions: instructions,
+                    allowStandby: allowStandby
                 )
                 guard let retryResult else {
                     return !usesCallerReturnDeadline
@@ -320,14 +328,16 @@ enum TextPolisher {
         usesCallerReturnDeadline: Bool,
         deadlineSeconds: UInt64,
         startedAt: Date,
-        instructions: String?
+        instructions: String?,
+        allowStandby: Bool
     ) async -> Result<String, Error>? {
         let work: @Sendable () async -> Result<String, Error> = {
             if #available(macOS 26.0, *) {
                 return await FoundationModelsPolisher.polish(
                     text,
                     mixRetry: mixRetry,
-                    instructions: instructions
+                    instructions: instructions,
+                    allowStandby: allowStandby
                 )
             }
             return .failure(PolishError.unavailable(L10n.string(

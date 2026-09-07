@@ -4,7 +4,7 @@ import os
 private let log = Logger(subsystem: "com.felix.hushtype", category: "statusbar")
 
 @MainActor
-final class StatusBarController: NSObject, NSMenuDelegate {
+final class StatusBarController: NSObject, NSMenuDelegate, NSMenuItemValidation {
     enum State {
         case loading(Double) // progress 0.0 to 1.0
         case idle
@@ -39,6 +39,7 @@ final class StatusBarController: NSObject, NSMenuDelegate {
     private var liveTranslatedChangeSourceItem: NSMenuItem!
     private var textTranslationMenuItem: NSMenuItem!
     private var textPolishMenuItem: NSMenuItem!
+    private var textPolishRecoveryItem: NSMenuItem!
     private var evalModeMenuItem: NSMenuItem!
     private var evalModeEnableItem: NSMenuItem!
     private var evalModeSubtitleItem: NSMenuItem!
@@ -189,12 +190,22 @@ final class StatusBarController: NSObject, NSMenuDelegate {
         refreshEvalMenuItems()
     }
 
+    func validateMenuItem(_ menuItem: NSMenuItem) -> Bool {
+        guard menuItem.action == #selector(toggleTextPolish) else {
+            return menuItem.isEnabled
+        }
+        return textSettingsModel.polishEnabled
+            && textSettingsModel.polishAvailable
+            && !textSettingsModel.isValidatingPolish
+    }
+
     // MARK: - Private
 
-    /// Builds the top-level menu: 10 items + 4 separators (was ~35 flat rows).
-    /// Frequent actions stay top-level; per-feature controls live in
-    /// submenus per the HIG for menu bar extras. Active features show the
-    /// green ✓ on the submenu PARENT so state is visible without opening it.
+    /// Builds the top-level menu: 10 primary items, one conditional Text
+    /// Polish recovery/status row, and 4 separators (was ~35 flat rows).
+    /// Frequent actions stay top-level; per-feature controls live in submenus
+    /// per the HIG for menu bar extras. Active features show the green ✓ on
+    /// the submenu PARENT so state is visible without opening it.
     private func setupMenu() {
         let menu = NSMenu()
         menu.delegate = self
@@ -234,18 +245,24 @@ final class StatusBarController: NSObject, NSMenuDelegate {
         menu.addItem(textTranslationMenuItem)
 
         textPolishMenuItem = NSMenuItem(
-            title: L10n.string("menu.text_polish", fallback: "Text Polish (double-tap ⌥)"),
+            title: L10n.string("menu.text_polish", fallback: "Auto Polish Dictation"),
             action: #selector(toggleTextPolish),
             keyEquivalent: ""
         )
         textPolishMenuItem.target = self
         updateToggleAppearance(
             textPolishMenuItem,
-            title: L10n.string("menu.text_polish", fallback: "Text Polish (double-tap ⌥)"),
-            checked: textSettingsModel.polishEnabled
+            title: L10n.string("menu.text_polish", fallback: "Auto Polish Dictation"),
+            checked: textSettingsModel.autoPolishEnabled
         )
-        textPolishMenuItem.isEnabled = textSettingsModel.polishAvailable
+        textPolishMenuItem.isEnabled =
+            textSettingsModel.polishEnabled && textSettingsModel.polishAvailable
         menu.addItem(textPolishMenuItem)
+
+        textPolishRecoveryItem = NSMenuItem(title: "", action: nil, keyEquivalent: "")
+        textPolishRecoveryItem.indentationLevel = 1
+        updateTextPolishRecoveryItem()
+        menu.addItem(textPolishRecoveryItem)
 
         let evalTitle = L10n.string("menu.eval_mode", fallback: "Eval Mode")
         evalModeMenuItem = NSMenuItem(title: evalTitle, action: nil, keyEquivalent: "")
@@ -425,7 +442,7 @@ final class StatusBarController: NSObject, NSMenuDelegate {
         ))
         addSubtitle(L10n.string(
             "menu.live_translated_caption.subtitle",
-            fallback: "Real-time foreign-language → text via OpenAI · $"
+            fallback: "via OpenAI · Cloud · $"
         ), to: sub)
         let startTitle = L10n.string("menu.caption.start_last_source", fallback: "Start with Last Source")
         let microphoneTitle = L10n.string("menu.caption.from_microphone", fallback: "From Microphone")
@@ -535,7 +552,7 @@ final class StatusBarController: NSObject, NSMenuDelegate {
         translationHintItem.attributedTitle = NSAttributedString(
             string: L10n.string(
                 "menu.translation_hint",
-                fallback: "Tap Right ⌥ to translate selection"
+                fallback: "Tap Right ⌥ to translate"
             ),
             attributes: hintAttrs
         )
@@ -832,7 +849,7 @@ final class StatusBarController: NSObject, NSMenuDelegate {
     // MARK: - Text Translation
 
     @objc private func toggleTextPolish() {
-        textSettingsModel.togglePolish()
+        textSettingsModel.toggleAutoPolish()
     }
 
     @objc private func toggleEvalMode() {
@@ -910,6 +927,7 @@ final class StatusBarController: NSObject, NSMenuDelegate {
 
     private func refreshTextMenuItems() {
         guard textPolishMenuItem != nil,
+              textPolishRecoveryItem != nil,
               textTranslationMenuItem != nil,
               textTranslationEnableItem != nil,
               translateToItem != nil,
@@ -920,19 +938,23 @@ final class StatusBarController: NSObject, NSMenuDelegate {
         let polishTitle = textSettingsModel.isValidatingPolish
             ? L10n.string(
                 "menu.text_polish.validating",
-                fallback: "Text Polish (validating…)"
+                fallback: "Auto Polish Dictation (validating…)"
             )
             : L10n.string(
                 "menu.text_polish",
-                fallback: "Text Polish (double-tap ⌥)"
+                fallback: "Auto Polish Dictation"
             )
         updateToggleAppearance(
             textPolishMenuItem,
             title: polishTitle,
-            checked: textSettingsModel.polishEnabled
+            checked: textSettingsModel.autoPolishEnabled
         )
         textPolishMenuItem.isEnabled =
-            textSettingsModel.polishAvailable && !textSettingsModel.isValidatingPolish
+            textSettingsModel.polishEnabled
+                && textSettingsModel.polishAvailable
+                && !textSettingsModel.isValidatingPolish
+        textPolishMenuItem.toolTip = nil
+        updateTextPolishRecoveryItem()
 
         updateToggleAppearance(
             textTranslationMenuItem,
@@ -954,6 +976,46 @@ final class StatusBarController: NSObject, NSMenuDelegate {
     private func updateTranslationSubItems() {
         translateToItem.isHidden = !textSettingsModel.translationEnabled
         translationHintItem.isHidden = !textSettingsModel.translationEnabled
+    }
+
+    private func updateTextPolishRecoveryItem() {
+        if !textSettingsModel.polishEnabled {
+            textPolishRecoveryItem.title = L10n.string(
+                "menu.text_polish.recovery.open_settings",
+                fallback: "Enable Text Polish in Settings…"
+            )
+            textPolishRecoveryItem.action = #selector(openTextPolishSettings)
+            textPolishRecoveryItem.target = self
+            textPolishRecoveryItem.isEnabled = true
+            textPolishRecoveryItem.isHidden = false
+        } else if textSettingsModel.isValidatingPolish {
+            textPolishRecoveryItem.title = L10n.string(
+                "menu.text_polish.status.validating",
+                fallback: "Checking whether Text Polish is available…"
+            )
+            textPolishRecoveryItem.action = nil
+            textPolishRecoveryItem.target = nil
+            textPolishRecoveryItem.isEnabled = false
+            textPolishRecoveryItem.isHidden = false
+        } else if !textSettingsModel.polishAvailable {
+            textPolishRecoveryItem.title = L10n.format(
+                "menu.text_polish.status.unavailable",
+                "Text Polish is unavailable: %1$@",
+                arguments: [TextPolisher.unavailableReasonCached]
+            )
+            textPolishRecoveryItem.action = nil
+            textPolishRecoveryItem.target = nil
+            textPolishRecoveryItem.isEnabled = false
+            textPolishRecoveryItem.isHidden = false
+        } else {
+            textPolishRecoveryItem.isHidden = true
+        }
+    }
+
+    @objc private func openTextPolishSettings() {
+        Task { @MainActor in
+            LamitypeSettingsWindowController.shared.presentAndFocus(pane: .text)
+        }
     }
 
     private func updateTranslateToCheckmarks() {

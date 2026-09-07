@@ -150,7 +150,7 @@ enum DictionaryReplacer {
         }
 
         if anyReplaced {
-            log.debug("Dictionary applied: \(text) → \(result)")
+            log.debug("Dictionary replacement applied in=\(text.count, privacy: .public)ch out=\(result.count, privacy: .public)ch")
         }
         return result
     }
@@ -249,7 +249,7 @@ enum DictionaryReplacer {
             }
 
             guard let range = separatorRange else {
-                log.warning("Dictionary line \(lineNumber + 1) has no separator (expected ' -> '): \(line, privacy: .public)")
+                log.warning("Dictionary line \(lineNumber + 1) has no separator (expected ' -> ')")
                 continue
             }
 

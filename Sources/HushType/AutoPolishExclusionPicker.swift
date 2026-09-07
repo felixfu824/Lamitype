@@ -181,7 +181,7 @@ enum AutoPolishExclusionPicker {
         )
         panel.title = L10n.string(
             "window.auto_polish_picker.title",
-            fallback: "Excluded Apps for Auto Polish"
+            fallback: "Excluded Apps"
         )
         panel.contentViewController = NSHostingController(rootView: view)
         panel.isReleasedWhenClosed = false
@@ -223,7 +223,7 @@ private struct AutoPolishExclusionPickerView: View {
                 .font(.title3.weight(.semibold))
             Text(L10n.string(
                 "picker.auto_polish.description",
-                fallback: "Dictation into these apps is inserted exactly as transcribed, without the on-device proofread. Everything else is polished."
+                fallback: "Auto Polish keeps dictation unchanged in these apps, and Eval Mode never saves their text. Manual selection proofreading still works."
             ))
             .font(.caption)
             .foregroundStyle(.secondary)

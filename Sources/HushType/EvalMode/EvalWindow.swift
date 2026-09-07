@@ -4,11 +4,14 @@ import SwiftUI
 @MainActor
 private final class EvalWindowDelegate: NSObject, NSWindowDelegate {
     let onClose: () -> Void
+    let shouldClose: () -> Bool
 
-    init(onClose: @escaping () -> Void) {
+    init(shouldClose: @escaping () -> Bool, onClose: @escaping () -> Void) {
+        self.shouldClose = shouldClose
         self.onClose = onClose
     }
 
+    func windowShouldClose(_ sender: NSWindow) -> Bool { shouldClose() }
     func windowWillClose(_ notification: Notification) { onClose() }
 }
 
@@ -20,11 +23,20 @@ enum EvalWindow {
 
     static var isPresented: Bool { window != nil }
 
+    /// Reuses the window-close draft guard for application termination. A
+    /// canceled quit never reaches `applicationWillTerminate`, so session
+    /// entries remain available while the user keeps editing.
+    static func confirmApplicationTermination() -> Bool {
+        model?.confirmWindowClose() ?? true
+    }
+
     static func present(
         isAppIdle: @escaping () -> Bool,
-        requestEvalEnabled: @escaping (Bool) -> Void
+        requestEvalEnabled: @escaping (Bool) -> Void,
+        focusPromptEditor: Bool = false
     ) {
         if let window {
+            if focusPromptEditor { model?.showPromptEditor() }
             window.makeKeyAndOrderFront(nil)
             NSApp.activate(ignoringOtherApps: true)
             return
@@ -44,11 +56,13 @@ enum EvalWindow {
         panel.contentViewController = NSHostingController(rootView: EvalWindowView(model: model))
         panel.isReleasedWhenClosed = false
         panel.level = .normal
-        panel.minSize = NSSize(width: 760, height: 520)
+        panel.contentMinSize = NSSize(width: 760, height: 520)
         panel.setFrameAutosaveName("EvalModeWindow")
         panel.center()
 
-        let delegate = EvalWindowDelegate {
+        let delegate = EvalWindowDelegate(shouldClose: {
+            model.confirmWindowClose()
+        }) {
             model.close()
             DispatchQueue.main.async {
                 window = nil
@@ -63,5 +77,6 @@ enum EvalWindow {
         panel.makeKeyAndOrderFront(nil)
         NSApp.activate(ignoringOtherApps: true)
         Task { @MainActor in await model.open() }
+        if focusPromptEditor { model.showPromptEditor() }
     }
 }

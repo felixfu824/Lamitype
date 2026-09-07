@@ -19,12 +19,22 @@ final class EvalWindowModel: ObservableObject {
 
     @Published private(set) var entries: [EvalEntry] = []
     @Published var selectedID: String?
-    @Published var outcomeFilter: OutcomeFilter = .all
-    @Published var labelFilter: LabelFilter = .all
+    @Published var outcomeFilter: OutcomeFilter = .all {
+        didSet { reconcileSelection() }
+    }
+    @Published var labelFilter: LabelFilter = .all {
+        didSet { reconcileSelection() }
+    }
     @Published private(set) var evalEnabled = AppConfig.shared.evalModeEnabled
     @Published private(set) var suppressedCount = EvalCapture.suppressedCount
-    @Published var instructionsText = ""
-    @Published private(set) var fullOverrideActive = false
+    @Published var instructionsText = "" {
+        didSet {
+            promptSaveError = nil
+            if instructionsText != PolishPrompt.systemPrompt { draftRestoresDefault = false }
+        }
+    }
+    @Published private(set) var promptSaveError: String?
+    @Published var promptEditorPresented = false
     @Published private(set) var pendingDeletion: PendingDeletion?
     @Published private(set) var rerunBusy = false
     @Published private(set) var batchProgress: (completed: Int, total: Int)?
@@ -37,6 +47,8 @@ final class EvalWindowModel: ObservableObject {
     private var undoTask: Task<Void, Never>?
     private var batchTask: Task<Void, Never>?
     private var observers: [NSObjectProtocol] = []
+    private var savedPromptSnapshot = ""
+    private var draftRestoresDefault = false
 
     init(
         store: EvalStore? = nil,
@@ -49,8 +61,9 @@ final class EvalWindowModel: ObservableObject {
         appIdle = isAppIdle()
         entries = self.store.entries
         selectedID = entries.first?.id
-        instructionsText = PolishPrompt.rawRulesContents()
-        fullOverrideActive = PolishPrompt.fullOverrideIsActive
+        let prompt = PolishPrompt.effectivePromptSnapshot()
+        instructionsText = prompt
+        savedPromptSnapshot = prompt
 
         observers.append(NotificationCenter.default.addObserver(
             forName: .evalModeDidChange,
@@ -112,7 +125,7 @@ final class EvalWindowModel: ObservableObject {
 
     var selectedEntry: EvalEntry? {
         guard let selectedID else { return nil }
-        return entries.first { $0.id == selectedID && pendingDeletion?.entry.id != $0.id }
+        return filteredEntries.first { $0.id == selectedID }
     }
 
     var labelledCounts: (correct: Int, overEdited: Int, wrongOrMissed: Int, unlabelled: Int) {
@@ -125,6 +138,12 @@ final class EvalWindowModel: ObservableObject {
     }
 
     var rerunUnavailableReason: String? {
+        guard CleanupPromptOverride.parseFullPrompt(contents: instructionsText) != nil else {
+            return L10n.string(
+                "eval.rerun.empty_prompt",
+                fallback: "Enter a prompt before rerunning."
+            )
+        }
         guard appIdle else {
             return L10n.string(
                 "eval.rerun.busy",
@@ -145,12 +164,29 @@ final class EvalWindowModel: ObservableObject {
         await store.reload()
         syncFromStore()
         appIdle = isAppIdle()
-        fullOverrideActive = PolishPrompt.fullOverrideIsActive
+        refreshPromptDraftIfClean()
     }
 
     func close() {
         commitPendingDelete()
         batchTask?.cancel()
+    }
+
+    var hasUnsavedPromptDraft: Bool {
+        instructionsText != savedPromptSnapshot || draftRestoresDefault
+    }
+
+    func showPromptEditor() {
+        refreshPromptDraftIfClean()
+        promptEditorPresented = true
+    }
+
+    func requestClosePromptEditor() {
+        promptEditorPresented = false
+    }
+
+    func confirmWindowClose() -> Bool {
+        confirmDiscardPromptDraftIfNeeded()
     }
 
     func toggleEvalMode() {
@@ -183,6 +219,7 @@ final class EvalWindowModel: ObservableObject {
             selectedID = pendingDeletion.previousSelection
         }
         pendingDeletion = nil
+        reconcileSelection()
     }
 
     func commitPendingDelete() {
@@ -195,12 +232,13 @@ final class EvalWindowModel: ObservableObject {
     }
 
     func rerunSelected() {
-        guard let id = selectedID, !rerunBusy, rerunUnavailableReason == nil else { return }
+        guard let id = selectedEntry?.id, !rerunBusy, rerunUnavailableReason == nil else { return }
+        let promptSnapshot = instructionsText
         batchStoppedForDictation = false
         rerunBusy = true
         Task { @MainActor [weak self] in
             guard let self else { return }
-            await self.rerun(entryID: id)
+            await self.rerun(entryID: id, prompt: promptSnapshot)
             self.rerunBusy = false
         }
     }
@@ -213,6 +251,7 @@ final class EvalWindowModel: ObservableObject {
         rerunBusy = true
         batchStoppedForDictation = false
         batchProgress = (0, ids.count)
+        let promptSnapshot = instructionsText
         batchTask = Task { @MainActor [weak self] in
             guard let self else { return }
             for (index, id) in ids.enumerated() {
@@ -221,7 +260,7 @@ final class EvalWindowModel: ObservableObject {
                     self.batchStoppedForDictation = true
                     break
                 }
-                await self.rerun(entryID: id)
+                await self.rerun(entryID: id, prompt: promptSnapshot)
                 self.batchProgress = (index + 1, ids.count)
                 guard self.isAppIdle() else {
                     self.batchStoppedForDictation = true
@@ -236,26 +275,35 @@ final class EvalWindowModel: ObservableObject {
 
     func cancelBatch() {
         batchTask?.cancel()
-        batchTask = nil
-        batchProgress = nil
-        rerunBusy = false
+        // The current AFM response is not necessarily cancellation-aware.
+        // Keep the batch busy until its task exits so a second batch cannot be
+        // started and then have its state cleared by this older task.
     }
 
-    func saveInstructions() {
-        guard !fullOverrideActive else { return }
-        let alert = NSAlert()
-        alert.messageText = L10n.string(
-            "eval.rerun.save_confirm",
-            fallback: "Replace your Polish Instructions file with this text?"
-        )
-        alert.addButton(withTitle: L10n.string("eval.rerun.save_replace", fallback: "Replace"))
-        alert.addButton(withTitle: L10n.string("common.button.cancel", fallback: "Cancel"))
-        guard alert.runModal() == .alertFirstButtonReturn else { return }
+    @discardableResult
+    func savePrompt() -> Bool {
         do {
-            try PolishPrompt.saveRulesVerbatim(instructionsText)
+            if draftRestoresDefault && instructionsText == PolishPrompt.systemPrompt {
+                try PolishPrompt.restoreDefaultPrompt()
+            } else {
+                try PolishPrompt.saveCompletePrompt(instructionsText)
+            }
+            savedPromptSnapshot = PolishPrompt.effectivePromptSnapshot()
+            instructionsText = savedPromptSnapshot
+            draftRestoresDefault = false
+            promptSaveError = nil
+            if #available(macOS 26.0, *) { FoundationModelsPolisher.promptDidChange() }
+            return true
         } catch {
-            presentError(error)
+            promptSaveError = error.localizedDescription
+            return false
         }
+    }
+
+    func restoreDefaultDraft() {
+        instructionsText = PolishPrompt.systemPrompt
+        draftRestoresDefault = true
+        promptSaveError = nil
     }
 
     func exportShown() {
@@ -316,18 +364,12 @@ final class EvalWindowModel: ObservableObject {
         syncFromStore()
     }
 
-    private func rerun(entryID: String) async {
+    private func rerun(entryID: String, prompt: String) async {
         guard var entry = entries.first(where: { $0.id == entryID }) else { return }
-        fullOverrideActive = PolishPrompt.fullOverrideIsActive
-        let rawInstructions = fullOverrideActive ? nil : instructionsText
-        let recordedInstructions = Self.persistedRerunInstructions(
-            raw: rawInstructions,
-            fullOverrideActive: fullOverrideActive
-        )
         let started = Date()
         let result = await TextPolisher.rerun(
             entry.original,
-            instructions: rawInstructions,
+            instructions: prompt,
             budget: entry.source.rerunBudget
         )
         let elapsed = Int((Date().timeIntervalSince(started) * 1_000).rounded())
@@ -336,7 +378,7 @@ final class EvalWindowModel: ObservableObject {
         case .success(let output, let changed):
             rerun = EvalRerun(
                 at: Date(),
-                instructions: recordedInstructions,
+                instructions: prompt,
                 output: changed ? output : entry.original,
                 outcome: changed ? .polished : .unchanged,
                 reason: nil,
@@ -345,7 +387,7 @@ final class EvalWindowModel: ObservableObject {
         case .failure(let error):
             rerun = EvalRerun(
                 at: Date(),
-                instructions: recordedInstructions,
+                instructions: prompt,
                 output: entry.original,
                 outcome: .keptOriginal,
                 reason: error.stableToken,
@@ -361,18 +403,38 @@ final class EvalWindowModel: ObservableObject {
         NSAlert(error: error).runModal()
     }
 
-    nonisolated static func persistedRerunInstructions(
-        raw: String?,
-        fullOverrideActive: Bool
-    ) -> String? {
-        guard !fullOverrideActive, let raw else { return nil }
-        return CleanupPromptOverride.parse(contents: raw)
+    private func refreshPromptDraftIfClean() {
+        guard !hasUnsavedPromptDraft else { return }
+        let current = PolishPrompt.effectivePromptSnapshot()
+        savedPromptSnapshot = current
+        instructionsText = current
+        draftRestoresDefault = false
+    }
+
+    private func confirmDiscardPromptDraftIfNeeded() -> Bool {
+        guard hasUnsavedPromptDraft else { return true }
+        let alert = NSAlert()
+        alert.messageText = L10n.string(
+            "eval.prompt.unsaved.title",
+            fallback: "Discard unsaved prompt changes?"
+        )
+        alert.informativeText = L10n.string(
+            "eval.prompt.unsaved.body",
+            fallback: "Your draft has not been saved and will be lost."
+        )
+        alert.addButton(withTitle: L10n.string("eval.prompt.keep_editing", fallback: "Keep Editing"))
+        alert.addButton(withTitle: L10n.string("eval.prompt.discard", fallback: "Discard"))
+        return alert.runModal() == .alertSecondButtonReturn
     }
 
     private func syncFromStore() {
         entries = store.entries
         evalEnabled = AppConfig.shared.evalModeEnabled
         suppressedCount = EvalCapture.suppressedCount
+        reconcileSelection()
+    }
+
+    private func reconcileSelection() {
         if selectedEntry == nil {
             selectedID = filteredEntries.first?.id
         }

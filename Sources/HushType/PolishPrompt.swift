@@ -111,62 +111,10 @@ Output: The report is ready.
         return han > 2 * latinWords
     }
 
-    /// Prompt resolution order:
-    /// 1. `polish_prompt.txt`: full replacement (hidden power-user override).
-    /// 2. `polish_rules.txt`: user preferences merged into the baked-in
-    ///    prompt just before the Examples section (menu-exposed feature).
-    /// 3. Baked-in `systemPrompt`.
+    /// The single resolver used by manual polish, automatic polish, and Eval.
+    /// It performs the one-time legacy migration before returning a snapshot.
     static func activePrompt() -> String {
-        if let full = CleanupPromptOverride.currentPrompt(filename: "polish_prompt.txt") {
-            return full
-        }
-        return prompt(withRules: CleanupPromptOverride.currentPrompt(filename: rulesFilename))
+        effectivePromptSnapshot()
     }
 
-    // MARK: - User instructions file (mirrors the Customized Dictionary flow)
-
-    static let rulesFilename = "polish_rules.txt"
-
-    static var rulesFileURL: URL {
-        AppConfig.promptOverrideURL(filename: rulesFilename)
-    }
-
-    static var rulesFileExists: Bool {
-        FileManager.default.fileExists(atPath: rulesFileURL.path)
-    }
-
-    /// Whether a non-empty set of user instructions is currently active.
-    /// Used by the menu subtitle.
-    static var rulesActive: Bool {
-        CleanupPromptOverride.currentPrompt(filename: rulesFilename) != nil
-    }
-
-    @discardableResult
-    static func createRulesTemplateIfMissing() -> Bool {
-        let url = rulesFileURL
-        let fm = FileManager.default
-        if fm.fileExists(atPath: url.path) { return false }
-
-        do {
-            try fm.createDirectory(
-                at: url.deletingLastPathComponent(),
-                withIntermediateDirectories: true
-            )
-        } catch {
-            return false
-        }
-
-        let template = L10n.string(
-            "template.polish_rules.starter_document",
-            table: "Templates",
-            fallback: "# Lamitype Polish Instructions\n# ============================\n#\n# Extra instructions for Text Polish (double-tap Right Option, or\n# right-click → Services → \"Polish with Lamitype\").\n#\n# These are ADDED to Lamitype's built-in proofreading rules; the\n# built-ins stay active: fix-only proofreading, preserve meaning and\n# language mix, never answer or translate the selection.\n#\n# Rules:\n#   • Lines starting with # are comments (ignored)\n#   • Keep each instruction short and imperative; the on-device\n#     model is small, so a few clear rules work better than many\n#   • Changes take effect on the next polish (no restart needed)\n#\n# ---------------------------------------------------------------\n# Examples (delete the # at the start of a line to activate it)\n# ---------------------------------------------------------------\n#\n# Always use the Oxford comma.\n# Prefer Taiwan Mandarin word choices (寫成「計程車」，不要「出租車」).\n# Keep words in ALL CAPS exactly as typed.\n# Do not change line breaks.\n#\n# ---------------------------------------------------------------\n# Your instructions below:\n# ---------------------------------------------------------------\n"
-        )
-
-        do {
-            try template.write(to: url, atomically: true, encoding: .utf8)
-            return true
-        } catch {
-            return false
-        }
-    }
 }

@@ -19,7 +19,7 @@ final class TextSettingsModel: ObservableObject {
         var readEvalBytes: @MainActor () -> Int64
         var deleteAllEval: @MainActor () -> Void
         var revealEval: @MainActor () -> Void
-        var showEvalWindow: @MainActor () -> Void
+        var showEvalWindow: @MainActor (Bool) -> Void
 
         static let app = Storage(
             readPolishEnabled: { AppConfig.shared.textPolishEnabled },
@@ -39,8 +39,12 @@ final class TextSettingsModel: ObservableObject {
                 EvalStore.shared.ensureDirectories()
                 NSWorkspace.shared.activateFileViewerSelecting([AppSupportPaths.evalDirectoryURL])
             },
-            showEvalWindow: {
-                NotificationCenter.default.post(name: .evalShowWindowRequested, object: nil)
+            showEvalWindow: { focusPromptEditor in
+                NotificationCenter.default.post(
+                    name: .evalShowWindowRequested,
+                    object: nil,
+                    userInfo: ["focusPromptEditor": focusPromptEditor]
+                )
             }
         )
     }
@@ -61,9 +65,6 @@ final class TextSettingsModel: ObservableObject {
         },
         presentUnavailable: { reason in
             Task { @MainActor in TextSettingsModel.showUnavailableAlert(reason: reason) }
-        },
-        openInstructions: {
-            Task { @MainActor in TextSettingsModel.openInstructionsFile() }
         }
     )
 
@@ -86,7 +87,7 @@ final class TextSettingsModel: ObservableObject {
     private let warmupPolish: () -> Void
     private let releasePolish: () -> Void
     private let presentUnavailable: (String) -> Void
-    private let openInstructions: () -> Void
+    private var polishValidationGeneration: UInt = 0
 
     init(
         storage: Storage,
@@ -94,17 +95,20 @@ final class TextSettingsModel: ObservableObject {
         validatePolish: @escaping () async -> TextPolisher.ValidationResult,
         warmupPolish: @escaping () -> Void,
         releasePolish: @escaping () -> Void,
-        presentUnavailable: @escaping (String) -> Void,
-        openInstructions: @escaping () -> Void
+        presentUnavailable: @escaping (String) -> Void
     ) {
         self.storage = storage
         self.validatePolish = validatePolish
         self.warmupPolish = warmupPolish
         self.releasePolish = releasePolish
         self.presentUnavailable = presentUnavailable
-        self.openInstructions = openInstructions
-        polishEnabled = storage.readPolishEnabled()
-        autoPolishEnabled = storage.readAutoPolishEnabled()
+        let savedPolishEnabled = storage.readPolishEnabled()
+        let savedAutoPolishEnabled = storage.readAutoPolishEnabled()
+        polishEnabled = savedPolishEnabled
+        autoPolishEnabled = savedPolishEnabled && savedAutoPolishEnabled
+        if !savedPolishEnabled && savedAutoPolishEnabled {
+            storage.writeAutoPolishEnabled(false)
+        }
         excludedBundleIDs = AutoPolishPolicy.normalizedUnique(storage.readExcludedBundleIDs())
         polishAvailable = initialPolishAvailability
         translationEnabled = storage.readTranslationEnabled()
@@ -114,8 +118,13 @@ final class TextSettingsModel: ObservableObject {
     }
 
     func refreshFromConfig(polishAvailability: Bool? = nil) {
-        polishEnabled = storage.readPolishEnabled()
-        autoPolishEnabled = storage.readAutoPolishEnabled()
+        let savedPolishEnabled = storage.readPolishEnabled()
+        let savedAutoPolishEnabled = storage.readAutoPolishEnabled()
+        polishEnabled = savedPolishEnabled
+        autoPolishEnabled = savedPolishEnabled && savedAutoPolishEnabled
+        if !savedPolishEnabled && savedAutoPolishEnabled {
+            storage.writeAutoPolishEnabled(false)
+        }
         excludedBundleIDs = AutoPolishPolicy.normalizedUnique(storage.readExcludedBundleIDs())
         translationEnabled = storage.readTranslationEnabled()
         translationTarget = storage.readTranslationTarget()
@@ -127,6 +136,10 @@ final class TextSettingsModel: ObservableObject {
     }
 
     func refreshPolishAvailability(_ available: Bool) {
+        if !available && isValidatingPolish {
+            polishValidationGeneration &+= 1
+            isValidatingPolish = false
+        }
         polishAvailable = available
         onMenuRefresh?()
     }
@@ -135,27 +148,39 @@ final class TextSettingsModel: ObservableObject {
         Task { @MainActor in await setPolishEnabled(!polishEnabled) }
     }
 
+    func toggleAutoPolish() {
+        Task { @MainActor in await setAutoPolishEnabled(!autoPolishEnabled) }
+    }
+
     func requestPolishEnabled(_ enabled: Bool) {
         Task { @MainActor in await setPolishEnabled(enabled) }
     }
 
     func setPolishEnabled(_ enabled: Bool) async {
-        guard enabled != polishEnabled || (enabled && !polishAvailable) else {
+        guard enabled != polishEnabled
+                || isValidatingPolish
+                || (enabled && !polishAvailable) else {
             return
         }
 
         if !enabled {
+            polishValidationGeneration &+= 1
             storage.writePolishEnabled(false)
+            storage.writeAutoPolishEnabled(false)
             polishEnabled = false
+            autoPolishEnabled = false
             isValidatingPolish = false
-            if !autoPolishEnabled { releasePolish() }
+            releasePolish()
             onMenuRefresh?()
             return
         }
 
+        polishValidationGeneration &+= 1
+        let generation = polishValidationGeneration
         isValidatingPolish = true
         onMenuRefresh?()
         let result = await validatePolish()
+        guard generation == polishValidationGeneration else { return }
         isValidatingPolish = false
 
         switch result {
@@ -176,11 +201,14 @@ final class TextSettingsModel: ObservableObject {
     }
 
     func setAutoPolishEnabled(_ enabled: Bool) async {
-        guard enabled != autoPolishEnabled || (enabled && !polishAvailable) else {
+        guard enabled != autoPolishEnabled
+                || isValidatingPolish
+                || (enabled && !polishAvailable) else {
             return
         }
 
         if !enabled {
+            polishValidationGeneration &+= 1
             storage.writeAutoPolishEnabled(false)
             autoPolishEnabled = false
             isValidatingPolish = false
@@ -189,9 +217,20 @@ final class TextSettingsModel: ObservableObject {
             return
         }
 
+        guard polishEnabled else {
+            storage.writeAutoPolishEnabled(false)
+            autoPolishEnabled = false
+            onMenuRefresh?()
+            return
+        }
+
+        polishValidationGeneration &+= 1
+        let generation = polishValidationGeneration
         isValidatingPolish = true
         onMenuRefresh?()
         let result = await validatePolish()
+        guard generation == polishValidationGeneration,
+              polishEnabled else { return }
         isValidatingPolish = false
 
         switch result {
@@ -241,7 +280,7 @@ final class TextSettingsModel: ObservableObject {
     }
 
     func editPolishInstructions() {
-        openInstructions()
+        storage.showEvalWindow(true)
     }
 
     func refreshEvalData() {
@@ -250,7 +289,7 @@ final class TextSettingsModel: ObservableObject {
     }
 
     func showEvalWindow() {
-        storage.showEvalWindow()
+        storage.showEvalWindow(false)
     }
 
     func revealEvalData() {
@@ -279,28 +318,5 @@ final class TextSettingsModel: ObservableObject {
             ?? NSImage(systemSymbolName: "sparkles", accessibilityDescription: nil)
         alert.addButton(withTitle: L10n.string("common.button.ok", fallback: "OK"))
         alert.runModal()
-    }
-
-    @MainActor
-    private static func openInstructionsFile() {
-        PolishPrompt.createRulesTemplateIfMissing()
-        let url = PolishPrompt.rulesFileURL
-        guard FileManager.default.fileExists(atPath: url.path) else {
-            let alert = NSAlert()
-            alert.messageText = L10n.string(
-                "alert.file_create.polish.title",
-                fallback: "Could not open Polish instructions"
-            )
-            alert.informativeText = L10n.format(
-                "alert.file_create.polish.message",
-                "Failed to create the instructions file at:\n%1$@",
-                arguments: [url.path]
-            )
-            alert.alertStyle = .warning
-            alert.addButton(withTitle: L10n.string("common.button.ok", fallback: "OK"))
-            alert.runModal()
-            return
-        }
-        NSWorkspace.shared.open(url)
     }
 }

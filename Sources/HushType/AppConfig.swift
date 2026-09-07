@@ -198,6 +198,9 @@ final class AppConfig {
         }
         set {
             defaults.set(newValue, forKey: Keys.textPolishEnabled)
+            if !newValue {
+                defaults.set(false, forKey: Keys.autoPolishDictationEnabled)
+            }
             log.info("Text polish enabled: \(newValue, privacy: .public)")
         }
     }
@@ -213,8 +216,9 @@ final class AppConfig {
             return defaults.bool(forKey: Keys.autoPolishDictationEnabled)
         }
         set {
-            defaults.set(newValue, forKey: Keys.autoPolishDictationEnabled)
-            log.info("Auto polish dictation enabled: \(newValue, privacy: .public)")
+            let effectiveValue = newValue && textPolishEnabled
+            defaults.set(effectiveValue, forKey: Keys.autoPolishDictationEnabled)
+            log.info("Auto polish dictation enabled: \(effectiveValue, privacy: .public)")
         }
     }
 

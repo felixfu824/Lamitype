@@ -25,13 +25,14 @@ enum AutoPolishPolicy {
     }
 
     static func decide(
-        enabled: Bool,
+        masterEnabled: Bool,
+        automaticEnabled: Bool,
         available: Bool,
         engine: AppConfig.DictationEngine,
         targetBundleID: String?,
         excludedBundleIDs: [String]
     ) -> Decision {
-        guard enabled else { return .skip(.disabled) }
+        guard masterEnabled, automaticEnabled else { return .skip(.disabled) }
         guard engine == .local else { return .skip(.notLocalEngine) }
         guard available else { return .skip(.unavailable) }
         guard let targetBundleID, !normalize(targetBundleID).isEmpty else {
@@ -51,7 +52,8 @@ enum AutoPolishPolicy {
         targetBundleID: String?
     ) -> Decision {
         decide(
-            enabled: AppConfig.shared.autoPolishDictationEnabled,
+            masterEnabled: AppConfig.shared.textPolishEnabled,
+            automaticEnabled: AppConfig.shared.autoPolishDictationEnabled,
             available: TextPolisher.isAvailableCached,
             engine: engine,
             targetBundleID: targetBundleID,

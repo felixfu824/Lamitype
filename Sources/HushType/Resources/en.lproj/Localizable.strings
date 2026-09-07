@@ -212,11 +212,11 @@
 
 /* Text Polish feature and activation hint. */
 
-"menu.text_polish" = "Text Polish (double-tap ⌥)";
+"menu.text_polish" = "Auto Polish Dictation";
 
 /* Temporary validation state after enabling Text Polish. */
 
-"menu.text_polish.validating" = "Text Polish (validating…)";
+"menu.text_polish.validating" = "Auto Polish Dictation (validating…)";
 
 
 
@@ -244,7 +244,7 @@
 
 /* Cloud/provider/cost marker subtitle; dollar glyph is retained. */
 
-"menu.live_translated_caption.subtitle" = "Real-time foreign-language → text via OpenAI · $";
+"menu.live_translated_caption.subtitle" = "via OpenAI · Cloud · $";
 
 /* Starts the selected caption product with its last source. */
 
@@ -288,7 +288,7 @@
 
 /* Disabled activation hint; preserve shortcut glyph. */
 
-"menu.translation_hint" = "Tap Right ⌥ to translate selection";
+"menu.translation_hint" = "Tap Right ⌥ to translate";
 
 /* Automatic target/detection choice in translation and speech-to-text language menus. */
 
@@ -944,11 +944,11 @@
 
 /* Auto Polish exclusion picker. */
 
-"window.auto_polish_picker.title" = "Excluded Apps for Auto Polish";
+"window.auto_polish_picker.title" = "Excluded Apps";
 
 "picker.auto_polish.heading" = "Choose apps to exclude";
 
-"picker.auto_polish.description" = "Dictation into these apps is inserted exactly as transcribed, without the on-device proofread. Everything else is polished.";
+"picker.auto_polish.description" = "Auto Polish keeps dictation unchanged in these apps, and Eval Mode never saves their text. Manual selection proofreading still works.";
 
 "picker.auto_polish.section.running" = "Running apps";
 
@@ -1535,24 +1535,24 @@
 "settings.text.polish_sub" = "Apple Foundation Models · on-device · limited capability";
 
 /* Text Polish enable checkbox. */
-"settings.text.polish.cb" = "Proofread selection on double-tap Right ⌥";
+"settings.text.polish.cb" = "Enable Text Polish";
 
 /* Auto Polish for local dictation. */
 "settings.text.auto_polish.cb" = "Polish dictated text automatically";
 
-"settings.text.auto_polish.note" = "Local dictation only. Runs the same on-device proofread before the text is inserted. The raw transcript is kept if polishing fails or times out.";
+"settings.text.auto_polish.note" = "Local dictation only. When off, double-tap Right ⌥ to polish a selection. If automatic polishing fails, the transcript is kept.";
 
 "settings.text.auto_polish.excluded_label" = "Excluded apps:";
 
 "settings.text.auto_polish.choose_apps" = "Choose Apps…";
 
-"settings.text.auto_polish.excluded_none" = "No apps excluded. Dictation is polished everywhere.";
+"settings.text.auto_polish.excluded_none" = "No apps excluded. Exclusions apply to Auto Polish and Eval Mode.";
 
 /* Text Polish instructions row label. */
-"settings.text.instructions" = "Polish instructions:";
+"settings.text.instructions" = "Polish prompt:";
 
 /* Text Polish instructions note. */
-"settings.text.instructions.note" = "Plain-text instructions sent with every proofread request.";
+"settings.text.instructions.note" = "Edit the complete prompt shared by manual and automatic polishing. Test changes in Eval Mode before saving.";
 
 /* Text Translation on-device subtitle. */
 "settings.text.translation_sub" = "Apple Translation Framework · on-device · limited language support";
@@ -1577,12 +1577,12 @@
 
 /* Eval Mode first-run disclosure. */
 "eval.intro.title" = "Eval Mode keeps your text on this Mac";
-"eval.intro.body" = "While it is on, everything you dictate or polish is saved as plain text in Lamitype's Application Support folder, except in excluded apps and while secure input is active. Nothing is sent anywhere. Delete it any time from the window or Settings.";
+"eval.intro.body" = "While on, local dictation and selection proofreading are saved as plain text on this Mac. Excluded apps and macOS Secure Input are not captured. No apps are excluded by default; choose them in Settings > Text. Entries are deleted when Lamitype quits normally; after a crash or force quit, leftovers are cleared on next launch. Export before quitting to keep cases. Saved prompts and exported files remain. Eval Mode does not upload text.";
 "eval.intro.turn_on" = "Turn On";
 
 /* Eval Mode settings. */
 "settings.text.eval.header" = "Eval Mode";
-"settings.text.eval.note" = "Turn Eval Mode on from the menu bar. It keeps your dictation and its polished result on this Mac so you can see what changed and try your own instructions. Text only, never audio, never sent anywhere. Off again when you quit Lamitype.";
+"settings.text.eval.note" = "Inspect local dictation and polish results, then try your own prompt. Text only, never uploaded. Entries are cleared on normal quit, or next launch after a crash or force quit. Export cases before quitting to keep them. Saved prompts and exports remain.";
 "settings.text.eval.entries_label" = "Entries:";
 "settings.text.eval.entries_summary" = "%1$@, %2$@ on disk";
 "settings.text.eval.show_window" = "Show Window…";
@@ -1676,8 +1676,56 @@
 
 /* Eval Mode footer. */
 "eval.footer.export" = "Export…";
-"eval.footer.export_note" = "Plain text, includes your entries.";
+"eval.footer.export_note" = "Entries clear on quit. Export to keep a copy.";
 "eval.footer.reveal" = "Reveal in Finder";
 "eval.footer.delete_oldest" = "Delete Oldest 100";
 "eval.footer.delete_all" = "Delete All…";
 "eval.error.same_export_path" = "The cases and results files cannot use the same path.";
+
+"eval.filter.empty" = "No entries match these filters.";
+
+"eval.filter.reset" = "Clear Filters";
+
+"eval.filter.outcome_title" = "Outcome";
+
+"settings.text.prompt.edit" = "Edit Polish Prompt…";
+
+"eval.prompt.edit" = "Edit Polish Prompt";
+
+"eval.prompt.title" = "Polish Prompt";
+
+"eval.prompt.note" = "This complete prompt is used by manual polish, Auto Polish Dictation, and Eval reruns. Reruns can test this unsaved draft.";
+
+"eval.prompt.unsaved" = "Unsaved draft";
+
+"eval.prompt.done" = "Done";
+
+"eval.prompt.restore" = "Restore Default";
+
+"eval.prompt.save" = "Save Prompt";
+
+"eval.prompt.error.empty" = "The prompt cannot be empty. Your previous prompt is still active.";
+
+"eval.prompt.error.migration" = "The prompt files could not be prepared. Your previous prompt is still active.";
+
+"eval.prompt.unsaved.title" = "Discard unsaved prompt changes?";
+
+"eval.prompt.unsaved.body" = "Your draft has not been saved and will be lost.";
+
+"eval.prompt.keep_editing" = "Keep Editing";
+
+"eval.prompt.discard" = "Discard";
+
+"eval.rerun.empty_prompt" = "Enter a prompt before rerunning.";
+
+"eval.header.capture_limit" = "500-entry limit reached. Delete entries to capture more.";
+
+"menu.text_polish.recovery.open_settings" = "Enable Text Polish in Settings…";
+
+"menu.text_polish.status.validating" = "Checking whether Text Polish is available…";
+
+"menu.text_polish.status.unavailable" = "Text Polish is unavailable: %1$@";
+
+"eval.storage_unavailable.title" = "Eval storage is unavailable";
+
+"eval.storage_unavailable.body" = "Lamitype could not prepare its private Eval storage. Eval Mode remains off. Restart Lamitype to try again.";
