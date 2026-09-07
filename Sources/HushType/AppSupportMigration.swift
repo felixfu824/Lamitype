@@ -55,6 +55,10 @@ enum AppSupportPaths {
         rootURL.appendingPathComponent("live_caption.json")
     }
 
+    static var evalDirectoryURL: URL {
+        rootURL.appendingPathComponent("eval.noindex", isDirectory: true)
+    }
+
     #if DEBUG
     static func resetForTesting() {
         lock.lock()

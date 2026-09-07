@@ -16,6 +16,8 @@ final class AppConfig {
         static let onboardingCompleted = "hushtype.onboardingCompleted"
         static let numberConversionEnabled = "hushtype.numberConversionEnabled"
         static let textPolishEnabled = "hushtype.textPolishEnabled"
+        static let autoPolishDictationEnabled = "hushtype.autoPolishDictationEnabled"
+        static let autoPolishExcludedBundleIDs = "hushtype.autoPolishExcludedBundleIDs"
         static let textTranslationEnabled = "hushtype.textTranslationEnabled"
         static let translateTargetLanguage = "hushtype.translateTargetLanguage"
         static let cloudTargetLanguage = "hushtype.cloudTargetLanguage"
@@ -30,6 +32,7 @@ final class AppConfig {
         static let cloudDictationModelOpenAI = "hushtype.cloudDictationModelOpenAI"
         static let cloudDictationModelGemini = "hushtype.cloudDictationModelGemini"
         static let interfaceLanguage = "hushtype.interfaceLanguage"
+        static let evalModeIntroShown = "hushtype.evalModeIntroShown"
     }
 
     /// Dictation deliberately persists its engine choice across launches so
@@ -65,7 +68,7 @@ final class AppConfig {
         set { defaults.set(newValue, forKey: Keys.cloudDictationModelGemini) }
     }
 
-    /// Interface (UI) language — deliberately separate from `language`
+    /// Interface (UI) language - deliberately separate from `language`
     /// (speech-recognition language), `translateTargetLanguage`, and
     /// `cloudTargetLanguage` (SPEC §4.4). Persisted as
     /// `hushtype.interfaceLanguage`; a new key, so no migration is needed.
@@ -84,7 +87,7 @@ final class AppConfig {
         set { interfaceLanguageRaw = newValue.rawValue }
     }
 
-    /// Engine for Live Caption — local Qwen3 ASR vs. OpenAI cloud translate.
+    /// Engine for Live Caption - local Qwen3 ASR vs. OpenAI cloud translate.
     /// SESSION-ONLY: not persisted across launches. Every app boot resets to
     /// `.local` so a fresh launch can't silently start spending money on
     /// cloud. Same rationale as `liveCaptionEnabled` (see §13.4 of the
@@ -195,7 +198,39 @@ final class AppConfig {
         }
         set {
             defaults.set(newValue, forKey: Keys.textPolishEnabled)
+            if !newValue {
+                defaults.set(false, forKey: Keys.autoPolishDictationEnabled)
+            }
             log.info("Text polish enabled: \(newValue, privacy: .public)")
+        }
+    }
+
+    /// Whether successful local dictation should be proofread on-device before
+    /// insertion. Off by default so the normal dictation path remains fully
+    /// deterministic unless the user explicitly opts in.
+    var autoPolishDictationEnabled: Bool {
+        get {
+            if defaults.object(forKey: Keys.autoPolishDictationEnabled) == nil {
+                return false
+            }
+            return defaults.bool(forKey: Keys.autoPolishDictationEnabled)
+        }
+        set {
+            let effectiveValue = newValue && textPolishEnabled
+            defaults.set(effectiveValue, forKey: Keys.autoPolishDictationEnabled)
+            log.info("Auto polish dictation enabled: \(effectiveValue, privacy: .public)")
+        }
+    }
+
+    /// Bundle identifiers whose local dictation must bypass Auto Polish. Values
+    /// are normalized on every write so matching remains stable across callers.
+    var autoPolishExcludedBundleIDs: [String] {
+        get { defaults.stringArray(forKey: Keys.autoPolishExcludedBundleIDs) ?? [] }
+        set {
+            defaults.set(
+                AutoPolishPolicy.normalizedUnique(newValue),
+                forKey: Keys.autoPolishExcludedBundleIDs
+            )
         }
     }
 
@@ -209,18 +244,39 @@ final class AppConfig {
         }
     }
 
-    /// Whether live caption mode is currently active. SESSION-ONLY — NOT
+    /// Whether live caption mode is currently active. SESSION-ONLY - NOT
     /// persisted to UserDefaults. Always `false` on launch. Live caption is
     /// a privacy-sensitive always-on-mic mode; auto-resuming after relaunch
     /// would surprise the user and violates the explicit-enter/exit mental
     /// model. Flips of this flag MUST go through `LiveCaptionManager.start()`
-    /// / `stop()` — never direct mutation — so the manager's `onStateChanged`
+    /// / `stop()` - never direct mutation - so the manager's `onStateChanged`
     /// callback drives the menu checkmark.
     var liveCaptionEnabled: Bool = false
 
+    /// Whether Eval Mode captures polish events during this app session.
+    /// SESSION-ONLY and deliberately not persisted, for the same privacy
+    /// rationale as `liveCaptionEnabled`: a relaunch must require a fresh,
+    /// visible opt-in before user text can be written to disk.
+    @MainActor var evalModeEnabled: Bool = false {
+        didSet {
+            guard evalModeEnabled != oldValue else { return }
+            if !evalModeEnabled {
+                EvalCapture.resetSuppressedCount()
+            }
+            NotificationCenter.default.post(name: .evalModeDidChange, object: nil)
+        }
+    }
+
+    /// Whether the user has accepted the one-time plain-text storage notice.
+    /// This remembers only the notice, never the session capture switch.
+    var evalModeIntroShown: Bool {
+        get { defaults.bool(forKey: Keys.evalModeIntroShown) }
+        set { defaults.set(newValue, forKey: Keys.evalModeIntroShown) }
+    }
+
     /// True only when Live Caption is active AND the source is `.mic`. Used
     /// by `AppDelegate.handleHotkeyPress` (running on the CGEvent tap thread,
-    /// outside the main actor) to decide whether to gate dictation — system-
+    /// outside the main actor) to decide whether to gate dictation - system-
     /// audio Live Caption doesn't compete with the mic, so dictation works
     /// concurrently. Maintained by `LiveCaptionManager` alongside
     /// `liveCaptionEnabled`.
@@ -249,7 +305,7 @@ final class AppConfig {
     }
 
     /// Whether to show the recognized source-language line above the translated
-    /// caption line. Default `true` — paid usage benefits from a sanity-check
+    /// caption line. Default `true` - paid usage benefits from a sanity-check
     /// that the system is translating what the user thinks. Persisted.
     var cloudShowSourceLine: Bool {
         get {
@@ -322,7 +378,7 @@ final class AppConfig {
     }
 
     /// What source the user picked the last time they started either caption
-    /// product. PERSISTED — and never reset on stop (unlike
+    /// product. PERSISTED - and never reset on stop (unlike
     /// `liveCaptionUsesMicSource`, which is a "currently active" flag the
     /// dictation gate relies on). Used by the Right ⌘ + / hotkey handler to
     /// decide whether to re-invoke on mic or system audio. First-use default
@@ -342,13 +398,13 @@ final class AppConfig {
     /// Path to the user-editable customized dictionary file. The dictionary is
     /// applied as the final post-processing step (after OpenCC and ITN)
     /// to fix recurring transcription errors like proper nouns and jargon.
-    /// If the file doesn't exist, no replacements happen — there's no separate
+    /// If the file doesn't exist, no replacements happen - there's no separate
     /// enable/disable toggle. Power users edit the file directly in their
     /// default text editor; the menu item triggers `NSWorkspace.shared.open`.
     ///
     /// The extension is `.txt` (not `.tsv`) so macOS opens it in TextEdit,
     /// which edits in place. `.tsv` defaults to Apple Numbers, which wraps the
-    /// file as a new Numbers document and saves to a different location —
+    /// file as a new Numbers document and saves to a different location -
     /// breaking the file-is-the-UI contract.
     static var dictionaryFileURL: URL {
         AppSupportPaths.dictionaryFileURL
@@ -366,4 +422,11 @@ final class AppConfig {
     }
 
     private init() {}
+}
+
+extension Notification.Name {
+    static let evalModeDidChange = Notification.Name("hushtype.evalModeDidChange")
+    static let evalStoreDidChange = Notification.Name("hushtype.evalStoreDidChange")
+    static let evalShowWindowRequested = Notification.Name("hushtype.evalShowWindowRequested")
+    static let evalAppActivityDidChange = Notification.Name("hushtype.evalAppActivityDidChange")
 }

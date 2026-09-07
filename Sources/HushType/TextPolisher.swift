@@ -3,17 +3,18 @@ import os
 
 private let log = Logger(subsystem: "com.felix.hushtype", category: "text-polisher")
 
-enum PolishResult {
+enum PolishResult: Sendable {
     case success(polished: String, changed: Bool)
     case failure(PolishError)
 }
 
-enum PolishError: LocalizedError {
+enum PolishError: LocalizedError, Sendable {
     case disabled
     case unavailable(String)
     case emptySelection
     case codeDetected
     case generationFailed(String)
+    case timeout(String)
     case emptyOutput
     case lengthGuard
     case scriptGuard
@@ -35,9 +36,11 @@ enum PolishError: LocalizedError {
         case .codeDetected:
             return L10n.string(
                 "error.polish.code_detected",
-                fallback: "Selection looks like code — not polished."
+                fallback: "Selection looks like code; not polished."
             )
         case .generationFailed(let reason):
+            return reason
+        case .timeout(let reason):
             return reason
         case .emptyOutput:
             return L10n.string(
@@ -68,23 +71,95 @@ enum PolishError: LocalizedError {
     }
 
     /// Guards that indicate the model changed the selection's language rather
-    /// than proofreading it — the failures worth a mix-reminder retry.
+    /// than proofreading it - the failures worth a mix-reminder retry.
     var isLanguageGuard: Bool {
         switch self {
         case .scriptGuard, .mixGuard: return true
         default: return false
         }
     }
+
+    var stableToken: String {
+        switch self {
+        case .disabled: return "disabled"
+        case .unavailable: return "unavailable"
+        case .emptySelection: return "empty"
+        case .codeDetected: return "codeDetected"
+        case .generationFailed: return "generationFailed"
+        case .timeout: return "timeout"
+        case .emptyOutput: return "emptyOutput"
+        case .lengthGuard: return "lengthGuard"
+        case .scriptGuard: return "scriptGuard"
+        case .mixGuard: return "mixGuard"
+        case .refusalGuard: return "refusalGuard"
+        }
+    }
+}
+
+private final class CallerReturnRace<Value: Sendable>: @unchecked Sendable {
+    private let lock = NSLock()
+    private var continuation: CheckedContinuation<Value?, Never>?
+    private var resolved = false
+    private var tasks: [Task<Void, Never>] = []
+
+    func install(_ continuation: CheckedContinuation<Value?, Never>) {
+        lock.lock()
+        self.continuation = continuation
+        lock.unlock()
+    }
+
+    func retain(_ tasks: [Task<Void, Never>]) {
+        let shouldCancel: Bool
+        lock.lock()
+        if resolved {
+            shouldCancel = true
+        } else {
+            self.tasks = tasks
+            shouldCancel = false
+        }
+        lock.unlock()
+        if shouldCancel {
+            tasks.forEach { $0.cancel() }
+        }
+    }
+
+    func resolve(_ value: Value?) {
+        let continuation: CheckedContinuation<Value?, Never>?
+        lock.lock()
+        if resolved {
+            continuation = nil
+        } else {
+            resolved = true
+            continuation = self.continuation
+            self.continuation = nil
+        }
+        lock.unlock()
+        continuation?.resume(returning: value)
+    }
+
+    func cancelLosers() {
+        lock.lock()
+        let tasks = self.tasks
+        self.tasks = []
+        lock.unlock()
+        tasks.forEach { $0.cancel() }
+    }
 }
 
 enum TextPolisher {
+    static let dictationDeadlineSeconds: UInt64 = 8
+
+    enum RerunBudget: UInt64, Sendable {
+        case dictation = 8
+        case polish = 30
+    }
     enum ValidationResult {
         case ok
         case unavailable(reason: String)
     }
 
     /// Tap handling reads this stored value only. It is refreshed at launch,
-    /// app activation, and after toggle validation—never on a key event.
+    /// app activation, and after toggle validation; never on a key event.
     private(set) static var isAvailableCached = false
     private(set) static var unavailableReasonCached = L10n.string(
         "error.polish.apple_unavailable",
@@ -133,17 +208,63 @@ enum TextPolisher {
     }
 
     static func polish(_ text: String) async -> PolishResult {
-        guard AppConfig.shared.textPolishEnabled else {
+        let prompt = PolishPrompt.effectivePromptSnapshot()
+        return await polish(
+            text,
+            requiresManualToggle: true,
+            usesCallerReturnDeadline: false,
+            deadlineSeconds: 30,
+            startedAt: Date(),
+            instructions: prompt,
+            allowStandby: true
+        )
+    }
+
+    static func polishDictation(_ text: String) async -> PolishResult {
+        let prompt = PolishPrompt.effectivePromptSnapshot()
+        return await polish(
+            text,
+            requiresManualToggle: false,
+            usesCallerReturnDeadline: true,
+            deadlineSeconds: dictationDeadlineSeconds,
+            startedAt: Date(),
+            instructions: prompt,
+            allowStandby: true
+        )
+    }
+
+    static func rerun(
+        _ text: String,
+        instructions: String?,
+        budget: RerunBudget
+    ) async -> PolishResult {
+        let prompt = PolishPrompt.rerunPrompt(withRules: instructions)
+        return await polish(
+            text,
+            requiresManualToggle: false,
+            usesCallerReturnDeadline: true,
+            deadlineSeconds: budget.rawValue,
+            startedAt: Date(),
+            instructions: prompt,
+            allowStandby: false
+        )
+    }
+
+    private static func polish(
+        _ text: String,
+        requiresManualToggle: Bool,
+        usesCallerReturnDeadline: Bool,
+        deadlineSeconds: UInt64,
+        startedAt: Date,
+        instructions: String?,
+        allowStandby: Bool
+    ) async -> PolishResult {
+        if requiresManualToggle, !AppConfig.shared.textPolishEnabled {
             return .failure(.disabled)
         }
-
         let trimmedInput = text.trimmingCharacters(in: .whitespacesAndNewlines)
-        guard !trimmedInput.isEmpty else {
-            return .failure(.emptySelection)
-        }
-        guard !looksLikeCode(text) else {
-            return .failure(.codeDetected)
-        }
+        guard !trimmedInput.isEmpty else { return .failure(.emptySelection) }
+        guard !looksLikeCode(text) else { return .failure(.codeDetected) }
         guard isAvailableCached else {
             return .failure(.unavailable(unavailableReasonCached))
         }
@@ -154,52 +275,127 @@ enum TextPolisher {
             )))
         }
 
-        // Race the FM call against a wall-clock deadline: a hung generation
-        // would otherwise wedge state at .polishing and the idle guards on all
-        // three tap sites would drop every hotkey press until relaunch. The
-        // abandoned task ends on its own; only the state machine is protected.
-        let modelResult = await withDeadline(seconds: 30) {
-            if #available(macOS 26.0, *) {
-                return await FoundationModelsPolisher.polish(text)
-            }
-            return .failure(PolishError.unavailable(L10n.string(
-                "error.polish.macos_too_old",
-                fallback: "This Mac is running an earlier version of macOS."
-            )))
-        }
+        let modelResult = await modelAttempt(
+            text,
+            mixRetry: false,
+            usesCallerReturnDeadline: usesCallerReturnDeadline,
+            deadlineSeconds: deadlineSeconds,
+            startedAt: startedAt,
+            instructions: instructions,
+            allowStandby: allowStandby
+        )
         guard let modelResult else {
-            return .failure(.generationFailed(L10n.string(
-                "error.polish.timeout",
-                fallback: "Apple Intelligence timed out after 30 seconds."
-            )))
+            return .failure(timeoutError(forManualPolish: !usesCallerReturnDeadline))
         }
+
         switch modelResult {
         case .failure(let error):
             return .failure(.generationFailed(error.localizedDescription))
         case .success(let polished):
             let validated = validateOutput(polished, input: text)
-            // The model has a translation attractor on mixed-language
-            // selections. A single retry with an explicit keep-the-mix
-            // reminder rescues a good share of them; the retry result must
-            // clear every guard or the original guard error stands.
             if case .failure(let guardError) = validated,
                guardError.isLanguageGuard {
-                let retryResult = await withDeadline(seconds: 30) {
-                    if #available(macOS 26.0, *) {
-                        return await FoundationModelsPolisher.polish(text, mixRetry: true)
-                    }
-                    return .failure(PolishError.unavailable(L10n.string(
-                        "error.polish.macos_too_old",
-                        fallback: "This Mac is running an earlier version of macOS."
-                    )))
+                if usesCallerReturnDeadline,
+                   remainingBudget(deadlineSeconds: deadlineSeconds, startedAt: startedAt) < 1 {
+                    return validated
                 }
-                if case .success(let retried) = retryResult ?? .failure(PolishError.emptyOutput),
+                let retryResult = await modelAttempt(
+                    text,
+                    mixRetry: true,
+                    usesCallerReturnDeadline: usesCallerReturnDeadline,
+                    deadlineSeconds: deadlineSeconds,
+                    startedAt: startedAt,
+                    instructions: instructions,
+                    allowStandby: allowStandby
+                )
+                guard let retryResult else {
+                    return !usesCallerReturnDeadline
+                        ? validated
+                        : .failure(timeoutError(forManualPolish: false))
+                }
+                if case .success(let retried) = retryResult,
                    case .success(let polished, let changed) = validateOutput(retried, input: text) {
                     return .success(polished: polished, changed: changed)
                 }
             }
             return validated
         }
+    }
+
+    private static func modelAttempt(
+        _ text: String,
+        mixRetry: Bool,
+        usesCallerReturnDeadline: Bool,
+        deadlineSeconds: UInt64,
+        startedAt: Date,
+        instructions: String?,
+        allowStandby: Bool
+    ) async -> Result<String, Error>? {
+        let work: @Sendable () async -> Result<String, Error> = {
+            if #available(macOS 26.0, *) {
+                return await FoundationModelsPolisher.polish(
+                    text,
+                    mixRetry: mixRetry,
+                    instructions: instructions,
+                    allowStandby: allowStandby
+                )
+            }
+            return .failure(PolishError.unavailable(L10n.string(
+                "error.polish.macos_too_old",
+                fallback: "This Mac is running an earlier version of macOS."
+            )))
+        }
+        if !usesCallerReturnDeadline {
+            // The established manual path intentionally gets a fresh 30-second
+            // deadline for each attempt.
+            return await withDeadline(seconds: deadlineSeconds, work)
+        }
+        let remaining = remainingBudget(deadlineSeconds: deadlineSeconds, startedAt: startedAt)
+        guard remaining > 0 else { return nil }
+        return await withCallerReturnDeadline(seconds: remaining, work)
+    }
+
+    private static func remainingBudget(deadlineSeconds: UInt64, startedAt: Date) -> TimeInterval {
+        max(0, TimeInterval(deadlineSeconds) - Date().timeIntervalSince(startedAt))
+    }
+
+    private static func timeoutError(forManualPolish: Bool) -> PolishError {
+        if forManualPolish {
+            return .generationFailed(L10n.string(
+                "error.polish.timeout",
+                fallback: "Apple Intelligence timed out after 30 seconds."
+            ))
+        }
+        return .timeout(L10n.string(
+            "error.polish.timeout_dictation",
+            fallback: "Apple Intelligence timed out after 8 seconds."
+        ))
+    }
+
+    /// Returns at the deadline even if the underlying Foundation Models call
+    /// ignores cancellation. A timed-out respond may continue in the abandoned
+    /// task, but its result is discarded and it has no insertion side effects.
+    static func withCallerReturnDeadline<T: Sendable>(
+        seconds: TimeInterval,
+        _ work: @escaping @Sendable () async -> T
+    ) async -> T? {
+        guard seconds > 0 else { return nil }
+        let race = CallerReturnRace<T>()
+        let result = await withCheckedContinuation { continuation in
+            race.install(continuation)
+            let workTask = Task {
+                race.resolve(await work())
+            }
+            let sleeperTask = Task {
+                let nanoseconds = UInt64(seconds * 1_000_000_000)
+                try? await Task.sleep(nanoseconds: nanoseconds)
+                guard !Task.isCancelled else { return }
+                race.resolve(nil)
+            }
+            race.retain([workTask, sleeperTask])
+        }
+        race.cancelLosers()
+        return result
     }
 
     private static func withDeadline<T: Sendable>(
@@ -257,7 +453,7 @@ enum TextPolisher {
         }
 
         // Return the trimmed text so what gets pasted matches what `changed`
-        // compared — FM occasionally pads leading/trailing whitespace.
+        // compared - FM occasionally pads leading/trailing whitespace.
         return .success(polished: trimmedOutput, changed: trimmedOutput != trimmedInput)
     }
 

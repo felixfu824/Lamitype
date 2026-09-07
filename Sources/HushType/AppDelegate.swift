@@ -4,6 +4,7 @@ import os
 import UserNotifications
 
 private let log = Logger(subsystem: "com.felix.hushtype", category: "app")
+private let autoPolishLog = Logger(subsystem: "com.felix.hushtype", category: "auto-polish")
 
 /// T2 bridge only. T3 replaces these placeholders with the real provider
 /// engines; reporting `isLoaded == true` keeps cloud hotkey presses on the
@@ -50,7 +51,7 @@ private final class TapArbiter {
 
     /// Called at the start of every Right ⌥ press. Main-queue serialization
     /// makes `fired` the boundary interlock: either the deferred action began,
-    /// or this press cancels it and owns the intent as tap #2—never both.
+    /// or this press cancels it and owns the intent as tap #2; never both.
     @discardableResult
     func cancelPendingForSecondPress() -> Bool {
         guard let pendingTap, !pendingTap.fired else { return false }
@@ -93,6 +94,9 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     private var state: AppState = .loading {
         didSet {
             log.info("State: \(String(describing: self.state))")
+            if EvalWindow.isPresented {
+                NotificationCenter.default.post(name: .evalAppActivityDidChange, object: nil)
+            }
         }
     }
 
@@ -105,6 +109,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     private var liveCaptionManager: LiveCaptionManager?
     private let tapArbiter = TapArbiter()
     private var consecutiveCloudNetworkFailures = 0
+    private var evalStoreSessionStarted = false
 
     private enum SelectionSource {
         case copySelection
@@ -147,16 +152,20 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
             NSApp.terminate(nil)
             return
         }
+        evalStoreSessionStarted = true
+        if !EvalStore.shared.beginNewSessionClearingOrphans() {
+            AppConfig.shared.evalModeEnabled = false
+        }
 
         // Cap MLX's GPU buffer recycle pool process-wide. The dictation path
         // never bounds this pool (clearCache() runs only on manual Unload and
         // LiveCaption stop), and LiveCaptionManager.start() was the only place
-        // that set cacheLimit — so a dictation-only session ran on MLX's
+        // that set cacheLimit - so a dictation-only session ran on MLX's
         // unbounded default and phys_footprint climbed to 5+ GB over a session.
         // Setting it here at launch bounds the pool for every path. Value
         // mirrors LiveCaptionTuning.mlxCacheLimitMB (1024). This caps only the
         // *idle* reuse pool, never live inference memory, so it can never
-        // truncate or fail a transcription — at worst a heavy request does a
+        // truncate or fail a transcription - at worst a heavy request does a
         // little more OS alloc/free churn.
         MLX.Memory.cacheLimit = 1024 * 1024 * 1024  // 1 GB
 
@@ -193,7 +202,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
             Task { @MainActor in self?.toggleLiveCaptionViaHotkey() }
         }
 
-        // RMS callback fires on the CoreAudio IO thread — must hop to main
+        // RMS callback fires on the CoreAudio IO thread - must hop to main
         // before touching @Published state on the overlay model.
         audioCapture.onRMSLevel = { [weak self] level in
             DispatchQueue.main.async {
@@ -202,12 +211,6 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
                     self.overlayState.state = .recording(level: level, provider: provider)
                 }
             }
-        }
-
-        // Wire quit
-        statusBar.onQuit = { [weak self] in
-            self?.hotkeyManager.stop()
-            self?.hideOverlay()
         }
 
         // Wire unload/reload
@@ -230,6 +233,17 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         LamitypeSettingsWindowController.shared.onResetCaptionPanelFrame = { [weak self] in
             self?.liveCaptionManager?.resetPanelSizeAndPosition()
         }
+        statusBar.onEvalModeToggle = { [weak self] in
+            guard let self else { return }
+            self.requestEvalModeEnabled(!AppConfig.shared.evalModeEnabled)
+        }
+        statusBar.onShowEvalWindow = { [weak self] in self?.openEvalWindow() }
+        NotificationCenter.default.addObserver(
+            self,
+            selector: #selector(openEvalWindowRequested(_:)),
+            name: .evalShowWindowRequested,
+            object: nil
+        )
 
         // Wire Live Caption (local) submenu. The manager exists from launch;
         // if Qwen is absent, its local path loads the shared engine lazily.
@@ -272,7 +286,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
 
         // Onboarding: if accessibility permission is missing, show our friendly
         // flow BEFORE we ever call CGEvent.tapCreate. If onboarding is needed,
-        // it blocks via NSAlert and either quits or relaunches the app — in
+        // it blocks via NSAlert and either quits or relaunches the app - in
         // either case the rest of startup never runs.
         if OnboardingManager.runIfNeeded() {
             return
@@ -326,7 +340,14 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         // benefit from `prewarm()` on relaunch when Text Polish is already on.
     }
 
+    func applicationShouldTerminate(_ sender: NSApplication) -> NSApplication.TerminateReply {
+        EvalWindow.confirmApplicationTermination() ? .terminateNow : .terminateCancel
+    }
+
     func applicationWillTerminate(_ notification: Notification) {
+        if evalStoreSessionStarted {
+            EvalStore.shared.endSessionAndClear()
+        }
         tapArbiter.reset()
         hotkeyManager.stop()
         hideOverlay()
@@ -364,6 +385,12 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         overlayState.state = .transcribing(provider: provider)
     }
 
+    private func switchOverlayToPolishing() {
+        guard AppConfig.shared.floatingOverlayEnabled else { return }
+        // Preserve the existing panel and focus; only swap the pill contents.
+        overlayState.state = .polishing
+    }
+
     private func showOverlayPolishing() {
         guard AppConfig.shared.floatingOverlayEnabled else { return }
         overlayState.state = .polishing
@@ -383,7 +410,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
 
         let claimedSecondTap = tapArbiter.cancelPendingForSecondPress()
 
-        // Gate dictation only when Live Caption is active on the MIC source —
+        // Gate dictation only when Live Caption is active on the MIC source -
         // both would compete for the mic. System-audio Live Caption uses
         // ScreenCaptureKit (different audio path) so dictation works
         // concurrently. Record press timestamp for tap/hold disambiguation
@@ -391,7 +418,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         if AppConfig.shared.liveCaptionUsesMicSource {
             guard state == .idle else {
                 if claimedSecondTap { tapArbiter.reset() }
-                log.info("Ignoring mic-gated press — state is \(String(describing: self.state), privacy: .public)")
+                log.info("Ignoring mic-gated press - state is \(String(describing: self.state), privacy: .public)")
                 return
             }
             liveCaptionGatePressTimestamp = Date()
@@ -402,7 +429,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         if state == .unloaded {
             if claimedSecondTap { tapArbiter.reset() }
             if AppConfig.shared.dictationEngine == .local {
-                print("[Lamitype] Model unloaded — auto-reloading...")
+                print("[Lamitype] Model unloaded - auto-reloading...")
                 reloadModel()
                 return
             }
@@ -415,7 +442,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
 
         guard state == .idle else {
             if claimedSecondTap { tapArbiter.reset() }
-            print("[Lamitype] Ignoring press — state is \(state)")
+            print("[Lamitype] Ignoring press - state is \(state)")
             return
         }
 
@@ -442,7 +469,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
             guard state == .idle else {
                 liveCaptionGatePressTimestamp = nil
                 tapArbiter.reset()
-                log.info("Ignoring mic-gated release — state is \(String(describing: self.state), privacy: .public)")
+                log.info("Ignoring mic-gated release - state is \(String(describing: self.state), privacy: .public)")
                 return
             }
             let elapsed = liveCaptionGatePressTimestamp.map { Date().timeIntervalSince($0) } ?? 0
@@ -459,14 +486,14 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         }
 
         guard state == .recording else {
-            print("[Lamitype] Ignoring release — state is \(state)")
+            print("[Lamitype] Ignoring release - state is \(state)")
             return
         }
 
         let samples = audioCapture.stopRecording()
         print("[Lamitype] Recording stopped: \(samples.count) samples (\(String(format: "%.1f", Double(samples.count) / 16000.0))s)")
 
-        // Skip if too short (< 0.3s) — treat as a TAP for translation
+        // Skip if too short (< 0.3s) - treat as a TAP for translation
         guard samples.count > 4800 else {
             hideOverlay()
             state = .idle
@@ -655,8 +682,19 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
                         await self?.postDailySpendWarningNotification(snapshot: snapshot, threshold: cap)
                     }
                 }
+                let insertionText: String
+                if selection == .local {
+                    guard let prepared = await self?.prepareLocalDictationText(
+                        text,
+                        engine: selection,
+                        insertionFocus: insertionFocus
+                    ) else { return }
+                    insertionText = prepared
+                } else {
+                    insertionText = text
+                }
                 await self?.finishSuccessfulTranscription(
-                    text,
+                    insertionText,
                     insertionFocus: insertionFocus,
                     resetNetworkFailures: selection != .local
                 )
@@ -711,7 +749,9 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
             return
         }
 
+        #if DEBUG
         print("[Lamitype] Transcription result: '\(text)'")
+        #endif
         print("[Lamitype] Inserting text...")
         state = .inserting
         TextInserter.insert(text)
@@ -731,12 +771,12 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     private func handleTapDetected() {
         guard state == .idle else {
             tapArbiter.reset()
-            log.info("Ignoring tap — state is \(String(describing: self.state), privacy: .public)")
+            log.info("Ignoring tap - state is \(String(describing: self.state), privacy: .public)")
             return
         }
 
         if tapArbiter.consumeSecondTapCandidate() {
-            print("[Lamitype] Double tap detected — triggering Text Polish")
+            print("[Lamitype] Double tap detected - triggering Text Polish")
             handlePolish(source: .copySelection)
             return
         }
@@ -744,7 +784,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         if AppConfig.shared.textPolishEnabled && TextPolisher.isAvailableCached {
             tapArbiter.deferSingleTap { [weak self] in
                 guard let self, self.state == .idle else {
-                    log.info("Deferred translation dropped — app is no longer idle")
+                    log.info("Deferred translation dropped - app is no longer idle")
                     return
                 }
                 guard AppConfig.shared.textTranslationEnabled else { return }
@@ -757,7 +797,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
             print("[Lamitype] Too short, skipping (translation not enabled)")
             return
         }
-        print("[Lamitype] Short tap detected — triggering translation")
+        print("[Lamitype] Short tap detected - triggering translation")
         handleTranslation(source: .copySelection)
     }
 
@@ -786,12 +826,12 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
 
     private func handleTranslation(source: SelectionSource) {
         guard state == .idle else {
-            log.info("Ignoring translation — state is \(String(describing: self.state), privacy: .public)")
+            log.info("Ignoring translation - state is \(String(describing: self.state), privacy: .public)")
             return
         }
 
         // The tap sites check the toggle before calling in, but the Services
-        // entry ("Translate with Lamitype") dispatches here directly — enforce
+        // entry ("Translate with Lamitype") dispatches here directly - enforce
         // the menu toggle for that path too.
         if case .provided = source, !AppConfig.shared.textTranslationEnabled {
             showTranslationError(TranslationError.translationFailed(
@@ -813,7 +853,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
                 switch source {
                 case .copySelection:
                     // A bare Right ⌥ tap with nothing selected is a common
-                    // accident — stay silent like pre-0.6 releases. Only the
+                    // accident - stay silent like pre-0.6 releases. Only the
                     // explicit Services path earns an alert.
                     print("[Lamitype] No text on clipboard for translation")
                 case .provided:
@@ -827,7 +867,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
                 return
             }
 
-            print("[Lamitype] Translating: '\(text.prefix(50))...'")
+            print("[Lamitype] Translating \(text.count) characters")
             self.translationManager.translate(text: text) { [weak self] result in
                 DispatchQueue.main.async {
                     guard let self else { return }
@@ -836,7 +876,9 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
                     case .success(let (translated, direction)):
                         NSPasteboard.general.clearContents()
                         NSPasteboard.general.setString(translated, forType: .string)
+                        #if DEBUG
                         print("[Lamitype] Translation result (\(direction)): '\(translated.prefix(80))...'")
+                        #endif
                         self.translationCardWindow.show(
                             sourceLanguage: direction,
                             sourceText: text,
@@ -858,8 +900,19 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     // MARK: - Text Polish
 
     private func handlePolish(source: SelectionSource) {
+        let target: NSRunningApplication?
+        switch source {
+        case .copySelection:
+            target = captureInsertionFocus()
+        case .provided:
+            // macOS activates this accessory app for Services, while the
+            // sending application retains ownership of the menu bar.
+            let sender = NSWorkspace.shared.menuBarOwningApplication
+            target = sender?.processIdentifier == ProcessInfo.processInfo.processIdentifier
+                ? nil : sender
+        }
         guard state == .idle else {
-            log.info("Ignoring polish — state is \(String(describing: self.state), privacy: .public)")
+            log.info("Ignoring polish - state is \(String(describing: self.state), privacy: .public)")
             return
         }
 
@@ -871,13 +924,30 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
             guard let self else { return }
             let selection = await self.resolveSelection(source, preservingPasteboard: true)
             self.restorePasteboardIfNeeded(selection.priorPasteboardItems)
+            let startedAt = Date()
             let result = await TextPolisher.polish(selection.text)
+            let elapsed = Date().timeIntervalSince(startedAt)
+            let evalSource: EvalSource
+            switch source {
+            case .copySelection: evalSource = .polishHotkey
+            case .provided: evalSource = .polishService
+            }
 
             switch result {
             case .success(let polished, let changed):
-                if changed {
-                    // The source application must retain focus through the
-                    // complete simulated paste before any result window appears.
+                EvalCapture.record(
+                    source: evalSource,
+                    appBundleID: target?.bundleIdentifier,
+                    original: selection.text,
+                    output: changed ? polished : selection.text,
+                    outcome: changed ? .polished : .unchanged,
+                    reason: nil,
+                    elapsed: elapsed,
+                    abandoned: false
+                )
+                if changed, await self.restoreInsertionFocus(target) {
+                    // Inference and Services can move focus. Paste only after
+                    // the original application confirms it is active again.
                     TextInserter.insert(polished)
                 }
 
@@ -889,6 +959,16 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
                 )
 
             case .failure(let error):
+                EvalCapture.record(
+                    source: evalSource,
+                    appBundleID: target?.bundleIdentifier,
+                    original: selection.text,
+                    output: selection.text,
+                    outcome: .keptOriginal,
+                    reason: error.stableToken,
+                    elapsed: elapsed,
+                    abandoned: false
+                )
                 self.finishPolishing()
                 self.showPolishError(error)
             }
@@ -936,7 +1016,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
             simulateCmdC()
             try? await Task.sleep(nanoseconds: 150_000_000)
             if pasteboard.changeCount == previousChangeCount {
-                // Slow apps (Chrome/Electron) can take >150 ms to service ⌘C —
+                // Slow apps (Chrome/Electron) can take >150 ms to service ⌘C -
                 // give one extra beat before declaring the selection empty.
                 try? await Task.sleep(nanoseconds: 200_000_000)
             }
@@ -979,9 +1059,9 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     ) {
         error.pointee = nil
         let text = pboard.string(forType: .string) ?? ""
-        Task { @MainActor [weak self] in
-            self?.handlePolish(source: .provided(text))
-        }
+        // Capture the sender's focus before returning to Services; deferring
+        // this entry point can observe Lamitype after the service activates it.
+        handlePolish(source: .provided(text))
     }
 
     @objc func translateSelection(
@@ -1134,7 +1214,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
 
     /// Hotkey handler (Right ⌘ + /): toggle whichever product was last
     /// started. First-use (no AppConfig.lastStartedCaptionMode set) defaults
-    /// to local — nobody accidentally starts a paid translation session via
+    /// to local - nobody accidentally starts a paid translation session via
     /// muscle memory on day one.
     @MainActor
     private func toggleLiveCaptionViaHotkey() {
@@ -1152,7 +1232,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     /// Shared entry point for "start `mode` with whatever source the user
     /// picked last." Used by the hotkey (last-used mode) and by both menu-
     /// header clicks (mode pinned per header). Reads the PERSISTED
-    /// `lastStartedCaptionUsesMicSource` — not the session-only
+    /// `lastStartedCaptionUsesMicSource` - not the session-only
     /// `liveCaptionUsesMicSource` which is reset to false on every stop
     /// because the dictation gate watches it.
     @MainActor
@@ -1214,7 +1294,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
 
     private func unloadModel() async {
         guard state == .idle else {
-            print("[Lamitype] Cannot unload — state is \(state)")
+            print("[Lamitype] Cannot unload - state is \(state)")
             return
         }
         // Block dictation while a local-caption backend drains. The status
@@ -1242,7 +1322,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         localEngine.unload()
         snapshot("2_engine_unload")
 
-        if AppConfig.shared.textPolishEnabled {
+        if AppConfig.shared.textPolishEnabled || AppConfig.shared.autoPolishDictationEnabled {
             if #available(macOS 26.0, *) {
                 Task { @MainActor in
                     FoundationModelsPolisher.releaseSession()
@@ -1250,7 +1330,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
             }
         }
 
-        // Drop any MLX buffers retained from prior transcribes — the model
+        // Drop any MLX buffers retained from prior transcribes - the model
         // pointers are now gone, so cached intermediate tensors are dead
         // weight. clearCache() walks MLX's buffer pool and frees everything
         // not currently in flight. Without this, hundreds of MB can linger
@@ -1265,7 +1345,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
             state = .idle
             statusBar.setState(.idle)
         }
-        print("[Lamitype] Model unloaded — memory freed")
+        print("[Lamitype] Model unloaded - memory freed")
 
         // Show confirmation alert with cold-start warning. If live caption
         // was active, the message changes to direct the user accordingly.
@@ -1355,7 +1435,8 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     }
 
     private func scheduleTextPolishPrewarmIfNeeded(reason: String) {
-        guard AppConfig.shared.textPolishEnabled && TextPolisher.isAvailableCached else { return }
+        guard (AppConfig.shared.textPolishEnabled || AppConfig.shared.autoPolishDictationEnabled),
+              TextPolisher.isAvailableCached else { return }
         if #available(macOS 26.0, *) {
             log.info("Scheduling Text Polish prewarm after \(reason, privacy: .public)")
             FoundationModelsPolisher.warmup()
@@ -1530,8 +1611,14 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
                 overlayState.state = .transcribing(provider: nil)
             }
             let text = try await localEngine.transcribe(audio: samples, language: language)
-            await finishSuccessfulTranscription(
+            guard let insertionText = await prepareLocalDictationText(
                 text,
+                engine: .local,
+                insertionFocus: insertionFocus,
+                source: .dictationLocalOnce
+            ) else { return }
+            await finishSuccessfulTranscription(
+                insertionText,
                 insertionFocus: insertionFocus,
                 resetNetworkFailures: false
             )
@@ -1548,6 +1635,146 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
             alert.runModal()
             await finishWithoutInsertion(restoreFocus: insertionFocus)
         }
+    }
+
+    /// Main-actor bridge from detached transcription work into the UI and
+    /// Foundation Models stage. Returning nil means another flow took ownership
+    /// of AppDelegate state while polishing; callers must then do nothing.
+    @MainActor
+    private func prepareLocalDictationText(
+        _ text: String,
+        engine: AppConfig.DictationEngine,
+        insertionFocus: NSRunningApplication?,
+        source: EvalSource = .dictation
+    ) async -> String? {
+        switch AutoPolishPolicy.decideNow(
+            engine: engine,
+            targetBundleID: insertionFocus?.bundleIdentifier
+        ) {
+        case .skip(.disabled):
+            EvalCapture.record(
+                source: source,
+                appBundleID: insertionFocus?.bundleIdentifier,
+                original: text,
+                output: text,
+                outcome: .notPolished,
+                reason: AutoPolishPolicy.Reason.disabled.stableToken,
+                elapsed: nil,
+                abandoned: false
+            )
+            return text
+        case .skip(let reason):
+            autoPolishLog.info("skip \(reason.stableToken, privacy: .public)")
+            EvalCapture.record(
+                source: source,
+                appBundleID: insertionFocus?.bundleIdentifier,
+                original: text,
+                output: text,
+                outcome: .notPolished,
+                reason: reason.stableToken,
+                elapsed: nil,
+                abandoned: false
+            )
+            return text
+        case .polish:
+            guard state == .transcribing else { return nil }
+            statusBar.setState(.polishing)
+            switchOverlayToPolishing()
+        }
+
+        let result = await DictationPolishStage.apply(text) {
+            await TextPolisher.polishDictation($0)
+        }
+        let abandoned = state != .transcribing
+
+        let evalOutcome: EvalOutcome
+        let evalReason: String?
+        switch result.outcome {
+        case .polished(let changed):
+            evalOutcome = changed ? .polished : .unchanged
+            evalReason = nil
+        case .keptRaw(let reason):
+            evalOutcome = .keptOriginal
+            evalReason = reason
+        }
+        EvalCapture.record(
+            source: source,
+            appBundleID: insertionFocus?.bundleIdentifier,
+            original: text,
+            output: result.text,
+            outcome: evalOutcome,
+            reason: evalReason,
+            elapsed: result.elapsed,
+            abandoned: abandoned
+        )
+        guard !abandoned else { return nil }
+
+        let elapsedMS = Int(result.elapsed * 1_000)
+        switch result.outcome {
+        case .polished(let changed):
+            autoPolishLog.info(
+                "result changed=\(changed, privacy: .public) elapsed_ms=\(elapsedMS, privacy: .public)"
+            )
+        case .keptRaw(let reason):
+            autoPolishLog.notice(
+                "kept_raw reason=\(reason, privacy: .public) elapsed_ms=\(elapsedMS, privacy: .public)"
+            )
+        }
+        return result.text
+    }
+
+    @objc private func openEvalWindowRequested(_ notification: Notification) {
+        openEvalWindow(focusPromptEditor: notification.userInfo?["focusPromptEditor"] as? Bool ?? false)
+    }
+
+    private func openEvalWindow(focusPromptEditor: Bool = false) {
+        EvalWindow.present(
+            isAppIdle: { [weak self] in self?.state == .idle },
+            requestEvalEnabled: { [weak self] enabled in
+                self?.requestEvalModeEnabled(enabled)
+            },
+            focusPromptEditor: focusPromptEditor
+        )
+    }
+
+    private func requestEvalModeEnabled(_ enabled: Bool) {
+        if !enabled {
+            AppConfig.shared.evalModeEnabled = false
+            return
+        }
+        guard EvalStore.shared.acceptsWrites else {
+            AppConfig.shared.evalModeEnabled = false
+            let alert = NSAlert()
+            alert.messageText = L10n.string(
+                "eval.storage_unavailable.title",
+                fallback: "Eval storage is unavailable"
+            )
+            alert.informativeText = L10n.string(
+                "eval.storage_unavailable.body",
+                fallback: "Lamitype could not prepare its private Eval storage. Eval Mode remains off. Restart Lamitype to try again."
+            )
+            alert.alertStyle = .warning
+            alert.addButton(withTitle: L10n.string("common.button.ok", fallback: "OK"))
+            alert.runModal()
+            return
+        }
+        if !AppConfig.shared.evalModeIntroShown {
+            let alert = NSAlert()
+            alert.messageText = L10n.string(
+                "eval.intro.title",
+                fallback: "Eval Mode keeps your text on this Mac"
+            )
+            alert.informativeText = L10n.string(
+                "eval.intro.body",
+                fallback: "While on, local dictation and selection proofreading are saved as plain text on this Mac. Excluded apps and macOS Secure Input are not captured. No apps are excluded by default; choose them in Settings > Text. Entries are deleted when Lamitype quits normally; after a crash or force quit, leftovers are cleared on next launch. Export before quitting to keep cases. Saved prompts and exported files remain. Eval Mode does not upload text."
+            )
+            alert.alertStyle = .warning
+            alert.addButton(withTitle: L10n.string("eval.intro.turn_on", fallback: "Turn On"))
+            alert.addButton(withTitle: L10n.string("common.button.cancel", fallback: "Cancel"))
+            guard alert.runModal() == .alertFirstButtonReturn else { return }
+            AppConfig.shared.evalModeIntroShown = true
+        }
+        AppConfig.shared.evalModeEnabled = true
     }
 
     private func presentCloudFailureAlert(

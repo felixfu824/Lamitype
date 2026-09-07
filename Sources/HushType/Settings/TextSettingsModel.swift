@@ -2,22 +2,50 @@ import AppKit
 import Combine
 import Foundation
 
+@MainActor
 final class TextSettingsModel: ObservableObject {
     struct Storage {
         var readPolishEnabled: () -> Bool
         var writePolishEnabled: (Bool) -> Void
+        var readAutoPolishEnabled: () -> Bool
+        var writeAutoPolishEnabled: (Bool) -> Void
+        var readExcludedBundleIDs: () -> [String]
+        var writeExcludedBundleIDs: ([String]) -> Void
         var readTranslationEnabled: () -> Bool
         var writeTranslationEnabled: (Bool) -> Void
         var readTranslationTarget: () -> String?
         var writeTranslationTarget: (String?) -> Void
+        var readEvalCount: @MainActor () -> Int
+        var readEvalBytes: @MainActor () -> Int64
+        var deleteAllEval: @MainActor () -> Void
+        var revealEval: @MainActor () -> Void
+        var showEvalWindow: @MainActor (Bool) -> Void
 
         static let app = Storage(
             readPolishEnabled: { AppConfig.shared.textPolishEnabled },
             writePolishEnabled: { AppConfig.shared.textPolishEnabled = $0 },
+            readAutoPolishEnabled: { AppConfig.shared.autoPolishDictationEnabled },
+            writeAutoPolishEnabled: { AppConfig.shared.autoPolishDictationEnabled = $0 },
+            readExcludedBundleIDs: { AppConfig.shared.autoPolishExcludedBundleIDs },
+            writeExcludedBundleIDs: { AppConfig.shared.autoPolishExcludedBundleIDs = $0 },
             readTranslationEnabled: { AppConfig.shared.textTranslationEnabled },
             writeTranslationEnabled: { AppConfig.shared.textTranslationEnabled = $0 },
             readTranslationTarget: { AppConfig.shared.translateTargetLanguage },
-            writeTranslationTarget: { AppConfig.shared.translateTargetLanguage = $0 }
+            writeTranslationTarget: { AppConfig.shared.translateTargetLanguage = $0 },
+            readEvalCount: { EvalStore.shared.count },
+            readEvalBytes: { EvalStore.shared.bytesOnDisk },
+            deleteAllEval: { EvalStore.shared.deleteAll() },
+            revealEval: {
+                EvalStore.shared.ensureDirectories()
+                NSWorkspace.shared.activateFileViewerSelecting([AppSupportPaths.evalDirectoryURL])
+            },
+            showEvalWindow: { focusPromptEditor in
+                NotificationCenter.default.post(
+                    name: .evalShowWindowRequested,
+                    object: nil,
+                    userInfo: ["focusPromptEditor": focusPromptEditor]
+                )
+            }
         )
     }
 
@@ -37,17 +65,18 @@ final class TextSettingsModel: ObservableObject {
         },
         presentUnavailable: { reason in
             Task { @MainActor in TextSettingsModel.showUnavailableAlert(reason: reason) }
-        },
-        openInstructions: {
-            Task { @MainActor in TextSettingsModel.openInstructionsFile() }
         }
     )
 
     @Published private(set) var polishEnabled: Bool
+    @Published private(set) var autoPolishEnabled: Bool
+    @Published private(set) var excludedBundleIDs: [String]
     @Published private(set) var polishAvailable: Bool
     @Published private(set) var isValidatingPolish = false
     @Published private(set) var translationEnabled: Bool
     @Published private(set) var translationTarget: String?
+    @Published private(set) var evalCount: Int
+    @Published private(set) var evalBytes: Int64
 
     /// The status-bar controller uses this callback to refresh its native
     /// menu items. SwiftUI observes the published properties directly.
@@ -58,7 +87,7 @@ final class TextSettingsModel: ObservableObject {
     private let warmupPolish: () -> Void
     private let releasePolish: () -> Void
     private let presentUnavailable: (String) -> Void
-    private let openInstructions: () -> Void
+    private var polishValidationGeneration: UInt = 0
 
     init(
         storage: Storage,
@@ -66,25 +95,40 @@ final class TextSettingsModel: ObservableObject {
         validatePolish: @escaping () async -> TextPolisher.ValidationResult,
         warmupPolish: @escaping () -> Void,
         releasePolish: @escaping () -> Void,
-        presentUnavailable: @escaping (String) -> Void,
-        openInstructions: @escaping () -> Void
+        presentUnavailable: @escaping (String) -> Void
     ) {
         self.storage = storage
         self.validatePolish = validatePolish
         self.warmupPolish = warmupPolish
         self.releasePolish = releasePolish
         self.presentUnavailable = presentUnavailable
-        self.openInstructions = openInstructions
-        polishEnabled = storage.readPolishEnabled()
+        let savedPolishEnabled = storage.readPolishEnabled()
+        let savedAutoPolishEnabled = storage.readAutoPolishEnabled()
+        polishEnabled = savedPolishEnabled
+        autoPolishEnabled = savedPolishEnabled && savedAutoPolishEnabled
+        if !savedPolishEnabled && savedAutoPolishEnabled {
+            storage.writeAutoPolishEnabled(false)
+        }
+        excludedBundleIDs = AutoPolishPolicy.normalizedUnique(storage.readExcludedBundleIDs())
         polishAvailable = initialPolishAvailability
         translationEnabled = storage.readTranslationEnabled()
         translationTarget = storage.readTranslationTarget()
+        evalCount = storage.readEvalCount()
+        evalBytes = storage.readEvalBytes()
     }
 
     func refreshFromConfig(polishAvailability: Bool? = nil) {
-        polishEnabled = storage.readPolishEnabled()
+        let savedPolishEnabled = storage.readPolishEnabled()
+        let savedAutoPolishEnabled = storage.readAutoPolishEnabled()
+        polishEnabled = savedPolishEnabled
+        autoPolishEnabled = savedPolishEnabled && savedAutoPolishEnabled
+        if !savedPolishEnabled && savedAutoPolishEnabled {
+            storage.writeAutoPolishEnabled(false)
+        }
+        excludedBundleIDs = AutoPolishPolicy.normalizedUnique(storage.readExcludedBundleIDs())
         translationEnabled = storage.readTranslationEnabled()
         translationTarget = storage.readTranslationTarget()
+        refreshEvalData()
         if let polishAvailability {
             polishAvailable = polishAvailability
         }
@@ -92,6 +136,10 @@ final class TextSettingsModel: ObservableObject {
     }
 
     func refreshPolishAvailability(_ available: Bool) {
+        if !available && isValidatingPolish {
+            polishValidationGeneration &+= 1
+            isValidatingPolish = false
+        }
         polishAvailable = available
         onMenuRefresh?()
     }
@@ -100,27 +148,39 @@ final class TextSettingsModel: ObservableObject {
         Task { @MainActor in await setPolishEnabled(!polishEnabled) }
     }
 
+    func toggleAutoPolish() {
+        Task { @MainActor in await setAutoPolishEnabled(!autoPolishEnabled) }
+    }
+
     func requestPolishEnabled(_ enabled: Bool) {
         Task { @MainActor in await setPolishEnabled(enabled) }
     }
 
     func setPolishEnabled(_ enabled: Bool) async {
-        guard enabled != polishEnabled || (enabled && !polishAvailable) else {
+        guard enabled != polishEnabled
+                || isValidatingPolish
+                || (enabled && !polishAvailable) else {
             return
         }
 
         if !enabled {
+            polishValidationGeneration &+= 1
             storage.writePolishEnabled(false)
+            storage.writeAutoPolishEnabled(false)
             polishEnabled = false
+            autoPolishEnabled = false
             isValidatingPolish = false
             releasePolish()
             onMenuRefresh?()
             return
         }
 
+        polishValidationGeneration &+= 1
+        let generation = polishValidationGeneration
         isValidatingPolish = true
         onMenuRefresh?()
         let result = await validatePolish()
+        guard generation == polishValidationGeneration else { return }
         isValidatingPolish = false
 
         switch result {
@@ -134,6 +194,73 @@ final class TextSettingsModel: ObservableObject {
             presentUnavailable(reason)
         }
         onMenuRefresh?()
+    }
+
+    func requestAutoPolishEnabled(_ enabled: Bool) {
+        Task { @MainActor in await setAutoPolishEnabled(enabled) }
+    }
+
+    func setAutoPolishEnabled(_ enabled: Bool) async {
+        guard enabled != autoPolishEnabled
+                || isValidatingPolish
+                || (enabled && !polishAvailable) else {
+            return
+        }
+
+        if !enabled {
+            polishValidationGeneration &+= 1
+            storage.writeAutoPolishEnabled(false)
+            autoPolishEnabled = false
+            isValidatingPolish = false
+            if !polishEnabled { releasePolish() }
+            onMenuRefresh?()
+            return
+        }
+
+        guard polishEnabled else {
+            storage.writeAutoPolishEnabled(false)
+            autoPolishEnabled = false
+            onMenuRefresh?()
+            return
+        }
+
+        polishValidationGeneration &+= 1
+        let generation = polishValidationGeneration
+        isValidatingPolish = true
+        onMenuRefresh?()
+        let result = await validatePolish()
+        guard generation == polishValidationGeneration,
+              polishEnabled else { return }
+        isValidatingPolish = false
+
+        switch result {
+        case .ok:
+            storage.writeAutoPolishEnabled(true)
+            autoPolishEnabled = true
+            polishAvailable = true
+            warmupPolish()
+        case .unavailable(let reason):
+            polishAvailable = false
+            presentUnavailable(reason)
+        }
+        onMenuRefresh?()
+    }
+
+    func setExcluded(_ bundleID: String, excluded: Bool) {
+        let normalized = AutoPolishPolicy.normalize(bundleID)
+        guard !normalized.isEmpty else { return }
+        var values = AutoPolishPolicy.normalizedUnique(excludedBundleIDs)
+        if excluded {
+            if !values.contains(normalized) { values.append(normalized) }
+        } else {
+            values.removeAll { $0 == normalized }
+        }
+        storage.writeExcludedBundleIDs(values)
+        excludedBundleIDs = values
+    }
+
+    func removeExcluded(_ bundleID: String) {
+        setExcluded(bundleID, excluded: false)
     }
 
     func toggleTranslation() {
@@ -153,7 +280,25 @@ final class TextSettingsModel: ObservableObject {
     }
 
     func editPolishInstructions() {
-        openInstructions()
+        storage.showEvalWindow(true)
+    }
+
+    func refreshEvalData() {
+        evalCount = storage.readEvalCount()
+        evalBytes = storage.readEvalBytes()
+    }
+
+    func showEvalWindow() {
+        storage.showEvalWindow(false)
+    }
+
+    func revealEvalData() {
+        storage.revealEval()
+    }
+
+    func deleteAllEvalData() {
+        storage.deleteAllEval()
+        refreshEvalData()
     }
 
     @MainActor
@@ -173,28 +318,5 @@ final class TextSettingsModel: ObservableObject {
             ?? NSImage(systemSymbolName: "sparkles", accessibilityDescription: nil)
         alert.addButton(withTitle: L10n.string("common.button.ok", fallback: "OK"))
         alert.runModal()
-    }
-
-    @MainActor
-    private static func openInstructionsFile() {
-        PolishPrompt.createRulesTemplateIfMissing()
-        let url = PolishPrompt.rulesFileURL
-        guard FileManager.default.fileExists(atPath: url.path) else {
-            let alert = NSAlert()
-            alert.messageText = L10n.string(
-                "alert.file_create.polish.title",
-                fallback: "Could not open Polish instructions"
-            )
-            alert.informativeText = L10n.format(
-                "alert.file_create.polish.message",
-                "Failed to create the instructions file at:\n%1$@",
-                arguments: [url.path]
-            )
-            alert.alertStyle = .warning
-            alert.addButton(withTitle: L10n.string("common.button.ok", fallback: "OK"))
-            alert.runModal()
-            return
-        }
-        NSWorkspace.shared.open(url)
     }
 }

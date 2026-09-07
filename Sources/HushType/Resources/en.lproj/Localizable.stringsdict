@@ -71,5 +71,39 @@
 		</dict>
 	</dict>
 
+	<key>eval.entries_count</key>
+	<dict>
+		<key>NSStringLocalizedFormatKey</key>
+		<string>%#@count@</string>
+		<key>count</key>
+		<dict>
+			<key>NSStringFormatSpecTypeKey</key>
+			<string>NSStringFormatSpecTypeInt</string>
+			<key>NSStringFormatValueTypeKey</key>
+			<string>l</string>
+			<key>one</key>
+			<string>%1$ld entry</string>
+			<key>other</key>
+			<string>%1$ld entries</string>
+		</dict>
+	</dict>
+
+	<key>settings.text.auto_polish.excluded_summary</key>
+	<dict>
+		<key>NSStringLocalizedFormatKey</key>
+		<string>%#@count@</string>
+		<key>count</key>
+		<dict>
+			<key>NSStringFormatSpecTypeKey</key>
+			<string>NSStringFormatSpecTypeInt</string>
+			<key>NSStringFormatValueTypeKey</key>
+			<string>l</string>
+			<key>one</key>
+			<string>%1$ld excluded: %2$@</string>
+			<key>other</key>
+			<string>%1$ld excluded: %2$@</string>
+		</dict>
+	</dict>
+
 </dict>
 </plist>

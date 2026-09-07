@@ -93,7 +93,7 @@ struct ChineseConverter {
             return text
         }
 
-        log.debug("Converted: \(text) → \(result)")
+        log.debug("Converted Traditional Chinese in=\(text.count, privacy: .public)ch out=\(result.count, privacy: .public)ch")
         return result
     }
 }

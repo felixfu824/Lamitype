@@ -8,6 +8,10 @@
 
 "common.button.cancel" = "取消";
 
+/* Closes a live-edit picker after changes have already been saved. */
+
+"common.button.done" = "完成";
+
 /* Opens the relevant Lamitype settings window. */
 
 "common.button.open_settings" = "開啟設定";
@@ -208,11 +212,11 @@
 
 /* Text Polish feature and activation hint. */
 
-"menu.text_polish" = "文字校對（連按兩下 ⌥）";
+"menu.text_polish" = "自動校對聽寫文字";
 
 /* Temporary validation state after enabling Text Polish. */
 
-"menu.text_polish.validating" = "文字校對（正在驗證…）";
+"menu.text_polish.validating" = "自動校對聽寫文字（檢查中…）";
 
 
 
@@ -240,7 +244,7 @@
 
 /* Cloud/provider/cost marker subtitle; dollar glyph is retained. */
 
-"menu.live_translated_caption.subtitle" = "透過 OpenAI 即時將外語轉成文字 · $";
+"menu.live_translated_caption.subtitle" = "OpenAI · 雲端 · $";
 
 /* Starts the selected caption product with its last source. */
 
@@ -284,7 +288,7 @@
 
 /* Disabled activation hint; preserve shortcut glyph. */
 
-"menu.translation_hint" = "輕按右側 ⌥ 以翻譯選取的文字";
+"menu.translation_hint" = "輕按右 ⌥ 以翻譯";
 
 /* Automatic target/detection choice in translation and speech-to-text language menus. */
 
@@ -938,6 +942,22 @@
 
 "picker.system_audio.load_failed" = "無法載入執行中的 App：\n%1$@";
 
+/* Auto Polish exclusion picker. */
+
+"window.auto_polish_picker.title" = "排除的 App";
+
+"picker.auto_polish.heading" = "選擇要排除的 App";
+
+"picker.auto_polish.description" = "在這些 App 中，自動校對會保留原始逐字稿，校對實驗室也不會儲存文字。手動校對選取文字仍可使用。";
+
+"picker.auto_polish.section.running" = "執行中的 App";
+
+"picker.auto_polish.section.not_running" = "已排除但未執行";
+
+"picker.auto_polish.empty" = "找不到執行中的 App。";
+
+"picker.auto_polish.remove" = "移除";
+
 /* Argument 1 is a running-app identifier/name and remains untouched. */
 
 "error.system_audio.app_not_running" = "App %1$@ 未在執行。請選擇其他來源。";
@@ -1217,6 +1237,10 @@
 /* Preserve exact 30-second timeout. */
 
 "error.polish.timeout" = "Apple Intelligence 在 30 秒後逾時。";
+
+/* Auto Polish has a shorter caller-return budget than manual Text Polish. */
+
+"error.polish.timeout_dictation" = "Apple Intelligence 已逾時（8 秒）。";
 
 /* Unknown future FoundationModels availability case. */
 
@@ -1511,13 +1535,24 @@
 "settings.text.polish_sub" = "Apple Foundation Models · 在裝置上執行 · 能力有限";
 
 /* 文字校對啟用 checkbox。 */
-"settings.text.polish.cb" = "連按兩下右 ⌥ 校對選取的文字";
+"settings.text.polish.cb" = "啟用文字校對";
+
+/* Auto Polish for local dictation. */
+"settings.text.auto_polish.cb" = "自動校對聽寫文字";
+
+"settings.text.auto_polish.note" = "僅限本機聽寫。關閉時，可雙擊右側 ⌥ 校對選取文字。自動校對失敗時會保留逐字稿。";
+
+"settings.text.auto_polish.excluded_label" = "排除的 App：";
+
+"settings.text.auto_polish.choose_apps" = "選擇 App…";
+
+"settings.text.auto_polish.excluded_none" = "尚未排除任何 App。排除清單適用於自動校對與校對實驗室。";
 
 /* 文字校對指示列標籤。 */
-"settings.text.instructions" = "校對指示：";
+"settings.text.instructions" = "校對提示詞：";
 
 /* 文字校對指示說明。 */
-"settings.text.instructions.note" = "純文字指示，每次校對請求都會一併送出。";
+"settings.text.instructions.note" = "編輯手動與自動校對共用的完整提示詞。可先在校對實驗室測試，再儲存套用。";
 
 /* 文字翻譯裝置上副標。 */
 "settings.text.translation_sub" = "Apple Translation Framework · 在裝置上執行 · 支援語言有限";
@@ -1529,4 +1564,168 @@
 "settings.text.translate_to" = "翻譯成：";
 
 /* 共用右 Option 行為說明。 */
-"settings.text.note" = "「自動」會翻成偵測語言的另一邊。兩個功能共用右 ⌥：點一下翻譯，點兩下校對。";
+"settings.text.note" = "「自動」會翻成偵測語言的另一邊。選取文字翻譯與選取文字校對共用右 ⌥：點一下翻譯，點兩下校對。";
+
+/* 校對實驗室選單與狀態。 */
+"menu.eval_mode" = "校對實驗室";
+"menu.eval_mode.on" = "啟用（本次執行期間）";
+"menu.eval_mode.subtitle_off" = "看看校對改了什麼。";
+"menu.eval_mode.subtitle_on" = "啟用中 · %1$@";
+"menu.eval_mode.subtitle_full" = "已滿（500 筆），請刪除部分。";
+"menu.eval_mode.show_window" = "顯示視窗…";
+"status.eval_mode_suffix" = " · 校對實驗室";
+
+/* 校對實驗室首次啟用說明。 */
+"eval.intro.title" = "校對實驗室會把你的文字留在這台 Mac 上";
+"eval.intro.body" = "啟用期間，本機聽寫與選取文字校對的結果會以純文字存放在這台 Mac。已排除的 App 與 macOS 安全輸入期間不會擷取。預設不排除任何 App，請在「設定 > 文字」選擇。正常結束 Lamitype 時會刪除項目；當機或強制結束後，殘留資料會在下次啟動時清除。要保留案例，請在結束前匯出。已儲存的提示詞與匯出檔案不受影響。校對實驗室不會上傳文字。";
+"eval.intro.turn_on" = "啟用";
+
+/* 校對實驗室設定。 */
+"settings.text.eval.header" = "校對實驗室";
+"settings.text.eval.note" = "檢查本機聽寫與校對結果，並試用自己的提示詞。只存文字，不會上傳。正常結束時會清除項目；當機或強制結束後則在下次啟動清除。要保留案例，請在結束前匯出。已儲存的提示詞與匯出檔案不受影響。";
+"settings.text.eval.entries_label" = "項目：";
+"settings.text.eval.entries_summary" = "%1$@，佔用 %2$@";
+"settings.text.eval.show_window" = "顯示視窗…";
+"settings.text.eval.reveal" = "在 Finder 中顯示";
+"settings.text.eval.delete_all" = "刪除所有實驗室資料…";
+"eval.delete_all.confirm" = "要刪除 %1$@（%2$@）嗎？此動作無法復原。";
+"eval.delete_all.button" = "刪除";
+"eval.delete_oldest" = "刪除最舊 100 筆";
+"eval.delete_oldest.confirm" = "要刪除最舊 100 筆嗎？此動作無法復原。";
+
+/* 校對實驗室視窗。 */
+"window.eval.title" = "校對實驗室";
+"eval.header.on" = "校對實驗室啟用中。%1$@。";
+"eval.header.off" = "校對實驗室已停用。%1$@。";
+"eval.header.turn_on" = "啟用";
+"eval.header.turn_off" = "停用";
+"eval.header.unlabelled" = "%1$ld 筆未標記";
+"eval.header.suppressed" = "%1$ld 筆未擷取";
+"eval.header.suppressed_tooltip" = "安全輸入、已排除或無法辨識的 App";
+"eval.filter.outcome.all" = "全部";
+"eval.filter.outcome.polished" = "已校對";
+"eval.filter.outcome.no_change" = "無變更";
+"eval.filter.outcome.kept_original" = "保留原文";
+"eval.filter.outcome.not_polished" = "未校對";
+"eval.filter.label.all" = "全部";
+"eval.filter.label.correct" = "正確";
+"eval.filter.label.over_edited" = "改過頭";
+"eval.filter.label.wrong_or_missed" = "錯誤或漏改";
+"eval.filter.label.unlabelled" = "未標記";
+"eval.pill.polished" = "已校對";
+"eval.pill.no_change" = "無變更";
+"eval.pill.kept_original" = "保留原文";
+"eval.pill.not_polished" = "未校對";
+"eval.label.correct" = "正確";
+"eval.label.over_edited" = "改過頭";
+"eval.label.wrong_or_missed" = "錯誤或漏改";
+"eval.empty.title" = "尚無項目。";
+"eval.empty.body" = "啟用校對實驗室後，進行聽寫或校對選取文字，每次結果都會連同差異顯示在這裡。已排除的 App 與安全輸入期間不會擷取。";
+"eval.detail.original" = "原始文字";
+"eval.detail.result" = "結果";
+"eval.detail.label" = "標記";
+"eval.detail.rerun" = "重跑";
+"eval.detail.no_changes" = "無變更。";
+"eval.detail.not_inserted" = "未插入";
+"eval.detail.rerun_hint_disabled" = "重跑即可看到校對後的結果。";
+"eval.deleted_undo" = "已刪除。復原";
+
+/* 校對實驗室原因說明。 */
+"eval.reason.disabled" = "自動校對未啟用。";
+"eval.reason.unavailable" = "Apple Intelligence 無法使用。";
+"eval.reason.not_local_engine" = "雲端聽寫不做校對。";
+"eval.reason.unknown_target" = "無法辨識前方的 App。";
+"eval.reason.excluded_app" = "此 App 已排除。";
+"eval.reason.empty" = "沒有可校對的內容。";
+"eval.reason.code_detected" = "看起來像程式碼，未做更動。";
+"eval.reason.generation_failed" = "Apple Intelligence 回報錯誤。";
+"eval.reason.timeout" = "校對逾時，保留原文。";
+"eval.reason.empty_output" = "校對沒有回傳內容。";
+"eval.reason.length_guard" = "結果長度變化過大。";
+"eval.reason.script_guard" = "結果切換了文字系統。";
+"eval.reason.mix_guard" = "結果漏掉了其中一種語言。";
+"eval.reason.refusal_guard" = "校對拒絕處理而非校對。";
+
+/* 校對實驗室來源名稱。 */
+"eval.source.dictation" = "聽寫";
+"eval.source.dictation_local_once" = "聽寫（單次本機）";
+"eval.source.polish_hotkey" = "校對（快速鍵）";
+"eval.source.polish_service" = "校對（服務）";
+
+/* 校對實驗室重跑控制。 */
+"eval.rerun.instructions_label" = "額外指示（來自你的校對指示檔）";
+"eval.rerun.instructions_note" = "會改變校對結果。加一行試試，再按重跑。";
+"eval.rerun.placeholder" = "沒有額外指示。重跑會使用 Lamitype 的內建規則。";
+"eval.rerun.override_active" = "已啟用完整提示覆寫，重跑會使用該檔並忽略此欄。";
+"eval.rerun.run" = "重跑";
+"eval.rerun.run_shown" = "重跑顯示中的項目（%1$ld）";
+"eval.rerun.run_shown_capped" = "重跑顯示中的項目（前 50 筆）";
+"eval.rerun.progress" = "%1$ld / %2$ld";
+"eval.rerun.cancel" = "取消";
+"eval.rerun.cancel_note" = "取消會在目前項目完成後停止。";
+"eval.rerun.stopped_dictation" = "已停止：聽寫開始。";
+"eval.rerun.save" = "儲存為校對指示…";
+"eval.rerun.save_confirm" = "要以此內容取代你的校對指示檔嗎？";
+"eval.rerun.save_replace" = "取代";
+"eval.rerun.result_line" = "重跑 · %1$@ · %2$@";
+"eval.rerun.same_as_original" = "與原結果相同";
+"eval.rerun.differs_from_original" = "與原結果不同";
+"eval.rerun.previous" = "先前重跑（%1$ld）";
+"eval.rerun.unavailable" = "重跑需要 Apple Intelligence：%1$@";
+"eval.rerun.busy" = "聽寫或校對進行中，暫停重跑。";
+
+/* 校對實驗室頁尾。 */
+"eval.footer.export" = "匯出…";
+"eval.footer.export_note" = "結束時清除項目。匯出以保留副本。";
+"eval.footer.reveal" = "在 Finder 中顯示";
+"eval.footer.delete_oldest" = "刪除最舊 100 筆";
+"eval.footer.delete_all" = "全部刪除…";
+"eval.error.same_export_path" = "案例檔與結果檔不能使用同一路徑。";
+
+"eval.filter.empty" = "沒有符合篩選條件的項目。";
+
+"eval.filter.reset" = "清除篩選條件";
+
+"eval.filter.outcome_title" = "校對結果";
+
+"settings.text.prompt.edit" = "編輯校對提示詞…";
+
+"eval.prompt.edit" = "編輯校對提示詞";
+
+"eval.prompt.title" = "校對提示詞";
+
+"eval.prompt.note" = "這份完整提示詞會用於手動校對、自動校對聽寫與校對實驗室重跑。重跑可以測試尚未儲存的草稿。";
+
+"eval.prompt.unsaved" = "尚未儲存的草稿";
+
+"eval.prompt.done" = "完成";
+
+"eval.prompt.restore" = "還原預設值";
+
+"eval.prompt.save" = "儲存提示詞";
+
+"eval.prompt.error.empty" = "提示詞不可為空白。先前的提示詞仍然有效。";
+
+"eval.prompt.error.migration" = "無法準備提示詞檔案。先前的提示詞仍然有效。";
+
+"eval.prompt.unsaved.title" = "要捨棄尚未儲存的提示詞變更嗎？";
+
+"eval.prompt.unsaved.body" = "草稿尚未儲存，捨棄後將無法復原。";
+
+"eval.prompt.keep_editing" = "繼續編輯";
+
+"eval.prompt.discard" = "捨棄";
+
+"eval.rerun.empty_prompt" = "請先輸入提示詞，再重跑案例。";
+
+"eval.header.capture_limit" = "已達 500 筆上限。刪除項目後即可擷取更多內容。";
+
+"menu.text_polish.recovery.open_settings" = "前往設定啟用文字校對…";
+
+"menu.text_polish.status.validating" = "正在檢查文字校對是否可用…";
+
+"menu.text_polish.status.unavailable" = "文字校對無法使用：%1$@";
+
+"eval.storage_unavailable.title" = "校對實驗室儲存空間無法使用";
+
+"eval.storage_unavailable.body" = "Lamitype 無法準備校對實驗室的本機儲存空間。校對實驗室會保持關閉，請重新啟動 Lamitype 後再試。";

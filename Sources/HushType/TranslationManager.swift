@@ -183,7 +183,7 @@ final class TranslationManager {
             DispatchQueue.main.async {
                 switch result {
                 case .success(let translated):
-                    print("[Translation] Success: \(translated.prefix(80))…")
+                    print("[Translation] Success: \(translated.count) characters")
                     fflush(stdout)
                     completion(.success((translated: translated, direction: directionLabel)))
                 case .failure(let error):

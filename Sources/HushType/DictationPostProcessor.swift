@@ -14,7 +14,7 @@ enum DictationPostProcessor {
         // Apply Traditional Chinese conversion
         let convertedText = ChineseConverter.convert(rawText)
         if convertedText != rawText {
-            log.info("After conversion: \(convertedText)")
+            log.info("Traditional Chinese conversion applied in=\(rawText.count, privacy: .public)ch out=\(convertedText.count, privacy: .public)ch")
         }
 
         // Apply number conversion (ITN) if enabled. Deterministic regex-based
@@ -23,7 +23,7 @@ enum DictationPostProcessor {
         if script == .zh && AppConfig.shared.numberConversionEnabled {
             itnResult = NumberNormalizer.normalize(convertedText)
             if itnResult.applied {
-                log.info("After ITN: \(itnResult.text, privacy: .public) [\(itnResult.note, privacy: .public)]")
+                log.info("ITN applied in=\(convertedText.count, privacy: .public)ch out=\(itnResult.text.count, privacy: .public)ch note=\(itnResult.note, privacy: .public)")
             } else if itnResult.note != "no-op" {
                 log.debug("ITN skipped: \(itnResult.note, privacy: .public)")
             }
@@ -35,7 +35,7 @@ enum DictationPostProcessor {
         // No-op if the dictionary file doesn't exist or is empty.
         let dictText = DictionaryReplacer.apply(itnResult.text)
         if dictText != itnResult.text {
-            log.info("After dictionary: \(dictText)")
+            log.info("Dictionary applied in=\(itnResult.text.count, privacy: .public)ch out=\(dictText.count, privacy: .public)ch")
         }
 
         // Final step: strip the model's over-aggressive Chinese inline
@@ -45,7 +45,7 @@ enum DictationPostProcessor {
         if script == .zh {
             finalText = PunctuationNormalizer.apply(dictText, mode: AppConfig.shared.punctuationMode)
             if finalText != dictText {
-                log.info("After punctuation: \(finalText)")
+                log.info("Punctuation cleanup applied in=\(dictText.count, privacy: .public)ch out=\(finalText.count, privacy: .public)ch")
             }
         } else {
             finalText = dictText

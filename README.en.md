@@ -38,19 +38,29 @@
 
 ---
 
+## What's new in v0.5.13
+
+- **Auto Polish Dictation with Apple Foundation Models (available offline), off by default:** check **Auto Polish Dictation** in the menu bar to attempt an on-device proofread before local dictation is inserted. You can exclude apps where you do not want automatic polishing; the raw transcript is kept if polishing fails or times out. OpenAI and Gemini dictation still bypass automatic AFM polishing while using the same deterministic post-processing.
+- **One consistent, editable Text Polish prompt:** manual polish, Auto Polish Dictation, and Eval reruns use the same complete default-or-custom prompt. An unsaved draft is isolated to Eval reruns. **Restore Default** takes effect after **Save Prompt**. Effective customizations from the old `polish_rules.txt` or `polish_prompt.txt` format migrate automatically.
+- **Eval Mode:** opt in again each launch to keep local polish cases temporarily as plain text on this Mac. A normal quit deletes the app-managed entries, reruns, and labels; orphaned data after a crash or force quit is removed on the next launch. Exports and the saved prompt remain. Capture is suppressed while macOS Secure Input is active, when the frontmost app cannot be identified, and for excluded apps. At 500 entries, capture pauses without pruning data during the session.
+
+Apple Foundation Models still has limited Traditional Chinese proofreading quality. This release does not claim a new accuracy improvement.
+
+---
+
 ## Why Lamitype
 
-**Privacy and control first.** In the default mode, voice never leaves your Mac: the model runs on-device, no cloud, no account, no telemetry; the only download is the one-time ~675 MB model fetch. When you opt into cloud dictation, audio goes over HTTPS **directly** to OpenAI or Gemini with **your own key**. No Lamitype server in between: nothing relayed, nothing intercepted, your audio and key never seen, and each session asks for your consent before the first cloud use. **Whether your audio goes to a provider is always your decision.**
+**Privacy and control first.** In the default mode, voice stays on your Mac: the model runs locally, with no cloud account or usage tracking after the one-time ~675 MB model download. When you choose cloud dictation, audio goes over HTTPS **directly** to OpenAI or Gemini with **your own key**, with no Lamitype server in between. Lamitype asks for consent before the first cloud request after each app launch. **You decide whether audio goes to a provider.**
 
-**Memory-friendly: coexists with your agents.** The local model's weights are just ~675 MB (~2.1 GB RAM resident when loaded), light enough to coexist with Claude Code/Cowork, Codex and a browser, and Lamitype caps its memory buffer at launch so there's nothing for you to manage. Want the footprint at zero? Switch to a cloud engine: the local model is never loaded (the engine choice persists across restarts, so the next launch starts at ~0 MB); an already-loaded model can be unloaded with one menu click, and it reloads automatically when you switch back to local.
+**Memory-friendly: coexists with your agents.** The local model weights are about 675 MB; with the model loaded, the full Lamitype process typically uses about 2.1 GB of RAM. The app caps the MLX memory buffer at launch and lets you unload the model from the menu to free memory. A cloud engine leaves the local model unloaded. The engine choice persists across restarts, and the model reloads when you switch back to local.
 
-**Cloud dictation (opt-in).** Three things: (1) **OpenAI** (default `gpt-4o-mini-transcribe`) and **Gemini** (default `gemini-3.5-flash-lite`, with `gemini-3.7-flash` as the quality option), with your key, a direct connection, and no relay; (2) Gemini offers a **free-tier API key** for a $0 start, but note: on Google's free tier, Google may use submitted audio to improve its products; the paid tier does not; (3) built-in guardrails: per-session consent, a daily spend warning with same-day lockout (default $5), and over-long recordings blocked before upload.
+**Cloud dictation (opt-in).** Lamitype supports **OpenAI** (default `gpt-4o-mini-transcribe`) and **Gemini** (default `gemini-3.5-flash-lite`, with `gemini-3.7-flash` as the quality option), using your key in a direct connection. Gemini offers a free-tier API key, but Google may use audio submitted on the free tier to improve its products; the paid tier does not. Guardrails include consent before the first cloud request after each app launch, a daily spend warning with same-day lockout (default US$5), and blocking over-long recordings before upload.
 
-**Traditional Chinese that actually works.** Whisper and most open-source models default to Simplified or Mainland phrasing (软件, not 軟體). Lamitype chains Qwen3-ASR with OpenCC `s2twp` for Taiwan-native output (軟體, 滑鼠, 品質) with EN/ZH code-switching in one pass and optional in-context number conversion (`一零一大樓` → `101 大樓`), on by default. Local and cloud engines share the same post-processing pipeline, so output quality is consistent.
+**Traditional Chinese that actually works.** Whisper and most open-source models default to Simplified or Mainland phrasing. Lamitype chains Qwen3-ASR with OpenCC `s2twp` to turn terms such as 软件, 鼠标, and 质量 into Taiwan usage: 軟體, 滑鼠, and 品質. It supports EN/ZH code-switching and offers context-aware Chinese numeral conversion (`一零一大樓` → `101 大樓`), on by default. Local and cloud engines use the same deterministic post-processing rules.
 
-**Fix text where it stands.** Select text in any app, double-tap Right ⌥, and an on-device Apple Intelligence model proofreads it and replaces it in place: spelling, grammar, typos, punctuation. It's a mechanical proofreader, not a rewriter: meaning, tone, and your 中英 mix stay exactly as you wrote them (macOS 26+).<br>Note: the Apple Foundation Model is small and capability-limited, so corrections are deliberately conservative; sometimes it changes nothing at all.
+**Fix text where it stands.** Select text in any app and double-tap Right ⌥ to have on-device Apple Foundation Models attempt an in-place proofread for spelling, grammar, typos, and punctuation (requires macOS 26+ and Apple Intelligence). The prompt asks it to preserve meaning, tone, and language mix, and output guards reject some clear deviations. The small model can still miss or over-edit text.
 
-**Live captions, two flavors.** Local **Live Caption** runs the same on-device pipeline onto a floating panel: free, offline, works on a plane (decent quality). Opt-in **Live Translated Caption** streams audio to OpenAI's `gpt-realtime-translate` for real-time subtitles in 14 languages (high quality); your key (and your bill!), and it doesn't auto-start.
+**Live captions, two flavors.** Local **Live Caption** uses an on-device pipeline to show captions in a floating panel. It is free, offline, and useful when a network connection is unavailable. Opt-in **Live Translated Caption** streams audio to OpenAI's `gpt-realtime-translate` for real-time translated captions in 14 languages. It uses your key and billing account and does not start automatically.
 
 ---
 
@@ -61,7 +71,7 @@
 | Feature | Default | Requirement |
 |---|---|---|
 | Hold Right ⌥ to dictate (macOS) | ON | macOS 15+ |
-| **Cloud dictation (OpenAI / Gemini, opt-in)**: zero model RAM, per-session consent | OFF | Your own API key |
+| **Cloud dictation (OpenAI / Gemini, opt-in)**: local model stays unloaded; consent before the first request after each app launch | OFF | Your own API key |
 | EN / ZH / JA + native code-switching | ON | - |
 
 ### Live Captions
@@ -77,6 +87,8 @@
 |---|---|---|
 | **Translate**: tap Right ⌥ to translate selected text | OFF | macOS 15+ |
 | **Polish**: double-tap Right ⌥ to polish selected text (proofread in place) | **ON** | macOS 26 + Apple Intelligence |
+| **Auto Polish**: proofread local dictation before it is inserted, with a per-app exclusion list | OFF | macOS 26 + Apple Intelligence |
+| **Eval Mode**: inspect diffs, rerun with instructions, label, and export local polish cases | OFF each launch | macOS 26 + Apple Intelligence for reruns |
 
 ### Output Post-Processing
 
@@ -100,7 +112,7 @@
 
 ## Use Cases
 
-**Talking to AI agents.** Giving Claude or ChatGPT a detailed prompt takes 5 minutes to type, 30 seconds to say. Hold Right ⌥, speak your entire prompt (mixing languages as needed), release, and text appears in the chat input. Local transcription means your prompts never leave your machine even if you're driving cloud-hosted agents.
+**Talking to AI agents.** Giving Claude or ChatGPT a detailed prompt takes 5 minutes to type, 30 seconds to say. Hold Right ⌥, speak your entire prompt (mixing languages as needed), release, and text appears in the chat input. Local dictation does not require sending the recording to another transcription service first. Once you submit the text, it is handled by the AI service you use.
 
 **A memory-tight workday.** Three Claude Code sessions running, 20 browser tabs open, no appetite for one more resident model? Switch to the OpenAI or Gemini cloud engine in the menu: the local model stays unloaded, dictation keeps working, each utterance takes a second or two longer, and the cost lands on your own API bill (with a Gemini free-tier key: $0).
 
@@ -108,7 +120,7 @@
 
 **Reading in another language.** Select any text in Safari, Mail, Notes, anywhere, and tap Right ⌥. A translucent card pops up with the translation via Apple's on-device Translation Framework. Auto-dismisses after 10s, pauses on hover. No API key, no cloud.
 
-**Cleaning up text where you wrote it.** A dictated Slack reply, a comment typed too fast, a 中英 mixed sentence with a typo: select it, double-tap Right ⌥, and the corrected text lands back in place (and on the clipboard). No round-trip through a chatbot tab, and no risk of an AI "improving" your meaning: corrections only, everything else untouched.
+**Cleaning up text where you wrote it.** A dictated Slack reply, a comment typed too fast, a 中英 mixed sentence with a typo: select it, double-tap Right ⌥, and the polish result lands back in place (and on the clipboard), without a round-trip through a chatbot tab. The prompt asks for corrections only, and the result card shows what changed.
 
 **Watching foreign-language content.** Korean drama, Japanese news, Spanish football commentary. Open the source in any app, click **Live Translated Caption → From System Audio…** in the menu bar, pick the app, and translated English (or whichever target you set) streams onto a floating caption panel anchored at the bottom of your screen. Right ⌘ + / toggles it on and off. The original-language line shows above the translation as a confidence check; cost chip in the header tracks the session bill against your own OpenAI key.
 
@@ -247,7 +259,7 @@ make install
 - **General**: interface language, floating indicator, and shortcuts
 - **Dictation**: Local / OpenAI / Gemini engines and models, recognition language, Number Conversion, punctuation cleanup, and the customized dictionary
 - **Caption**: caption panel, Live Translated Caption target language, and auto-stop time
-- **Text**: Text Polish, `polish_rules.txt`, and Text Translation
+- **Text**: Text Polish, Auto Polish for dictation (with the excluded-apps list), the complete polish prompt, and Text Translation
 - **Cloud**: daily spend cap, today's usage, and OpenAI / Gemini key files
 - **iOS**: the untested iOS server controls
 
@@ -299,27 +311,32 @@ On-device translation via Apple Translation Framework. Select any text → tap R
 
 ### Optional: Text Polish (macOS 26+)
 
-On-device proofreading via Apple's Foundation Models framework: the Apple Intelligence model already shipped with macOS, so it adds nothing to Lamitype's memory budget and nothing leaves your Mac. Select text in any app → double-tap Right Option → the selection is replaced in place with corrected text, and a result card shows exactly what changed, Word track-changes style: deletions struck through in red, insertions underlined in green.
+On-device proofreading via Apple's Foundation Models framework. Select text in any app → double-tap Right Option → the selection is replaced in place with the model output, and a result card shows the diff, Word track-changes style: deletions struck through in red, insertions underlined in green.
 
 <p align="center">
   <img src="Resources/polish-card-diff-en.png" alt="Text Polish result card: deletions in red strikethrough, insertions in green underline" width="560">
-</p> When a correction was made, the polished text also stays on the clipboard, so read-only views (a web page, a PDF) work too: select, double-tap, paste it wherever you want. Already-correct text gets a "No changes needed" card and your clipboard is left alone. Also in the right-click menu: **Services → Polish with Lamitype**.
+</p>
 
-**What it fixes, and what it never touches.** Spelling, grammar, punctuation, obvious typos. It is deliberately a mechanical proofreader, not a rewriter: meaning, tone, formatting, casing, and language mix are preserved. The rules it is held to:
+When a correction was made, the polished text also stays on the clipboard, so read-only views (a web page, a PDF) work too: select, double-tap, paste it wherever you want. Already-correct text gets a "No changes needed" card and your clipboard is left alone. Also in the right-click menu: **Services → Polish with Lamitype**.
 
-- **Never translates.** A 中英 mixed sentence stays mixed. If the model drops one of your languages, Lamitype detects it on the output, retries once with a stronger instruction, and shows an alert rather than paste a mistranslation.
-- **Never converts** Simplified ↔ Traditional Chinese in either direction.
-- **Never answers.** A selection shaped like a question or an instruction is text to proofread, not a prompt to obey.
-- **Declines code.** Code-shaped selections are refused with an alert; URLs, file paths, and backtick content inside normal text are left as-is.
-- **Fails loudly, never silently.** If the model output looks corrupted (wrong length, dropped language), you get an alert and your text stays exactly as it was.
+**What it tries to fix, and how it limits over-editing.** The target is spelling, grammar, punctuation, and obvious typos. The prompt restricts the model to mechanical proofreading and asks it to preserve meaning, tone, formatting, casing, and language mix. Output guards also reject some clear deviations. These are design goals, not a guarantee that the model never makes a mistake:
 
-**Honest limits:** this runs on Apple's small on-device model, and the trade-offs show: **English corrections are the most reliable**; **Chinese fixes are conservative** and syntax-dependent typos (的/得, 在/再) are often missed; **longer selections tend to come back "No changes needed"**; one or two sentences at a time works best. That bias is deliberate: when the model is unsure it returns your text unchanged; it would rather miss a fix than make one up.
+- **The default prompt asks for proofreading, not translation.** It asks the model to preserve mixed languages, Chinese script, code fragments, URLs and paths, and to treat questions or instructions inside selected text as content to proofread.
+- **Output guards reject some clear deviations.** Detected length, script or language problems can trigger a retry or rejection. For manual polish, a rejected result leaves the selected text unchanged and displays an explanation. These checks cannot detect every meaning change.
+
+**Honest limits:** English corrections are the most reliable in our testing. Chinese results are less consistent: syntax-dependent typos can be missed, and unnecessary rewrites can occur. Longer selections often return “No changes needed”; start with one or two sentences. Automatic polishing stays off by default. Try manual polishing or Eval Mode first to judge whether the results suit your work.
 
 **Speed:** typically ~1-3 s. Lamitype keeps a prewarmed model session on standby, so the prompt-processing cost is paid before you double-tap, not after.
 
-**Custom rules:** menu bar → **Settings… → Text → Polish instructions → Open file in TextEdit** opens `~/Library/Application Support/Lamitype/polish_rules.txt`. One short imperative rule per line (`#` for comments), merged into the built-in prompt, e.g. `Use the Oxford comma.` or `一律用台灣用語`. Saves hot-reload; no restart.
+**Polish prompt:** open **Settings → Text → Edit Polish Prompt…** to view and edit the complete prompt. Manual polish, automatic polish and Eval reruns share one prompt, with no append or override modes. Test a draft on saved cases, then choose **Save Prompt** to apply it to future polishing; opening the editor does not enable capture. You can restore the default. App updates supply the latest default unless you have saved a customization, which stays unchanged.
 
-**Requirements:** macOS 26 (Tahoe) + Apple Intelligence enabled + Apple Silicon. On by default; on Macs without Foundation Models the double-tap stays inactive, and the **Services → Polish with Lamitype** entry reports why. Toggle from the menu bar (**Text Polish**) or via `defaults`.
+**Auto Polish for dictation (v0.5.13+, off by default):** check **Auto Polish Dictation** in the menu bar to attempt the same on-device proofread on each local dictation result before insertion, using the same complete prompt. It processes only the text from that utterance. If polishing fails, trips an output guard, or takes more than 8 seconds, the raw transcript is inserted as-is with no alert. Add apps where you do not want an automatic attempt under **Excluded apps → Choose Apps…**. Local engine only; OpenAI / Gemini dictation skips this step.
+
+**Eval Mode / local polish workbench:** turn **Eval Mode** on from the menu bar when you want to inspect real results. While it is on, Lamitype temporarily saves local dictation polish decisions and manual Text Polish events as plain text, shows Original and Result with a track-changes diff, and lets you rerun entries with a complete prompt draft, label them, export a case set, or delete the data. The switch is session-only. On a normal quit, Lamitype deletes the entries it manages, including reruns and labels. If the app crashes or is force-quit, cleanup cannot run at that moment; orphaned Eval data is removed on the next launch. Previously exported files and the saved polish prompt remain. At 500 entries, capture pauses without pruning data during the session; delete entries to resume.
+
+Eval data stays at `~/Library/Application Support/Lamitype/eval.noindex/`, one user-readable JSON file per entry. It contains text and the destination app identifier, never audio, screenshots, clipboard history, or keystrokes, and Lamitype does not upload it. The directory is excluded from Spotlight but can be included in Time Machine backups. The Auto Polish exclusion list also blocks Eval capture and starts empty. Capture stops while macOS Secure Input is active; not every app or password field enables that system protection. An unidentified frontmost app is not captured either. In an excluded app, an explicit **Services → Polish with Lamitype** action can still polish the selection but does not create an Eval entry. Export files are plain text and omit app identifiers.
+
+**Requirements and controls:** macOS 26 (Tahoe) + Apple Intelligence enabled + Apple Silicon. **Settings → Text → Enable Text Polish** defaults ON; automatic polishing defaults OFF. With the menu item unchecked, double-tap Right ⌥ or use **Services → Polish with Lamitype** for manual proofreading. Turning the master switch off also disables automatic polishing and greys out the menu item. Click the adjacent **Enable Text Polish in Settings…** action to open Text settings; Lamitype does not enable it automatically. Re-enabling returns to manual mode. Polishing does not run when AFM is unavailable.
 
 ## Setup Guide: iOS (iPhone + Mac Server)
 
@@ -474,6 +491,13 @@ defaults write com.felix.hushtype hushtype.floatingOverlayEnabled -bool false
 # (default: true, requires macOS 26 + Apple Intelligence)
 defaults write com.felix.hushtype hushtype.textPolishEnabled -bool false
 
+# Auto Polish: proofread local dictation before it is inserted
+# (default: false, requires macOS 26 + Apple Intelligence)
+defaults write com.felix.hushtype hushtype.autoPolishDictationEnabled -bool true
+
+# Apps excluded from Auto Polish (array of bundle identifiers, default: empty)
+defaults write com.felix.hushtype hushtype.autoPolishExcludedBundleIDs -array com.apple.Terminal com.googlecode.iterm2
+
 # Text Translation via Apple Translation Framework (default: false)
 defaults write com.felix.hushtype hushtype.textTranslationEnabled -bool true
 
@@ -490,7 +514,7 @@ defaults write com.felix.hushtype hushtype.translateTargetLanguage -string "en"
 
 ### Changing the Hotkey (macOS)
 
-Edit `Sources/Lamitype/HotkeyManager.swift`:
+Edit `Sources/HushType/HotkeyManager.swift`:
 ```swift
 private static let rightOptionKeyCode: Int64 = 61
 ```
@@ -505,8 +529,8 @@ Two modes, one principle: **there is never a third party in the middle, and the 
 
 ### Local mode (default)
 
-- **No audio is stored.** Voice data exists only in RAM during the recording → transcription pipeline, then discarded. Nothing is written to disk: not on macOS, not on the iOS server.
-- **No network after setup.** The only internet access is the one-time model download (~675 MB) on first launch. After that, the app and the model run fully offline with zero outbound connections.
+- **No audio recordings are saved.** Lamitype does not save recordings as files; voice data is used during recording and transcription, then discarded. If you explicitly enable Eval Mode, the app temporarily saves dictation and polish result text locally. A normal quit deletes managed Eval data; after an abnormal exit, the next launch removes orphaned data. Exports and the saved polish prompt remain.
+- **Local dictation works offline.** After the one-time ~675 MB model download, local dictation does not require a network connection. Optional update checks, cloud dictation, and Live Translated Caption still use the network when you choose them.
 - **No telemetry.** No analytics, no usage tracking, no phone-home. The macOS app contains zero local-mode network code beyond the initial model fetch (handled by the HuggingFace Hub SDK inside speech-swift) and an optional GitHub releases check for update notifications.
 - **Fully air-gappable.** Prepare the model folder on another machine (`~/Library/Caches/qwen3-speech/models/aufklarer/Qwen3-ASR-0.6B-MLX-4bit/` for the macOS app; the Python / iOS server has a separate Hugging Face cache at `~/.cache/huggingface/hub/models--mlx-community--Qwen3-ASR-0.6B-4bit/`) and copy it over; the app will never need internet.
 
@@ -528,7 +552,7 @@ Two modes, one principle: **there is never a third party in the middle, and the 
 Lamitype/
 ├── Package.swift                      SPM config (macOS target)
 ├── Makefile                           build / install / clean / dmg
-├── Sources/Lamitype/                  macOS menu bar app
+├── Sources/HushType/                  macOS menu bar app
 │   ├── main.swift                     NSApplication bootstrap
 │   ├── AppDelegate.swift              Orchestrator + state machine
 │   ├── StatusBarController.swift      Menu bar icon + menus + Settings routing
@@ -551,7 +575,7 @@ Lamitype/
 │   │   ├── GeneralPane.swift             General preferences + permissions
 │   │   ├── DictationPane.swift           Dictation engine + recognition settings
 │   │   ├── CaptionPane.swift             Caption panel + translated-caption settings
-│   │   ├── TextPane.swift                Text Polish + Translation settings
+│   │   ├── TextPane.swift                Text Polish, Auto Polish + Translation settings
 │   │   ├── CloudPane.swift               Spend guardrails + provider keys
 │   │   ├── IOSServerPane.swift           Experimental iOS server controls
 │   │   └── AboutPane.swift               Version, project links, update check
@@ -561,8 +585,11 @@ Lamitype/
 │   ├── DictionaryReplacer.swift       Customized dictionary (final post-processing step)
 │   ├── TextInserter.swift             Clipboard + Cmd+V paste (result persists on clipboard)
 │   ├── TextPolisher.swift             Text Polish orchestration + output guards
+│   ├── AutoPolishPolicy.swift         Auto Polish decision (toggle, engine, excluded apps)
+│   ├── DictationPolishStage.swift     Polish-before-insert stage with raw-transcript fallback
+│   ├── AutoPolishExclusionPicker.swift Excluded-apps picker for Auto Polish
 │   ├── FoundationModelsPolisher.swift macOS 26+ Apple FM proofread (prewarmed session pool)
-│   ├── PolishPrompt.swift             Proofread-only prompt + polish_rules.txt merge
+│   ├── PolishPrompt.swift             Default and complete custom polish prompt
 │   ├── PolishCardWindow.swift         Floating polish result card NSPanel
 │   ├── PolishCardView.swift           SwiftUI polish result card view
 │   ├── InputSourceManager.swift       CJK input method detection
@@ -617,10 +644,10 @@ To run Lamitype on your own devices, change these:
 |---|---|---|
 | Bundle ID | `iOS/project.yml` (both targets) + `iOS/Shared/AppGroupConstants.swift` | `com.yourname.hushtype` / `group.com.yourname.hushtype` |
 | Server URL default | `iOS/VoxKey/Views/ContentView.swift` | Your Tailscale or LAN IP |
-| Hotkey | `Sources/Lamitype/HotkeyManager.swift` | Any modifier keycode |
+| Hotkey | `Sources/HushType/HotkeyManager.swift` | Any modifier keycode |
 | Model | `iOS/VoxKey/Services/RemoteTranscriber.swift` + `scripts/ios_server.py` | `mlx-community/Qwen3-ASR-1.7B-8bit` for better quality |
 | Session timeout | `iOS/VoxKey/Services/BackgroundAudioManager.swift` | `sessionDuration` property |
-| OpenCC config | `Sources/Lamitype/ChineseConverter.swift` + `scripts/ios_server.py` | Change `s2twp` to `s2t` for standard Traditional |
+| OpenCC config | `Sources/HushType/ChineseConverter.swift` + `scripts/ios_server.py` | Change `s2twp` to `s2t` for standard Traditional |
 
 ---
 
