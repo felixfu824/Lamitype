@@ -31,10 +31,12 @@
 > **名稱延續：** Lamitype formerly HushType。v0.5.12 只更名 Mac App；現有設定與 Application Support 資料會自動搬移，iOS App 尚未調整。
 
 <p align="center">
-  <img src="Resources/lamitype-memory-zh.svg" alt="常駐記憶體的模型權重：Lamitype 本機 675 MB（道地繁中）、Lamitype 雲端引擎 ~0 MB vs Whisper large-v3-turbo 1,618 MB vs Parakeet 2,472 MB（不支援中文）" width="100%">
+  <img src="Resources/lamitype-memory-zh.svg" alt="模型權重檔案大小：Lamitype 本機約 708 MB（道地繁中）、Lamitype 雲端引擎約 0 MB，對比 Whisper large-v3-turbo 1,618 MB 與 Parakeet 2,472 MB（不支援中文）" width="100%">
 </p>
 
-<sub>數字為各工具預設精度的模型權重大小；Lamitype 的 675 MB 是 Qwen3-ASR 0.6B 的 4-bit MLX 量化版。選用雲端引擎（OpenAI / Gemini）時**模型記憶體 ~0 MB**，品質同級或更好，代價是每句多幾秒的網路延遲，依時長計費或使用 Gemini 免費（Free tier）API Key。另有 4-bit Whisper-turbo（約 464 MB），但中文輸出仍偏簡體、品質平庸，所以我們的定位是「能做出道地繁中的輕量 ASR」，而非「最小的模型」。</sub>
+<sub>數字為各工具預設精度的模型權重檔案大小；Lamitype 的約 708 MB 是 Qwen3-ASR 0.6B 的 4-bit MLX 量化版。選用雲端引擎（OpenAI / Gemini）時，**本機模型權重約 0 MB**，品質同級或更好，代價是每句多幾秒的網路延遲，依時長計費或使用 Gemini 免費（Free tier）API Key。另有 [4-bit Whisper-turbo](https://huggingface.co/mlx-community/whisper-large-v3-turbo-4bit/tree/main)（約 463 MB），但中文輸出仍偏簡體、品質平庸，所以我們的定位是「能做出道地繁中的輕量 ASR」，而非「最小的模型」。</sub>
+
+<sub>**來源與計算方式（2026-09-10 驗證）：** Lamitype 主要模型權重檔為 708,236,945 bytes（708.237 MB；1 MB = 1,000,000 bytes），數據來自[固定版本的 Hugging Face 檔案](https://huggingface.co/aufklarer/Qwen3-ASR-0.6B-MLX-4bit/tree/bc441bd1e4295c1f42d9879f056049a925b6e013)。下載時另含支援檔案。App 目前未固定此版本；若上游模型倉庫更新，模型權重大小可能改變。</sub>
 
 ---
 
@@ -50,9 +52,9 @@ Apple Foundation Models 的繁中校對能力仍有限，這一版沒有宣稱�
 
 ## 為什麼選擇 Lamitype
 
-**隱私與主導權優先。** 預設模式下語音不離開你的 Mac，模型在本機執行，無雲端帳號、無使用追蹤，只有首次下載約 675 MB 的模型。選擇雲端聽寫時，音訊用**你自己的金鑰**經 HTTPS **直連** OpenAI 或 Gemini，中間沒有 Lamitype 伺服器；每次啟動 App 後，第一次送出雲端請求前都會先徵求同意。**要不要把音訊交給供應商，由你決定。**
+**隱私與主導權優先。** 預設模式下語音不離開你的 Mac，模型在本機執行，無雲端帳號、無使用追蹤；首次會下載模型（權重約 708 MB，另含支援檔案）。選擇雲端聽寫時，音訊用**你自己的金鑰**經 HTTPS **直連** OpenAI 或 Gemini，中間沒有 Lamitype 伺服器；每次啟動 App 後，第一次送出雲端請求前都會先徵求同意。**要不要把音訊交給供應商，由你決定。**
 
-**記憶體友善：與你的 AI 助手共存。** 本機模型權重約 675 MB；模型載入後，Lamitype 整個程序通常約占 2.1 GB RAM。App 啟動時會替 MLX 記憶體暫存設上限，也可從選單卸載模型來釋放記憶體。切到雲端引擎時不載入本機模型；引擎選擇會跨重啟保留，切回本機時再自動載入。
+**記憶體友善：與你的 AI 助手共存。** 本機模型權重約 708 MB。實測載入本機模型後，Lamitype 整個程序的 RAM 峰值約 2.1 GB，已包含 MLX 閒置快取。Lamitype 將閒置快取限制為 1 GB，避免無上限增長；這不是整個程序的記憶體硬上限。你可從選單卸載模型，釋放模型權重與快取緩衝區。切到雲端引擎時不載入本機模型；引擎選擇會跨重啟保留，切回本機時再自動載入。
 
 **雲端聽寫（Opt-in）。** 支援 **OpenAI**（預設 `gpt-4o-mini-transcribe`）與 **Gemini**（預設 `gemini-3.5-flash-lite`，可選 `gemini-3.7-flash`），使用你的金鑰直連供應商。Gemini 提供 Free tier API Key，但 Google 免費方案可能使用你提交的音訊改進產品，付費方案則不會。內建護欄包括每次啟動 App 後第一次雲端請求前徵求同意、每日花費警示與當日鎖定（預設 US$5），以及在上傳前擋下過長錄音。
 
@@ -169,7 +171,7 @@ iOS（透過你的 Mac 作為伺服器）：
 2. 打開 DMG，將 Lamitype 拖到「應用程式」
 3. 從「應用程式」或 Spotlight 開啟 Lamitype；Developer ID 簽章與 Apple 公證可直接通過 Gatekeeper
 4. 依需要授予**輔助使用**、**麥克風**與**螢幕與系統音訊錄製**權限
-5. 等待模型下載（約 675 MB，僅首次，進度顯示在選單列）
+5. 等待模型下載（權重約 708 MB，另含支援檔案；僅首次，進度顯示在選單列）
 
 DMG 為完全獨立版本，OpenCC 及所有相依套件皆已內含。不需要 Homebrew、不需要終端機指令。
 
@@ -246,7 +248,7 @@ make install
 3. 在輔助使用卡片點 **Open System Settings**。在輔助使用清單中找到 Lamitype 並**開啟開關**。如果清單裡沒有 Lamitype，可以使用小型提示視窗把 Lamitype 拖進清單。
 4. 點 **Allow Microphone**，並在 macOS 麥克風權限提示中允許。
 5. 回到 Lamitype，點擊 **Restart Lamitype**：App 會自動重新啟動，讓新授予的輔助使用權限生效。（macOS 會在 process 層級快取權限檢查結果，所以授予權限後必須重啟，Lamitype 會幫你處理這個步驟。）
-6. 等待模型下載（約 675 MB，僅首次，進度顯示在選單列）
+6. 等待模型下載（權重約 708 MB，另含支援檔案；僅首次，進度顯示在選單列）
 
 ### 步驟 3：使用
 
@@ -377,7 +379,7 @@ ipconfig getifaddr en0
 cd Lamitype
 python3 scripts/ios_server.py
 # 伺服器啟動在 0.0.0.0:8000
-# 首次轉錄請求會下載模型（約 675 MB）
+# 首次轉錄請求會下載獨立的伺服器模型
 ```
 
 驗證伺服器是否運行：
@@ -531,7 +533,7 @@ private static let rightOptionKeyCode: Int64 = 61
 ### 本機模式（預設）
 
 - **不儲存錄音。** Lamitype 不會把錄音存成檔案；語音資料僅在錄音與轉錄流程中使用，完成後即丟棄。若你主動啟用校對實驗室，App 會把聽寫與校對結果的文字暫存在本機；正常結束時刪除，異常結束後則在下次啟動清除。匯出檔與已儲存的校對提示詞不受影響。
-- **本機聽寫可離線運作。** 首次下載約 675 MB 模型後，本機聽寫不需網路。手動檢查更新、雲端聽寫與 Live Translated Caption 等選用功能仍需連網。
+- **本機聽寫可離線運作。** 首次下載模型（權重約 708 MB，另含支援檔案）後，本機聽寫不需網路。手動檢查更新、雲端聽寫與 Live Translated Caption 等選用功能仍需連網。
 - **無遙測。** 無分析追蹤、無使用統計、無回傳機制。macOS App 除了初始模型下載（由 speech-swift 內的 HuggingFace Hub SDK 處理）以及選用的 GitHub releases 更新檢查外，不包含任何本機模式網路程式碼。
 - **可完全離網運作。** 事先在另一台機器準備模型資料夾（macOS App 為 `~/Library/Caches/qwen3-speech/models/aufklarer/Qwen3-ASR-0.6B-MLX-4bit/`，Python / iOS 伺服器則使用獨立的 Hugging Face 快取 `~/.cache/huggingface/hub/models--mlx-community--Qwen3-ASR-0.6B-4bit/`）再複製過來，App 將永遠不需要網路。
 

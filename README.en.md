@@ -31,10 +31,12 @@
 > **Name continuity:** Lamitype was formerly HushType. v0.5.12 renames the Mac app only; existing settings and Application Support data migrate automatically, while the iOS app and keyboard keep the HushType name in this release.
 
 <p align="center">
-  <img src="Resources/lamitype-memory-en.svg" alt="Model weights resident in RAM: Lamitype local 675 MB (native Traditional Chinese), Lamitype cloud engines ~0 MB, vs Whisper large-v3-turbo 1,618 MB vs Parakeet 2,472 MB (no Chinese)" width="100%">
+  <img src="Resources/lamitype-memory-en.svg" alt="Model weight file sizes: Lamitype local about 708 MB, optional cloud mode about 0 MB in local weights, Whisper large-v3-turbo FP16 1,618 MB, and Parakeet TDT 0.6B FP32 2,472 MB" width="100%">
 </p>
 
-<sub>Sizes are the weight files each tool ships at default precision; Lamitype's 675 MB is the 4-bit MLX quant of Qwen3-ASR 0.6B. On a cloud engine (OpenAI / Gemini) **model RAM is ~0 MB**: same or better quality, at the cost of a few seconds of network latency per utterance, billed by duration or free with a Gemini free-tier API key. A 4-bit MLX Whisper-turbo exists (~464 MB) but still outputs mediocre / Simplified Chinese, so the claim is "a light ASR that nails Traditional Chinese," not "the smallest model."</sub>
+<sub>Bars compare primary model weight files at the precisions shown, measured in decimal MB; they do not compare running RAM or accuracy. Lamitype Local keeps speech on-device and uses ≈708 MB of model weights. Optional cloud dictation uses your API key and provider connection, leaving the local model unloaded (~0 MB in local weights). A smaller [4-bit MLX Whisper-turbo weight file](https://huggingface.co/mlx-community/whisper-large-v3-turbo-4bit/tree/main) is ≈463 MB, so this is not a smallest-model claim.</sub>
+
+<sub>**Source and method (verified 2026-09-10):** Lamitype's primary weight file is 708,236,945 bytes (708.237 MB; 1 MB = 1,000,000 bytes), measured at the [pinned Hugging Face revision](https://huggingface.co/aufklarer/Qwen3-ASR-0.6B-MLX-4bit/tree/bc441bd1e4295c1f42d9879f056049a925b6e013). Supporting files are additional. The app does not currently pin that revision, so the model weight size may change if the upstream repository is updated.</sub>
 
 ---
 
@@ -50,9 +52,9 @@ Apple Foundation Models still has limited Traditional Chinese proofreading quali
 
 ## Why Lamitype
 
-**Privacy and control first.** In the default mode, voice stays on your Mac: the model runs locally, with no cloud account or usage tracking after the one-time ~675 MB model download. When you choose cloud dictation, audio goes over HTTPS **directly** to OpenAI or Gemini with **your own key**, with no Lamitype server in between. Lamitype asks for consent before the first cloud request after each app launch. **You decide whether audio goes to a provider.**
+**Privacy and control first.** In the default mode, voice stays on your Mac: the model runs locally, with no cloud account or usage tracking after the one-time model download (≈708 MB in weights; supporting files are additional). When you choose cloud dictation, audio goes over HTTPS **directly** to OpenAI or Gemini with **your own key**, with no Lamitype server in between. Lamitype asks for consent before the first cloud request after each app launch. **You decide whether audio goes to a provider.**
 
-**Memory-friendly: coexists with your agents.** The local model weights are about 675 MB; with the model loaded, the full Lamitype process typically uses about 2.1 GB of RAM. The app caps the MLX memory buffer at launch and lets you unload the model from the menu to free memory. A cloud engine leaves the local model unloaded. The engine choice persists across restarts, and the model reloads when you switch back to local.
+**Memory-friendly: coexists with your agents.** The local model weights are about 708 MB. In our measurements, the full Lamitype process peaked at about 2.1 GB of RAM with the local model loaded, including MLX's idle cache. Lamitype limits that idle cache to 1 GB to prevent unbounded growth; the cache setting is not a hard cap on total process memory. You can unload the model from the menu to free its weights and cached buffers. A cloud engine leaves the local model unloaded. The engine choice persists across restarts, and the model reloads when you switch back to local.
 
 **Cloud dictation (opt-in).** Lamitype supports **OpenAI** (default `gpt-4o-mini-transcribe`) and **Gemini** (default `gemini-3.5-flash-lite`, with `gemini-3.7-flash` as the quality option), using your key in a direct connection. Gemini offers a free-tier API key, but Google may use audio submitted on the free tier to improve its products; the paid tier does not. Guardrails include consent before the first cloud request after each app launch, a daily spend warning with same-day lockout (default US$5), and blocking over-long recordings before upload.
 
@@ -168,7 +170,7 @@ iOS (via your Mac as server):
 2. Open the DMG and drag Lamitype to Applications
 3. Open Lamitype from Applications or Spotlight; its Developer ID signature and Apple notarization pass Gatekeeper directly
 4. Grant **Accessibility**, **Microphone**, and **Screen & System Audio Recording** when needed
-5. Wait for the model to download (~675 MB, one-time, progress shown in menu bar)
+5. Wait for the model download (≈708 MB in weights, plus supporting files; one-time, progress shown in menu bar)
 
 The DMG is self-contained: OpenCC and all dependencies are bundled. No Homebrew, no terminal commands.
 
@@ -245,7 +247,7 @@ make install
 3. Click **Open System Settings** in the Accessibility card. Find Lamitype in the Accessibility list and **toggle it on**. If Lamitype is missing, use the small helper panel to drag Lamitype into the list.
 4. Click **Allow Microphone** and approve the macOS microphone prompt.
 5. Return to Lamitype and click **Restart Lamitype**: the app relaunches itself with the new Accessibility permission active. (macOS caches the permission check per-process, so a restart is mandatory after granting; Lamitype handles it for you.)
-6. Wait for the model to download (~675 MB, one-time, progress shown in menu bar)
+6. Wait for the model download (≈708 MB in weights, plus supporting files; one-time, progress shown in menu bar)
 
 ### Step 3: Use it
 
@@ -376,7 +378,7 @@ Click the Lamitype icon in the menu bar → **Settings… → iOS → Start iOS 
 cd Lamitype
 python3 scripts/ios_server.py
 # Server starts on 0.0.0.0:8000
-# First transcription request will download the model (~675 MB)
+# First transcription request downloads the separate server model
 ```
 
 Verify the server is running:
@@ -530,7 +532,7 @@ Two modes, one principle: **there is never a third party in the middle, and the 
 ### Local mode (default)
 
 - **No audio recordings are saved.** Lamitype does not save recordings as files; voice data is used during recording and transcription, then discarded. If you explicitly enable Eval Mode, the app temporarily saves dictation and polish result text locally. A normal quit deletes managed Eval data; after an abnormal exit, the next launch removes orphaned data. Exports and the saved polish prompt remain.
-- **Local dictation works offline.** After the one-time ~675 MB model download, local dictation does not require a network connection. Optional update checks, cloud dictation, and Live Translated Caption still use the network when you choose them.
+- **Local dictation works offline.** After the one-time model download (≈708 MB in weights, plus supporting files), local dictation does not require a network connection. Optional update checks, cloud dictation, and Live Translated Caption still use the network when you choose them.
 - **No telemetry.** No analytics, no usage tracking, no phone-home. The macOS app contains zero local-mode network code beyond the initial model fetch (handled by the HuggingFace Hub SDK inside speech-swift) and an optional GitHub releases check for update notifications.
 - **Fully air-gappable.** Prepare the model folder on another machine (`~/Library/Caches/qwen3-speech/models/aufklarer/Qwen3-ASR-0.6B-MLX-4bit/` for the macOS app; the Python / iOS server has a separate Hugging Face cache at `~/.cache/huggingface/hub/models--mlx-community--Qwen3-ASR-0.6B-4bit/`) and copy it over; the app will never need internet.
 
