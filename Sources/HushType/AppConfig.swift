@@ -127,6 +127,11 @@ final class AppConfig {
 
     /// Whether to show the floating "Listening / Transcribing" overlay
     /// near the bottom of the screen during dictation.
+    ///
+    /// This governs the routine activity indicator only. Disabling it does NOT
+    /// suppress a brief dictation failure notice, which reuses the same
+    /// non-activating panel so an error is always visible without needing
+    /// notification authorization.
     var floatingOverlayEnabled: Bool {
         get {
             if defaults.object(forKey: Keys.floatingOverlayEnabled) == nil {

@@ -1130,9 +1130,41 @@
 
 "alert.caption.local_start_failed.title" = "Could not start Live Caption";
 
-/* Lamitype-owned NSError that can surface in caption startup wrappers. */
+/* Lamitype-owned error when a second microphone capture is rejected. */
 
-"error.audio_capture.push_to_talk_active" = "Push-to-talk recording is active; cannot start continuous capture.";
+"error.audio_capture.busy" = "Microphone capture is already active.";
+
+/* Lamitype-owned error when the fresh input node reports an unusable format. */
+
+"error.audio_capture.invalid_input" = "No usable microphone was found. Check your audio input in System Settings and try again.";
+
+/* Lamitype-owned error when the audio engine refuses to start. The underlying system error is logged, never shown. */
+
+"error.audio_capture.start_failed" = "Could not start the microphone. Check your audio input in System Settings and try again.";
+
+/* Lamitype-owned error when no audio arrives within the first-buffer deadline. */
+
+"error.audio_capture.no_input_buffer" = "No audio was received from the microphone. Check your audio input in System Settings and try again.";
+
+/* Lamitype-owned terminal error after the audio device configuration changed under an active capture. */
+
+"error.audio_capture.configuration_changed" = "The audio device changed. Start again to use the current microphone.";
+
+/* Shown when a hold produced too little audio to transcribe. Right Option is the dictation key. */
+
+"error.audio_capture.too_short" = "Not enough audio was captured. Hold Right Option and try again.";
+
+/* Dictation capture failure alert title. */
+
+"alert.dictation.capture_failed.title" = "Could not record audio";
+
+/* Argument 1 is the capture error description. */
+
+"alert.dictation.capture_failed.message" = "Nothing was inserted. %1$@";
+
+/* Argument 1 is the capture error description shown under the microphone-unavailable title. */
+
+"alert.caption.microphone_start_failed.message" = "Live Caption could not start: %1$@";
 
 /* Lamitype-owned continuous-capture NSError. */
 

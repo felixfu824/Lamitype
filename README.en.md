@@ -40,13 +40,12 @@
 
 ---
 
-## What's new in v0.5.13
+## What's new in v0.5.14
 
-- **Auto Polish Dictation with Apple Foundation Models (available offline), off by default:** check **Auto Polish Dictation** in the menu bar to attempt an on-device proofread before local dictation is inserted. You can exclude apps where you do not want automatic polishing; the raw transcript is kept if polishing fails or times out. OpenAI and Gemini dictation still bypass automatic AFM polishing while using the same deterministic post-processing.
-- **One consistent, editable Text Polish prompt:** manual polish, Auto Polish Dictation, and Eval reruns use the same complete default-or-custom prompt. An unsaved draft is isolated to Eval reruns. **Restore Default** takes effect after **Save Prompt**. Effective customizations from the old `polish_rules.txt` or `polish_prompt.txt` format migrate automatically.
-- **Eval Mode:** opt in again each launch to keep local polish cases temporarily as plain text on this Mac. A normal quit deletes the app-managed entries, reruns, and labels; orphaned data after a crash or force quit is removed on the next launch. Exports and the saved prompt remain. Capture is suppressed while macOS Secure Input is active, when the frontmost app cannot be identified, and for excluded apps. At 500 entries, capture pauses without pruning data during the session.
+- **Fixed dictation receiving no audio after switching audio devices.** After plugging in an external speaker or microphone, dictation now uses the current device. If the microphone fails to start or the device changes during a recording, the floating HUD shows a notice that clears after about 4 seconds; press again.
+- Tap-to-translate is decided by key-down time (0.3 s).
 
-Apple Foundation Models still has limited Traditional Chinese proofreading quality. This release does not claim a new accuracy improvement.
+The v0.5.13 changes (Auto Polish Dictation, one Text Polish prompt, Eval Mode) are described in [GitHub Releases](https://github.com/felixfu824/Lamitype/releases/tag/v0.5.13).
 
 ---
 

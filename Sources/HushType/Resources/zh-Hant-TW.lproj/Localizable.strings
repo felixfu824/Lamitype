@@ -1130,9 +1130,41 @@
 
 "alert.caption.local_start_failed.title" = "無法啟動即時字幕";
 
-/* Lamitype-owned NSError that can surface in caption startup wrappers. */
+/* Lamitype-owned error when a second microphone capture is rejected. */
 
-"error.audio_capture.push_to_talk_active" = "按住說話錄音正在進行，無法啟動連續擷取。";
+"error.audio_capture.busy" = "麥克風擷取正在進行中。";
+
+/* Lamitype-owned error when the fresh input node reports an unusable format. */
+
+"error.audio_capture.invalid_input" = "找不到可用的麥克風。請在「系統設定」中確認音訊輸入後再試一次。";
+
+/* Lamitype-owned error when the audio engine refuses to start. The underlying system error is logged, never shown. */
+
+"error.audio_capture.start_failed" = "無法啟動麥克風。請在「系統設定」中確認音訊輸入後再試一次。";
+
+/* Lamitype-owned error when no audio arrives within the first-buffer deadline. */
+
+"error.audio_capture.no_input_buffer" = "未收到麥克風音訊。請在「系統設定」中確認音訊輸入後再試一次。";
+
+/* Lamitype-owned terminal error after the audio device configuration changed under an active capture. */
+
+"error.audio_capture.configuration_changed" = "音訊裝置已變更。請重新開始以使用目前的麥克風。";
+
+/* Shown when a hold produced too little audio to transcribe. Right Option is the dictation key. */
+
+"error.audio_capture.too_short" = "擷取的音訊太短。請按住右側 Option 鍵再試一次。";
+
+/* Dictation capture failure alert title. */
+
+"alert.dictation.capture_failed.title" = "無法錄製音訊";
+
+/* Argument 1 is the capture error description. */
+
+"alert.dictation.capture_failed.message" = "未插入任何文字。%1$@";
+
+/* Argument 1 is the capture error description shown under the microphone-unavailable title. */
+
+"alert.caption.microphone_start_failed.message" = "無法啟動即時字幕：%1$@";
 
 /* Lamitype-owned continuous-capture NSError. */
 

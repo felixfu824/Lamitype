@@ -6,6 +6,40 @@ import UserNotifications
 private let log = Logger(subsystem: "com.felix.hushtype", category: "app")
 private let autoPolishLog = Logger(subsystem: "com.felix.hushtype", category: "auto-polish")
 
+/// Right Option is a tap below this threshold and a hold at or above it.
+private let dictationTapThreshold: TimeInterval = 0.3
+
+/// Pure tap-vs-hold decision for one Right Option press. A press whose capture
+/// failed is never a tap, however briefly it was held, so a failed press can
+/// never translate. Exactly 0.3 s is a HOLD.
+func isTranslationTap(elapsed: TimeInterval, captureFailed: Bool) -> Bool {
+    !captureFailed && elapsed < dictationTapThreshold
+}
+
+/// One accepted dictation press, from key down to release or cancellation.
+/// Main-thread owned; identity decides whether a late capture failure still
+/// belongs to the press the user is holding.
+@MainActor
+final class DictationPressRecord {
+    /// Monotonic, so a system clock change cannot turn a hold into a tap.
+    let keyDownUptime: TimeInterval
+    var failed = false
+    var errorPresented = false
+    var cancelled = false
+
+    init(keyDownUptime: TimeInterval) {
+        self.keyDownUptime = keyDownUptime
+    }
+
+    /// One failure presentation per press. False for a cancelled press and for
+    /// a press that has already shown its notice.
+    func claimErrorPresentation() -> Bool {
+        guard !cancelled, !errorPresented else { return false }
+        errorPresented = true
+        return true
+    }
+}
+
 /// T2 bridge only. T3 replaces these placeholders with the real provider
 /// engines; reporting `isLoaded == true` keeps cloud hotkey presses on the
 /// throwing error path instead of silently treating them as an unloaded model.
@@ -108,6 +142,13 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     private var translationManager: TranslationManager!
     private var liveCaptionManager: LiveCaptionManager?
     private let tapArbiter = TapArbiter()
+
+    /// The dictation press currently held, if any. Created only for an
+    /// accepted press; cleared on release, cancellation or failure handoff.
+    private var currentDictationPress: DictationPressRecord?
+
+    /// Pending 4 s dismissal for the notice currently on screen.
+    private var captureNoticeHideWork: DispatchWorkItem?
     private var consecutiveCloudNetworkFailures = 0
     private var evalStoreSessionStarted = false
 
@@ -362,6 +403,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     // MARK: - Overlay helpers
 
     private func showOverlayRecording() {
+        dismissCaptureNotice()
         guard AppConfig.shared.floatingOverlayEnabled else { return }
         let provider: String?
         switch AppConfig.shared.dictationEngine {
@@ -374,6 +416,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     }
 
     private func switchOverlayToTranscribing() {
+        dismissCaptureNotice()
         guard AppConfig.shared.floatingOverlayEnabled else { return }
         // Window stays visible; only the inner state changes.
         let provider: String?
@@ -386,20 +429,63 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     }
 
     private func switchOverlayToPolishing() {
+        dismissCaptureNotice()
         guard AppConfig.shared.floatingOverlayEnabled else { return }
         // Preserve the existing panel and focus; only swap the pill contents.
         overlayState.state = .polishing
     }
 
     private func showOverlayPolishing() {
+        dismissCaptureNotice()
         guard AppConfig.shared.floatingOverlayEnabled else { return }
         overlayState.state = .polishing
         overlayWindow.show()
     }
 
     private func hideOverlay() {
+        captureNoticeHideWork?.cancel()
+        captureNoticeHideWork = nil
         overlayWindow.hide()
         overlayState.state = .hidden
+    }
+
+    // MARK: - Capture failure notice
+
+    /// Show a non-modal failure notice in the floating HUD for 4 s.
+    ///
+    /// Shown regardless of `floatingOverlayEnabled`: that preference governs
+    /// the routine Listening / Transcribing indicator, and a failure the user
+    /// cannot see is worse than an indicator they switched off.
+    private func showCaptureNotice(message: String) {
+        captureNoticeHideWork?.cancel()
+        captureNoticeHideWork = nil
+
+        let ticket = overlayState.beginNotice(message: message)
+        overlayWindow.show()
+
+        let work = DispatchWorkItem { [weak self] in
+            guard let self else { return }
+            // A stale timer neither hides the newer notice nor clears the
+            // newer timer reference.
+            guard self.overlayState.expireNotice(ticket) else { return }
+            self.captureNoticeHideWork = nil
+            self.overlayWindow.hide()
+        }
+        captureNoticeHideWork = work
+        DispatchQueue.main.asyncAfter(deadline: .now() + 4.0, execute: work)
+    }
+
+    /// Retire any notice and its pending dismissal. Orders the panel out only
+    /// when a notice is what is currently showing, so this is safe to call
+    /// before every overlay transition.
+    private func dismissCaptureNotice() {
+        captureNoticeHideWork?.cancel()
+        captureNoticeHideWork = nil
+        let wasShowingNotice = overlayState.isShowingNotice
+        overlayState.invalidateNotice()
+        if wasShowingNotice {
+            overlayWindow.hide()
+        }
     }
 
     // MARK: - Hotkey Handlers
@@ -407,6 +493,10 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     private func handleHotkeyPress() {
         // App-modal alerts must exclusively own input while they are visible.
         guard NSApp.modalWindow == nil else { return }
+
+        // A visible notice is never a gate: an otherwise eligible press
+        // dismisses it and proceeds through the normal checks below.
+        dismissCaptureNotice()
 
         let claimedSecondTap = tapArbiter.cancelPendingForSecondPress()
 
@@ -452,14 +542,64 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
             return
         }
 
+        // Timestamped immediately before the throwing start.
+        let press = DictationPressRecord(keyDownUptime: ProcessInfo.processInfo.systemUptime)
+        currentDictationPress = press
+        audioCapture.onError = { [weak self, weak press] error in
+            // AudioCaptureService delivers this on the main queue, after it has
+            // released the hardware.
+            guard let self, let press, self.currentDictationPress === press else { return }
+            self.failCapturePress(error)
+        }
+
+        do {
+            try audioCapture.startRecording()
+        } catch {
+            failCapturePress(error)
+            return
+        }
+
+        // Only after the start succeeds: never show a HUD for a recording that
+        // is not happening.
         state = .recording
         statusBar.setState(.recording)
         showOverlayRecording()
-        audioCapture.startRecording()
         print("[Lamitype] Recording started...")
     }
 
+    /// Single failure path for a dictation press, shared by the startup catch,
+    /// the `stopRecording()` catch and the asynchronous `onError` callback.
+    private func failCapturePress(_ error: Error) {
+        guard let press = currentDictationPress else { return }
+        press.failed = true
+        tapArbiter.reset()
+        // The service has already latched and (asynchronously) delivered; this
+        // just discards whatever capture state is left.
+        audioCapture.cancelRecording()
+        state = .idle
+        statusBar.setState(.idle)
+        presentDictationCaptureError(message: error.localizedDescription, press: press)
+    }
+
+    /// At most one failure presentation per press. Non-modal, so it can be
+    /// shown synchronously from inside the CGEventTap hotkey callback without
+    /// blocking that tap and without stealing focus.
+    private func presentDictationCaptureError(message: String, press: DictationPressRecord) {
+        guard press.claimErrorPresentation() else { return }
+        showCaptureNotice(message: L10n.format(
+            "alert.dictation.capture_failed.message",
+            "Nothing was inserted. %1$@",
+            arguments: [message]
+        ))
+    }
+
     private func handleHotkeyRelease() {
+        // Sampled first, before stopRecording tears the engine down and before
+        // any UI work. Tap versus hold is a key-down-to-release measurement;
+        // reading the clock after teardown would add that teardown to every
+        // press and turn a short tap into a hold.
+        let releaseUptime = ProcessInfo.processInfo.systemUptime
+
         // Live caption mic-source gate: if mic-source Live Caption is active,
         // we never went into .recording on press. Decide tap-vs-hold using the
         // press timestamp and either translate (tap + translation enabled) or
@@ -485,24 +625,59 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
             return
         }
 
-        guard state == .recording else {
-            print("[Lamitype] Ignoring release - state is \(state)")
+        // The press record, not app state, decides whether this release owns a
+        // dictation capture.
+        guard let press = currentDictationPress else {
+            print("[Lamitype] Ignoring release - no dictation press is open")
+            return
+        }
+        if press.failed {
+            // The failure helper already restored the UI and owns the alert.
+            currentDictationPress = nil
             return
         }
 
-        let samples = audioCapture.stopRecording()
+        let samples: [Float]
+        do {
+            samples = try audioCapture.stopRecording()
+        } catch {
+            failCapturePress(error)
+            currentDictationPress = nil
+            return
+        }
         print("[Lamitype] Recording stopped: \(samples.count) samples (\(String(format: "%.1f", Double(samples.count) / 16000.0))s)")
 
-        // Skip if too short (< 0.3s) - treat as a TAP for translation
-        guard samples.count > 4800 else {
+        // Measured from the snapshot taken on entry, classified only now that
+        // stopRecording has returned without a terminal failure.
+        let elapsed = releaseUptime - press.keyDownUptime
+        if isTranslationTap(elapsed: elapsed, captureFailed: press.failed) {
             hideOverlay()
             state = .idle
             statusBar.setState(.idle)
+            currentDictationPress = nil
             handleTapDetected()
             return
         }
 
+        // A hold from here on. The sample count is an audio-sufficiency guard,
+        // never a tap classifier.
+        guard samples.count > 4800 else {
+            state = .idle
+            statusBar.setState(.idle)
+            tapArbiter.reset()
+            presentDictationCaptureError(
+                message: L10n.string(
+                    "error.audio_capture.too_short",
+                    fallback: "Not enough audio was captured. Hold Right Option and try again."
+                ),
+                press: press
+            )
+            currentDictationPress = nil
+            return
+        }
+
         tapArbiter.reset()
+        currentDictationPress = nil
         state = .transcribing
         statusBar.setState(.transcribing)
         switchOverlayToTranscribing()
@@ -805,12 +980,16 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         tapArbiter.reset()
         liveCaptionGatePressTimestamp = nil
 
-        guard state == .recording else {
+        guard let press = currentDictationPress else {
             log.info("Suppressed Right Option release had no active recording")
             return
         }
 
-        _ = audioCapture.stopRecording()
+        // Cancellation is silent: it suppresses an alert that was scheduled but
+        // not yet shown, and never translates or inserts.
+        press.cancelled = true
+        currentDictationPress = nil
+        audioCapture.cancelRecording()
         state = .idle
         statusBar.setState(.idle)
         hideOverlay()
