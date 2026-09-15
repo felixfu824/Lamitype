@@ -26,28 +26,58 @@ protocol AudioSource: AnyObject, Sendable {
 /// not own the service — the service is supplied at init time so the host
 /// (`AppDelegate`) can decide whether to share an instance with the dictation
 /// path or use a fresh one.
+///
+/// `@unchecked Sendable` is sound only because every property is configured,
+/// read and torn down on the main thread: `start()` does its work inside
+/// `MainActor.run`, `stop()` asserts the main queue, and the service delivers
+/// `onError` on the main queue.
 final class MicAudioSource: AudioSource, @unchecked Sendable {
     private let service: AudioCaptureService
 
-    var onSamples: (([Float]) -> Void)? {
-        didSet { service.onSamples = onSamples }
-    }
-    var onError: ((Error) -> Void)? {
-        didSet { service.onError = onError }
-    }
+    /// Stored locally and copied into the service at `start()`. The service
+    /// snapshots its callbacks per capture, so a later mutation can never race
+    /// a tap that is already running.
+    var onSamples: (([Float]) -> Void)?
+    var onError: ((Error) -> Void)?
+
+    /// The one terminal failure this adapter has seen, kept so a failure that
+    /// lands before the manager commits to the active state is still visible
+    /// to the startup path. Main-thread access.
+    private(set) var terminalError: Error?
 
     init(service: AudioCaptureService) {
         self.service = service
     }
 
     func start() async throws {
-        service.onSamples = onSamples
-        service.onError = onError
-        try service.startContinuousCapture()
+        try await MainActor.run {
+            terminalError = nil
+            service.onSamples = onSamples
+            service.onError = { [weak self] error in
+                // Delivered on the main queue by AudioCaptureService.
+                guard let self else { return }
+                self.terminalError = error
+                self.onError?(error)
+            }
+            do {
+                try service.startContinuousCapture()
+            } catch {
+                // The shared start already cleaned up its own capture; drop the
+                // callbacks it would otherwise keep. A thrown startup failure
+                // never also arrives through onError.
+                service.onSamples = nil
+                service.onError = nil
+                throw error
+            }
+        }
     }
 
     func stop() {
+        dispatchPrecondition(condition: .onQueue(.main))
         service.stopContinuousCapture()
         service.onSamples = nil
+        service.onError = nil
+        onSamples = nil
+        onError = nil
     }
 }

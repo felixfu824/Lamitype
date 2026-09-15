@@ -312,10 +312,16 @@ final class LiveCaptionManager {
         let maxPendingFrames = tuning.backpressureMaxPending
 
         let source: any AudioSource
+        // Held concretely so a terminal failure raised during start can be
+        // read back before this manager commits to the active state.
+        let micSource: MicAudioSource?
         switch requestedSource {
         case .mic:
-            source = MicAudioSource(service: captureService)
+            let mic = MicAudioSource(service: captureService)
+            micSource = mic
+            source = mic
         case .system(let bundleID):
+            micSource = nil
             source = SystemAudioSource(bundleID: bundleID)
         }
 
@@ -340,10 +346,16 @@ final class LiveCaptionManager {
                 pendingFrames.release()
             }
         }
+        let usingMicSource = (requestedSource == .mic)
         source.onError = { [weak self] error in
             Task { @MainActor in
                 guard let self else { return }
                 log.error("AudioSource error: \(error.localizedDescription, privacy: .public)")
+                // A mic failure seen before activation belongs to the startup
+                // catch, which reads MicAudioSource.terminalError and presents
+                // the one alert. The same guard keeps a late failure from
+                // alerting after the session has already stopped.
+                if usingMicSource, !self.isActive { return }
                 let wasSystem: Bool
                 if case .system = self.currentSource { wasSystem = true } else { wasSystem = false }
                 self.stop()
@@ -367,9 +379,16 @@ final class LiveCaptionManager {
         }
         do {
             try await source.start()
+            // A terminal failure can land during start, before this manager has
+            // committed to the active state. There is no await between the
+            // check and that commit, so exactly one path owns the failure.
+            if let micSource, let terminalError = micSource.terminalError {
+                throw terminalError
+            }
             audioSource = source
         } catch {
             log.error("AudioSource start failed: \(error.localizedDescription, privacy: .public)")
+            source.stop()
             await newBackend.stop()
             backendEventTask?.cancel()
             backendEventTask = nil
@@ -377,6 +396,8 @@ final class LiveCaptionManager {
             hidePanel()
             if case .system = requestedSource {
                 showSystemAudioStartFailedAlert(error)
+            } else {
+                showMicrophoneStartFailedAlert(error)
             }
             throw error
         }
@@ -1002,6 +1023,21 @@ final class LiveCaptionManager {
         alert.informativeText = L10n.format(
             "alert.caption.asr_failed.message",
             "Local Live Caption could not start: %1$@",
+            arguments: [error.localizedDescription]
+        )
+        alert.addButton(withTitle: L10n.string("common.button.ok", fallback: "OK"))
+        alert.runModal()
+    }
+
+    private func showMicrophoneStartFailedAlert(_ error: Error) {
+        let alert = NSAlert()
+        alert.messageText = L10n.string(
+            "alert.caption.microphone_unavailable.title",
+            fallback: "Microphone unavailable"
+        )
+        alert.informativeText = L10n.format(
+            "alert.caption.microphone_start_failed.message",
+            "Live Caption could not start: %1$@",
             arguments: [error.localizedDescription]
         )
         alert.addButton(withTitle: L10n.string("common.button.ok", fallback: "OK"))
