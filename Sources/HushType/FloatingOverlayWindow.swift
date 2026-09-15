@@ -59,6 +59,9 @@ final class FloatingOverlayWindow: NSPanel {
 
         // Use the SwiftUI view's intrinsic size — fixedSize() in the view
         // means hostingView.fittingSize is the natural pill width.
+        // Lay out first: show() is called immediately after a state change, and
+        // a notice is both wider and taller than the routine pill.
+        contentView?.layoutSubtreeIfNeeded()
         let fittingSize = (contentView as? NSHostingView<FloatingOverlayView>)?.fittingSize
             ?? NSSize(width: 220, height: 56)
 
@@ -76,14 +79,14 @@ final class FloatingOverlayWindow: NSPanel {
         }
     }
 
-    /// Hide with a brief fade-out, then order out.
+    /// Hide immediately.
+    ///
+    /// Deliberately synchronous. The old fade-out ordered the panel out from an
+    /// animation completion block, which fired even when show() had run in the
+    /// meantime, so a stale dismissal could hide a fresh notice or recording
+    /// pill. The 0.16 s show fade is retained.
     func hide() {
-        NSAnimationContext.runAnimationGroup({ ctx in
-            ctx.duration = 0.18
-            ctx.timingFunction = CAMediaTimingFunction(name: .easeIn)
-            self.animator().alphaValue = 0
-        }, completionHandler: { [weak self] in
-            self?.orderOut(nil)
-        })
+        alphaValue = 0
+        orderOut(nil)
     }
 }

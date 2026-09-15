@@ -20,7 +20,7 @@ func isTranslationTap(elapsed: TimeInterval, captureFailed: Bool) -> Bool {
 /// Main-thread owned; identity decides whether a late capture failure still
 /// belongs to the press the user is holding.
 @MainActor
-private final class DictationPressRecord {
+final class DictationPressRecord {
     /// Monotonic, so a system clock change cannot turn a hold into a tap.
     let keyDownUptime: TimeInterval
     var failed = false
@@ -29,6 +29,14 @@ private final class DictationPressRecord {
 
     init(keyDownUptime: TimeInterval) {
         self.keyDownUptime = keyDownUptime
+    }
+
+    /// One failure presentation per press. False for a cancelled press and for
+    /// a press that has already shown its notice.
+    func claimErrorPresentation() -> Bool {
+        guard !cancelled, !errorPresented else { return false }
+        errorPresented = true
+        return true
     }
 }
 
@@ -138,6 +146,9 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     /// The dictation press currently held, if any. Created only for an
     /// accepted press; cleared on release, cancellation or failure handoff.
     private var currentDictationPress: DictationPressRecord?
+
+    /// Pending 4 s dismissal for the notice currently on screen.
+    private var captureNoticeHideWork: DispatchWorkItem?
     private var consecutiveCloudNetworkFailures = 0
     private var evalStoreSessionStarted = false
 
@@ -392,6 +403,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     // MARK: - Overlay helpers
 
     private func showOverlayRecording() {
+        dismissCaptureNotice()
         guard AppConfig.shared.floatingOverlayEnabled else { return }
         let provider: String?
         switch AppConfig.shared.dictationEngine {
@@ -404,6 +416,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     }
 
     private func switchOverlayToTranscribing() {
+        dismissCaptureNotice()
         guard AppConfig.shared.floatingOverlayEnabled else { return }
         // Window stays visible; only the inner state changes.
         let provider: String?
@@ -416,20 +429,63 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     }
 
     private func switchOverlayToPolishing() {
+        dismissCaptureNotice()
         guard AppConfig.shared.floatingOverlayEnabled else { return }
         // Preserve the existing panel and focus; only swap the pill contents.
         overlayState.state = .polishing
     }
 
     private func showOverlayPolishing() {
+        dismissCaptureNotice()
         guard AppConfig.shared.floatingOverlayEnabled else { return }
         overlayState.state = .polishing
         overlayWindow.show()
     }
 
     private func hideOverlay() {
+        captureNoticeHideWork?.cancel()
+        captureNoticeHideWork = nil
         overlayWindow.hide()
         overlayState.state = .hidden
+    }
+
+    // MARK: - Capture failure notice
+
+    /// Show a non-modal failure notice in the floating HUD for 4 s.
+    ///
+    /// Shown regardless of `floatingOverlayEnabled`: that preference governs
+    /// the routine Listening / Transcribing indicator, and a failure the user
+    /// cannot see is worse than an indicator they switched off.
+    private func showCaptureNotice(message: String) {
+        captureNoticeHideWork?.cancel()
+        captureNoticeHideWork = nil
+
+        let ticket = overlayState.beginNotice(message: message)
+        overlayWindow.show()
+
+        let work = DispatchWorkItem { [weak self] in
+            guard let self else { return }
+            // A stale timer neither hides the newer notice nor clears the
+            // newer timer reference.
+            guard self.overlayState.expireNotice(ticket) else { return }
+            self.captureNoticeHideWork = nil
+            self.overlayWindow.hide()
+        }
+        captureNoticeHideWork = work
+        DispatchQueue.main.asyncAfter(deadline: .now() + 4.0, execute: work)
+    }
+
+    /// Retire any notice and its pending dismissal. Orders the panel out only
+    /// when a notice is what is currently showing, so this is safe to call
+    /// before every overlay transition.
+    private func dismissCaptureNotice() {
+        captureNoticeHideWork?.cancel()
+        captureNoticeHideWork = nil
+        let wasShowingNotice = overlayState.isShowingNotice
+        overlayState.invalidateNotice()
+        if wasShowingNotice {
+            overlayWindow.hide()
+        }
     }
 
     // MARK: - Hotkey Handlers
@@ -437,6 +493,10 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     private func handleHotkeyPress() {
         // App-modal alerts must exclusively own input while they are visible.
         guard NSApp.modalWindow == nil else { return }
+
+        // A visible notice is never a gate: an otherwise eligible press
+        // dismisses it and proceeds through the normal checks below.
+        dismissCaptureNotice()
 
         let claimedSecondTap = tapArbiter.cancelPendingForSecondPress()
 
@@ -518,35 +578,19 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         audioCapture.cancelRecording()
         state = .idle
         statusBar.setState(.idle)
-        hideOverlay()
         presentDictationCaptureError(message: error.localizedDescription, press: press)
     }
 
-    /// At most one alert per press. The hotkey callbacks originate inside
-    /// CGEventTap, so the alert is scheduled for the next main-loop turn and
-    /// never blocks that tap.
+    /// At most one failure presentation per press. Non-modal, so it can be
+    /// shown synchronously from inside the CGEventTap hotkey callback without
+    /// blocking that tap and without stealing focus.
     private func presentDictationCaptureError(message: String, press: DictationPressRecord) {
-        guard !press.errorPresented else { return }
-        press.errorPresented = true
-        DispatchQueue.main.async { [weak self] in
-            guard self != nil else { return }
-            guard !press.cancelled else { return }
-            let alert = NSAlert()
-            alert.alertStyle = .warning
-            alert.icon = NSImage(named: "AppIcon")
-                ?? NSImage(systemSymbolName: "exclamationmark.triangle", accessibilityDescription: nil)
-            alert.messageText = L10n.string(
-                "alert.dictation.capture_failed.title",
-                fallback: "Could not record audio"
-            )
-            alert.informativeText = L10n.format(
-                "alert.dictation.capture_failed.message",
-                "Nothing was inserted. %1$@",
-                arguments: [message]
-            )
-            alert.addButton(withTitle: L10n.string("common.button.ok", fallback: "OK"))
-            alert.runModal()
-        }
+        guard press.claimErrorPresentation() else { return }
+        showCaptureNotice(message: L10n.format(
+            "alert.dictation.capture_failed.message",
+            "Nothing was inserted. %1$@",
+            arguments: [message]
+        ))
     }
 
     private func handleHotkeyRelease() {
@@ -618,7 +662,6 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         // A hold from here on. The sample count is an audio-sufficiency guard,
         // never a tap classifier.
         guard samples.count > 4800 else {
-            hideOverlay()
             state = .idle
             statusBar.setState(.idle)
             tapArbiter.reset()

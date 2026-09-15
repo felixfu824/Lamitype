@@ -11,7 +11,14 @@ enum OverlayState: Equatable {
     case recording(level: Float, provider: String?)  // 0.0–1.0 RMS
     case transcribing(provider: String?)
     case polishing
+    /// Brief non-modal failure notice. The payload is already-localized plain
+    /// text, never a localization key and never Markdown.
+    case notice(message: String)
 }
+
+/// Identity for one displayed notice. Two notices can carry identical wording,
+/// so a pending expiry is matched by object identity and never by message.
+final class NoticeTicket {}
 
 /// Observable model so SwiftUI can react to RMS updates.
 ///
@@ -20,7 +27,50 @@ enum OverlayState: Equatable {
 /// callbacks (which fire on the CoreAudio IO thread). Not @MainActor-annotated
 /// to keep AppDelegate construction synchronous.
 final class OverlayStateModel: ObservableObject {
-    @Published var state: OverlayState = .hidden
+    @Published var state: OverlayState = .hidden {
+        didSet {
+            // Any transition away from a notice retires its ticket, so a timer
+            // still in flight can never hide whatever replaced it.
+            if case .notice = state { return }
+            noticeTicket = nil
+        }
+    }
+
+    /// Owner of the notice currently on screen, if any. Main-thread owned.
+    private var noticeTicket: NoticeTicket?
+
+    /// True while a failure notice is the visible state.
+    var isShowingNotice: Bool {
+        if case .notice = state { return true }
+        return false
+    }
+
+    /// Show `message` as a notice and take ownership of it, replacing any
+    /// notice already on screen.
+    @discardableResult
+    func beginNotice(message: String) -> NoticeTicket {
+        let ticket = NoticeTicket()
+        state = .notice(message: message)
+        noticeTicket = ticket
+        return ticket
+    }
+
+    /// Retire the active ticket, and hide only if a notice is what is showing.
+    func invalidateNotice() {
+        noticeTicket = nil
+        if case .notice = state {
+            state = .hidden
+        }
+    }
+
+    /// Hide the notice this exact ticket owns. Returns true only when it did,
+    /// so a stale timer can tell that it has nothing to dismiss.
+    func expireNotice(_ ticket: NoticeTicket) -> Bool {
+        guard noticeTicket === ticket else { return false }
+        guard case .notice = state else { return false }
+        state = .hidden
+        return true
+    }
 }
 
 // MARK: - Pill view
@@ -29,6 +79,27 @@ struct FloatingOverlayView: View {
     @ObservedObject var model: OverlayStateModel
 
     var body: some View {
+        Group {
+            if case .notice(let message) = model.state {
+                noticeContent(message: message)
+            } else {
+                activityContent
+            }
+        }
+        .padding(.horizontal, 18)
+        .padding(.vertical, 12)
+        .background(VisualEffectBlur(material: .hudWindow))
+        .clipShape(RoundedRectangle(cornerRadius: 16, style: .continuous))
+        .overlay(
+            RoundedRectangle(cornerRadius: 16, style: .continuous)
+                .stroke(strokeColor, lineWidth: strokeWidth)
+        )
+        .shadow(color: .black.opacity(0.18), radius: 12, x: 0, y: 4)
+        .fixedSize()
+    }
+
+    /// Routine Listening / Transcribing / Polishing pill, unchanged.
+    private var activityContent: some View {
         HStack(spacing: 12) {
             Image(systemName: iconName)
                 .font(.system(size: 14, weight: .semibold))
@@ -57,23 +128,55 @@ struct FloatingOverlayView: View {
                 case .polishing:
                     ProgressView()
                         .controlSize(.small)
-                case .hidden:
+                case .hidden, .notice:
                     EmptyView()
                 }
             }
             .frame(width: 40, height: 24)
             .animation(.easeInOut(duration: 0.18), value: stateKey)
         }
-        .padding(.horizontal, 18)
-        .padding(.vertical, 12)
-        .background(VisualEffectBlur(material: .hudWindow))
-        .clipShape(RoundedRectangle(cornerRadius: 16, style: .continuous))
-        .overlay(
-            RoundedRectangle(cornerRadius: 16, style: .continuous)
-                .stroke(Color.primary.opacity(0.08), lineWidth: 0.5)
+    }
+
+    /// Failure notice. Deliberately has no activity slot: no bars, ellipsis or
+    /// spinner, because nothing is being captured.
+    private func noticeContent(message: String) -> some View {
+        HStack(alignment: .top, spacing: 12) {
+            Image(systemName: iconName)
+                .font(.system(size: 14, weight: .semibold))
+                .foregroundStyle(Color.orange)
+                .accessibilityHidden(true)
+
+            VStack(alignment: .leading, spacing: 4) {
+                Text(noticeHeading)
+                    .font(.system(size: 13, weight: .semibold))
+                    .foregroundStyle(.primary)
+                    .fixedSize(horizontal: false, vertical: true)
+
+                Text(message)
+                    .font(.system(size: 13))
+                    .foregroundStyle(.primary)
+                    .fixedSize(horizontal: false, vertical: true)
+            }
+            .frame(width: labelWidth, alignment: .leading)
+        }
+        // Colour is never the only signal: the heading names the failure.
+        .accessibilityElement(children: .combine)
+        .accessibilityLabel("\(noticeHeading). \(message)")
+    }
+
+    private var noticeHeading: String {
+        L10n.string(
+            "alert.dictation.capture_failed.title",
+            fallback: "Could not record audio"
         )
-        .shadow(color: .black.opacity(0.18), radius: 12, x: 0, y: 4)
-        .fixedSize()
+    }
+
+    private var strokeColor: Color {
+        model.isShowingNotice ? Color.orange.opacity(0.55) : Color.primary.opacity(0.08)
+    }
+
+    private var strokeWidth: CGFloat {
+        model.isShowingNotice ? 1 : 0.5
     }
 
     private var label: String {
@@ -91,6 +194,8 @@ struct FloatingOverlayView: View {
             return L10n.string("overlay.transcribing", fallback: "Transcribing")
         case .polishing:
             return L10n.string("overlay.polishing", fallback: "Polishing…")
+        case .notice(let message):
+            return message
         case .hidden:
             return ""
         }
@@ -99,6 +204,7 @@ struct FloatingOverlayView: View {
     private var iconName: String {
         switch model.state {
         case .polishing: return "wand.and.sparkles"
+        case .notice:    return "exclamationmark.triangle.fill"
         default:         return "mic.fill"
         }
     }
@@ -110,6 +216,10 @@ struct FloatingOverlayView: View {
         switch model.state {
         case .recording(_, let provider), .transcribing(let provider):
             return provider == nil ? 80 : 150
+        case .notice:
+            // Wrapping width for the two-line notice. With the icon and the
+            // 18 pt side padding this keeps the pill under about 400 pt.
+            return 320
         default:
             return 80
         }
@@ -123,6 +233,7 @@ struct FloatingOverlayView: View {
         case .recording:     return 1
         case .transcribing:  return 2
         case .polishing:     return 3
+        case .notice:        return 4
         }
     }
 }
