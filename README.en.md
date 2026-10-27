@@ -40,6 +40,22 @@
 
 ---
 
+## v0.5.15 release candidate: Live preview (Experimental)
+
+v0.5.15 adds an experimental Local dictation option, **on by default when no Live/Standard choice is saved**. Existing explicit Standard and cloud choices are preserved. Change it under **Settings → Dictation → Local → Live preview (Experimental)** or **Dictation mode → Local → Live preview (Experimental)** in the menu bar. Choose **Local → Standard** for text after recording stops, or **Cloud → OpenAI / Gemini**. These controls share the existing Dictation-tab preferences. See the [release notes](docs/releases/v0.5.15.md); the candidate is not yet signed/notarized for public distribution.
+
+Enabling shows a 60-second reminder. If no choice was previously saved, the first Right Option **hold** shows the reminder before microphone capture; confirm, release, then hold again to record. Short translation taps, double-tap polish and Option-key chords keep their existing meaning. Choose **Enable Live Preview** to continue, optionally checking **Don’t show again**; **Cancel** leaves the setting unchanged and does not remember the checkbox. The remembered choice applies to both controls across relaunches. If preview was already ON before this update, it stays ON without a startup popup; toggle OFF then ON to see the reminder.
+
+- Hold Right Option to see revisable draft text in the existing floating overlay: two separate rounded panels, with preview above the progress bar and a transparent gap. Only final text is inserted; the draft and countdown remain visible even if the ordinary floating indicator is off.
+- Release to finish early. At **60 seconds**, recording stops automatically and Lamitype recognizes the whole captured recording once. Release the key before starting another recording; there is no automatic continuation. For longer uninterrupted recording, turn Live preview off to use ordinary Local dictation.
+- Automatic paste requires the original text field to remain verified. If focus changes or the field cannot be verified, a brief floating-bar notice points to **Last Live Result…**, where you can choose **Copy**. Completed results never open a window automatically. The final text is available under **Dictation mode → Last Live Result…** until the next live capture starts or the app quits.
+- A failed final keeps one recording in memory for **Retry locally**, **Save Audio…**, or **Discard**. Saving is explicit and does not discard the in-memory copy; discard it when finished. Quitting, sleep, or detection of Secure Input clears app-held RAM audio/results for privacy. Already pasted text, clipboard contents and explicitly saved WAVs are not removed.
+- Stop local captions before using Local Live. With preview off, ordinary Local dictation uses its existing path. OpenAI/Gemini ignore this preference and retain their own limits and consent flow.
+
+Draft words may change, and an earlier draft block may disappear; the final pass still covers the entire captured recording. This is periodically refreshed recognition, not token-by-token streaming. The 128 MiB experimental MLX setting limits idle allocator reuse, not total app memory.
+
+Native tests on the M3 MacBook Air passed using both paced test-file input and speaker playback captured by the built-in microphone, including English, Mandarin/mixed speech, ordinary Local, cross-app paste, focus changes, cancellation and the cap. Controlled physical-input tests cover repeated short recordings, three full-minute caps, alternating Standard/Live, cancellation, recovery and model unload/reload. The packaged release candidate completed 50 same-clip measured Live sessions after two warmups, sampled externally: settled 939.8–941.3 MiB, with about 1 MiB last-three versus first-three median growth. Full-minute tests sampled peaks above 2 GiB. These are observations on this Mac, not memory guarantees. Paid-provider requests and public upgrade permission continuity remain unvalidated; transcription errors remain. This is not a published release.
+
 ## What's new in v0.5.14
 
 - **Fixed dictation receiving no audio after switching audio devices.** After plugging in an external speaker or microphone, dictation now uses the current device. If the microphone fails to start or the device changes during a recording, the floating HUD shows a notice that clears after about 4 seconds; press again.
@@ -53,7 +69,7 @@ The v0.5.13 changes (Auto Polish Dictation, one Text Polish prompt, Eval Mode) a
 
 **Privacy and control first.** In the default mode, voice stays on your Mac: the model runs locally, with no cloud account or usage tracking after the one-time model download (≈708 MB in weights; supporting files are additional). When you choose cloud dictation, audio goes over HTTPS **directly** to OpenAI or Gemini with **your own key**, with no Lamitype server in between. Lamitype asks for consent before the first cloud request after each app launch. **You decide whether audio goes to a provider.**
 
-**Memory-friendly: coexists with your agents.** The local model weights are about 708 MB. In our measurements, the full Lamitype process peaked at about 2.1 GB of RAM with the local model loaded, including MLX's idle cache. Lamitype limits that idle cache to 1 GB to prevent unbounded growth; the cache setting is not a hard cap on total process memory. You can unload the model from the menu to free its weights and cached buffers. A cloud engine leaves the local model unloaded. The engine choice persists across restarts, and the model reloads when you switch back to local.
+**Memory-friendly: coexists with your agents.** The local model weights are about 708 MB. Earlier ordinary-Local measurements observed about 2.1 GB for the full process, including MLX's idle cache; this is not a memory bound for every mode. The standard idle-cache limit is 1 GiB; experimental Live preview temporarily uses 128 MiB and restores the prior setting after inference drains. Neither setting caps total process memory. You can unload the model from the menu to free its weights and cached buffers. Cloud launches do not load the local model; a warm model may remain after switching from Local until you unload it. The engine choice persists across restarts, and the model reloads when you switch back to local.
 
 **Cloud dictation (opt-in).** Lamitype supports **OpenAI** (default `gpt-4o-mini-transcribe`) and **Gemini** (default `gemini-3.5-flash-lite`, with `gemini-3.7-flash` as the quality option), using your key in a direct connection. Gemini offers a free-tier API key, but Google may use audio submitted on the free tier to improve its products; the paid tier does not. Guardrails include consent before the first cloud request after each app launch, a daily spend warning with same-day lockout (default US$5), and blocking over-long recordings before upload.
 
@@ -270,7 +286,7 @@ That's it. The default mode needs no server, no network, no configuration.
 
 ### Optional: Cloud dictation (OpenAI / Gemini)
 
-Same Right ⌥, same Traditional Chinese post-processing, but transcription happens on OpenAI or Gemini instead: **model RAM drops to zero**, quality is the same or better, at the cost of a few seconds of network latency per utterance and duration-based billing (Gemini free tier: $0).
+Same Right ⌥, same Traditional Chinese post-processing, but transcription happens on OpenAI or Gemini instead: **cloud launches do not load the local model** (after switching from Local, a warm model may remain until unloaded), quality is the same or better, at the cost of a few seconds of network latency per utterance and duration-based billing (Gemini free tier: $0).
 
 1. **Get a key:** OpenAI at [platform.openai.com/api-keys](https://platform.openai.com/api-keys); Gemini at [aistudio.google.com/apikey](https://aistudio.google.com/apikey) (has a free tier).
 2. **Enter the key:** menu bar → **Settings… → Cloud** → open the matching `openai.json` / `gemini.json` and paste the key into the `api_key` field. An empty key = cloud fully disabled.
@@ -515,7 +531,7 @@ defaults write com.felix.hushtype hushtype.translateTargetLanguage -string "en"
 
 ### Changing the Hotkey (macOS)
 
-Edit `Sources/HushType/HotkeyManager.swift`:
+Edit `Sources/HushType/HotkeyManager.swift`: Update both the modifier keycode and its side-specific flag mask (Right Option: keycode `61`, mask `0x40`).
 ```swift
 private static let rightOptionKeyCode: Int64 = 61
 ```
@@ -530,7 +546,7 @@ Two modes, one principle: **there is never a third party in the middle, and the 
 
 ### Local mode (default)
 
-- **No audio recordings are saved.** Lamitype does not save recordings as files; voice data is used during recording and transcription, then discarded. If you explicitly enable Eval Mode, the app temporarily saves dictation and polish result text locally. A normal quit deletes managed Eval data; after an abnormal exit, the next launch removes orphaned data. Exports and the saved polish prompt remain.
+- **Recordings are not saved automatically.** Ordinary dictation uses audio during capture/transcription, then discards it. Experimental Local Live can retain one failed recording in RAM until retried successfully, discarded or the app quits; **Save Audio…** writes a WAV only when you choose a destination. Its final result remains in RAM until the next live capture or quit; sleep and detection of Secure Input also clear app-held RAM audio/results. This does not erase already pasted text, clipboard contents or explicitly saved WAVs. If you explicitly enable Eval Mode, the app temporarily saves dictation and polish result text locally. A normal quit deletes managed Eval data; after an abnormal exit, the next launch removes orphaned data. Exports, explicitly saved audio and the saved polish prompt remain.
 - **Local dictation works offline.** After the one-time model download (≈708 MB in weights, plus supporting files), local dictation does not require a network connection. Optional update checks, cloud dictation, and Live Translated Caption still use the network when you choose them.
 - **No telemetry.** No analytics, no usage tracking, no phone-home. The macOS app contains zero local-mode network code beyond the initial model fetch (handled by the HuggingFace Hub SDK inside speech-swift) and an optional GitHub releases check for update notifications.
 - **Fully air-gappable.** Prepare the model folder on another machine (`~/Library/Caches/qwen3-speech/models/aufklarer/Qwen3-ASR-0.6B-MLX-4bit/` for the macOS app; the Python / iOS server has a separate Hugging Face cache at `~/.cache/huggingface/hub/models--mlx-community--Qwen3-ASR-0.6B-4bit/`) and copy it over; the app will never need internet.

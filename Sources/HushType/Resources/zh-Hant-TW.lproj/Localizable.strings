@@ -1761,3 +1761,60 @@
 "eval.storage_unavailable.title" = "校對實驗室儲存空間無法使用";
 
 "eval.storage_unavailable.body" = "Lamitype 無法準備校對實驗室的本機儲存空間。校對實驗室會保持關閉，請重新啟動 Lamitype 後再試。";
+
+/* Experimental local live dictation */
+"live.draft.earlier" = "先前草稿已隱藏 · 所有文字都可能變更";
+"live.draft.label" = "草稿 · 可能變更";
+"live.draft.waiting" = "聆聽中⋯ 草稿文字將顯示於此。";
+"live.countdown" = "剩餘 %1$d 秒";
+"live.release" = "放開以完成辨識 · 實驗功能";
+"live.stopped" = "已停止錄音";
+"live.limit.reached" = "已達錄音上限 · 已停止錄音";
+"live.name" = "本機即時預覽";
+"live.cancelling" = "取消中⋯";
+"live.finalizing" = "完成辨識中⋯";
+"live.result.title" = "本機即時語音輸入";
+"live.result.copy_failed" = "無法複製。文字仍保留於此。";
+"live.recovery.retention" = "錄音會保留在記憶體中，直到捨棄錄音或結束 Lamitype。";
+"live.action.discard" = "捨棄";
+"live.action.save" = "儲存錄音⋯";
+"live.action.retry" = "在本機重試";
+"live.toggle" = "即時預覽（實驗功能）";
+"live.result.last" = "上次即時辨識結果⋯";
+"live.recovery.blocked" = "請先重試，或儲存後捨棄錄音，也可以直接捨棄。";
+"live.caption.blocked" = "請先完成或取消即時語音輸入，再啟動或切換字幕。";
+"live.caption.stop_first" = "請先停止本機字幕，再使用即時語音輸入。";
+"live.result.sent" = "已送出貼上指令 · 文字已在剪貼簿中";
+"live.result.copy" = "文字已就緒，請複製到要輸入的位置。";
+"live.recovery.saved" = "錄音已儲存。請重試或捨棄錄音以繼續。";
+"live.error.unavailable" = "本機辨識模型或斷詞器無法使用。";
+"live.error.malformed" = "辨識傳回無效的結果。";
+"live.error.incomplete" = "辨識未完成，錄音已保留以便重試。";
+"live.error.empty" = "未辨識到語音。";
+"live.settings.detail" = "說話時即可查看草稿。錄音會在 60 秒後停止，最終文字可能變更。此功能一律顯示預覽及倒數。 關閉後使用標準聽寫：停止錄音後才會顯示文字。";
+"live.settings.busy" = "請先完成或取消即時語音輸入，再變更這些設定。";
+"common.button.copy" = "複製";
+"live.draft.unavailable" = "無法顯示預覽 · 放開以完成辨識";
+"live.draft.slow" = "仍在聆聽⋯ 預覽所需時間較長。";
+
+/* Enable-time Local Live cap reminder */
+"live.cap_reminder.title" = "即時預覽每次錄音上限為 60 秒";
+"live.cap_reminder.message" = "錄音滿 60 秒會自動停止，接著產生最終文字。\n\n若需更長時間的連續錄音，請關閉即時預覽。";
+"live.cap_reminder.enable" = "開啟即時預覽";
+"live.cap_reminder.dont_show" = "不再顯示這則提醒";
+"live.cap_reminder.busy" = "請先完成目前的操作，再變更即時預覽。";
+
+"menu.dictation_mode" = "聽寫模式";
+
+"menu.dictation_mode.local" = "本機";
+
+"menu.dictation_mode.cloud" = "雲端";
+
+"menu.dictation_mode.standard" = "標準";
+
+
+"live.result.last.hint" = "產生即時辨識結果或錄音失敗後可用；開始下一次即時錄音時清除。";
+
+"live.result.ready" = "文字已就緒";
+
+"live.result.manual_notice" = "已略過自動貼上。請開啟「聽寫模式 → 上次即時辨識結果⋯」來複製。";

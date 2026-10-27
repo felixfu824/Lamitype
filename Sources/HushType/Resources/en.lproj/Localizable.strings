@@ -1761,3 +1761,60 @@
 "eval.storage_unavailable.title" = "Eval storage is unavailable";
 
 "eval.storage_unavailable.body" = "Lamitype could not prepare its private Eval storage. Eval Mode remains off. Restart Lamitype to try again.";
+
+/* Experimental local live dictation */
+"live.error.unavailable" = "The local recognition model or tokenizer is unavailable.";
+"live.error.malformed" = "Recognition returned an invalid result.";
+"live.error.incomplete" = "Recognition did not finish. The recording was kept for recovery.";
+"live.error.empty" = "No speech was recognized.";
+"live.toggle" = "Live preview (Experimental)";
+"live.result.last" = "Last Live Result…";
+"live.result.title" = "Local Live Dictation";
+"live.result.copy_failed" = "Could not copy. Your text is still available here.";
+"live.recovery.retention" = "The recording is kept in memory until discarded or Lamitype quits.";
+"live.action.discard" = "Discard";
+"live.action.save" = "Save Audio…";
+"live.action.retry" = "Retry locally";
+"common.button.copy" = "Copy";
+"live.recovery.blocked" = "Retry, save and discard, or discard the recording first.";
+"live.caption.blocked" = "Finish or cancel live dictation before starting or switching captions.";
+"live.caption.stop_first" = "Stop local captions before using live dictation.";
+"live.result.sent" = "Paste sent · text is on the clipboard";
+"live.result.copy" = "Text ready. Copy to your destination.";
+"live.recovery.saved" = "Audio saved. Retry or discard the recording to continue.";
+"live.draft.earlier" = "Earlier draft hidden · all text may change";
+"live.draft.label" = "Draft · may change";
+"live.draft.waiting" = "Listening… Draft text will appear here.";
+"live.countdown" = "%1$d s left";
+"live.release" = "Release to finalize · Experimental";
+"live.limit.reached" = "Recording limit reached · recording stopped";
+"live.stopped" = "Recording stopped";
+"live.name" = "Local Live";
+"live.cancelling" = "Cancelling…";
+"live.finalizing" = "Finalizing…";
+"live.settings.detail" = "See draft text while you speak. Stops after 60 seconds; final text may change. Always shows the preview and countdown. Turn off for Standard dictation: text appears after recording stops.";
+"live.settings.busy" = "Finish or cancel live dictation before changing these settings.";
+"live.draft.unavailable" = "Preview unavailable · release to finalize";
+"live.draft.slow" = "Still listening… Preview is taking longer.";
+
+/* Enable-time Local Live cap reminder */
+"live.cap_reminder.title" = "Live preview has a 60-second limit";
+"live.cap_reminder.message" = "Recording stops at 60 seconds, then Lamitype prepares the final text.\n\nFor longer uninterrupted recording, turn Live preview off.";
+"live.cap_reminder.enable" = "Enable Live Preview";
+"live.cap_reminder.dont_show" = "Don’t show again";
+"live.cap_reminder.busy" = "Finish the current action before changing live preview.";
+
+"menu.dictation_mode" = "Dictation mode";
+
+"menu.dictation_mode.local" = "Local";
+
+"menu.dictation_mode.cloud" = "Cloud";
+
+"menu.dictation_mode.standard" = "Standard";
+
+
+"live.result.last.hint" = "Available after a live result or a failed recording; cleared when the next live recording starts.";
+
+"live.result.ready" = "Text ready";
+
+"live.result.manual_notice" = "Automatic paste skipped. Open Dictation mode → Last Live Result… to copy.";

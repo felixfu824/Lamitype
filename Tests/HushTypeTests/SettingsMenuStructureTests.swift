@@ -36,20 +36,31 @@ final class SettingsMenuStructureTests: XCTestCase {
         let ordinary = items.filter { !$0.isSeparatorItem }
 
         XCTAssertFalse(items[0].isEnabled, "native validation must preserve unrelated disabled rows")
-        XCTAssertEqual(ordinary.count, 11)
+        XCTAssertEqual(ordinary.count, 12)
         XCTAssertEqual(items.filter(\.isSeparatorItem).count, 4)
         XCTAssertEqual(
             items.enumerated().compactMap { $0.element.isSeparatorItem ? $0.offset : nil },
-            [1, 8, 10, 12]
+            [1, 9, 11, 13]
         )
 
         let settingsTitle = L10n.string("menu.settings", fallback: "Settings…")
         let settingsItems = ordinary.filter { $0.title == settingsTitle }
         XCTAssertEqual(settingsItems.count, 1)
-        XCTAssertEqual(ordinary.firstIndex(of: settingsItems[0]), 7)
-        XCTAssertEqual(items.firstIndex(of: settingsItems[0]), 9)
+        XCTAssertEqual(ordinary.firstIndex(of: settingsItems[0]), 8)
+        XCTAssertEqual(items.firstIndex(of: settingsItems[0]), 10)
         XCTAssertEqual(settingsItems[0].keyEquivalent, ",")
         XCTAssertEqual(settingsItems[0].keyEquivalentModifierMask, [.command])
+
+        let mode = ordinary[1]
+        XCTAssertEqual(mode.title, "Dictation mode")
+        let routes = mode.submenu!.items
+        XCTAssertEqual(routes[0].title, "Local")
+        XCTAssertEqual(routes[1].title, "Cloud")
+        XCTAssertEqual(routes[0].submenu!.items.map(\.title), ["Live preview (Experimental)", "Standard"])
+        XCTAssertEqual(routes[1].submenu!.items.map(\.title), ["OpenAI", "Gemini"])
+        XCTAssertFalse(ordinary.contains { $0.title == "Local Live" })
+        XCTAssertEqual(routes.filter { $0.submenu == nil && $0.action != nil }.map { $0.action!.description }, ["showLiveResult"],
+            "the only utility is Last Live Result; Cancel has no replacement")
 
         let preservedSubmenuTitles = [
             L10n.string("menu.live_caption", fallback: "Live Caption"),
@@ -137,6 +148,25 @@ final class SettingsMenuStructureTests: XCTestCase {
         XCTAssertFalse(ordinary.contains {
             $0.title.contains("iOS Server") || $0.title.contains("iOS 伺服器")
         })
+    }
+
+    func testOrdinaryActionsRecoverAfterAppKitTemporarilyDisablesThem() {
+        let controller = StatusBarController(localEngine: Qwen3TranscriptionEngine(), textSettingsModel: makeTextModel())
+        let menu = controller.statusMenuForTesting
+        let actions = ["openSettings", "aboutClicked", "quitClicked"]
+        for _ in 0..<3 {
+            for name in actions {
+                let item = menu.items.first { $0.action?.description == name }!
+                XCTAssertTrue(controller.responds(to: item.action!))
+                XCTAssertTrue(item.target === controller)
+                item.isEnabled = false
+            }
+            menu.update()
+            for name in actions {
+                XCTAssertTrue(menu.items.first { $0.action?.description == name }!.isEnabled, name)
+            }
+            XCTAssertFalse(menu.items[0].isEnabled)
+        }
     }
 
     func testAutoPolishVisibleStatusTracksUnavailableAndValidatingReasons() async {

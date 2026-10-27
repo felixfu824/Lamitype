@@ -54,6 +54,11 @@ check-release-signing:
 		echo "error: refusing unpinned signing identity: $(SIGN_IDENTITY)" >&2; \
 		exit 1; \
 	fi
+	@security find-identity -v -p codesigning | grep -F '"$(SIGN_IDENTITY)"' >/dev/null || { \
+		echo "error: the pinned Developer ID signing identity and private key are not available in this keychain" >&2; \
+		echo "Use the authorized release-signing Mac; Apple Development and ad-hoc signatures are not public-release substitutes." >&2; \
+		exit 1; \
+	}
 
 bundle-release: check-release-signing
 	@$(MAKE) bundle-app SIGN_IDENTITY="$(SIGN_IDENTITY)"
@@ -71,6 +76,7 @@ bundle-app: build l10n-verify
 	@cp Resources/Info.plist "$(BUNDLE_DIR)/Contents/"
 	@cp "Resources/$(ICON_NAME).icns" "$(BUNDLE_DIR)/Contents/Resources/"
 	@cp scripts/ios_server.py "$(BUNDLE_DIR)/Contents/Resources/"
+	@cp -R Resources/ThirdPartyLicenses "$(BUNDLE_DIR)/Contents/Resources/"
 	@for d in $(L10N_LOCALES) $(L10N_LEGACY_LOCALES); do rm -rf "$(BUNDLE_DIR)/Contents/Resources/$$d"; done
 	@for d in $(L10N_LOCALES); do cp -R "Sources/HushType/Resources/$$d" "$(BUNDLE_DIR)/Contents/Resources/"; done
 	@$(MAKE) l10n-verify-dest

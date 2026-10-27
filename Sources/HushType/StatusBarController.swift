@@ -27,6 +27,7 @@ final class StatusBarController: NSObject, NSMenuDelegate, NSMenuItemValidation 
     /// Combined status + memory row, e.g. "Ready · Memory 2.1 GB".
     private let statusMenuItem: NSMenuItem
     private let textSettingsModel: TextSettingsModel
+    private let previewController: LocalLivePreviewController
     private var liveCaptionMenuItem: NSMenuItem!
     private var liveCaptionStartStopItem: NSMenuItem!
     private var liveCaptionMicItem: NSMenuItem!
@@ -53,6 +54,15 @@ final class StatusBarController: NSObject, NSMenuDelegate, NSMenuItemValidation 
     private var currentState: State = .loading(0)
     let iosServerManager = IOSServerManager()
 
+    var onShowLiveResult: (() -> Void)?
+    var hasLiveResult = false
+    private var dictationModeItem: NSMenuItem!
+    private var localModeItem: NSMenuItem!
+    private var cloudModeItem: NSMenuItem!
+    private var standardModeItem: NSMenuItem!
+    private var cloudProviderItems: [NSMenuItem] = []
+    private var liveToggleItem: NSMenuItem!
+    private var liveResultItem: NSMenuItem!
     var onQuit: (() -> Void)?
     var onUnloadModel: (() -> Void)?
     var onReloadModel: (() -> Void)?
@@ -136,9 +146,10 @@ final class StatusBarController: NSObject, NSMenuDelegate, NSMenuItemValidation 
         self.init(localEngine: localEngine, textSettingsModel: .shared)
     }
 
-    init(localEngine: Qwen3TranscriptionEngine, textSettingsModel: TextSettingsModel) {
+    init(localEngine: Qwen3TranscriptionEngine, textSettingsModel: TextSettingsModel, previewController: LocalLivePreviewController? = nil) {
         self.localEngine = localEngine
         self.textSettingsModel = textSettingsModel
+        self.previewController = previewController ?? .shared
         statusItem = NSStatusBar.system.statusItem(withLength: NSStatusItem.squareLength)
         statusMenuItem = NSMenuItem(
             title: L10n.string("status.loading", fallback: "Loading..."),
@@ -188,15 +199,24 @@ final class StatusBarController: NSObject, NSMenuDelegate, NSMenuItemValidation 
             polishAvailability: TextPolisher.isAvailableCached
         )
         refreshEvalMenuItems()
+        refreshDictationModeItems()
     }
 
     func validateMenuItem(_ menuItem: NSMenuItem) -> Bool {
-        guard menuItem.action == #selector(toggleTextPolish) else {
-            return menuItem.isEnabled
+        guard let action = menuItem.action else { return menuItem.submenu != nil }
+        switch action {
+        case #selector(toggleTextPolish):
+            return textSettingsModel.polishEnabled && textSettingsModel.polishAvailable
+                && !textSettingsModel.isValidatingPolish
+        case #selector(selectLocalLive), #selector(selectLocalStandard), #selector(selectCloudProvider):
+            return previewController.canSelectMode
+        case #selector(showLiveResult): return hasLiveResult
+        case #selector(unloadOrReloadModel): return modelActionIsAvailable
+        default:
+            // Previously disabled items must be revalidated from application state.
+            // isEnabled is validation output, never the source of availability.
+            return responds(to: action)
         }
-        return textSettingsModel.polishEnabled
-            && textSettingsModel.polishAvailable
-            && !textSettingsModel.isValidatingPolish
     }
 
     // MARK: - Private
@@ -215,6 +235,10 @@ final class StatusBarController: NSObject, NSMenuDelegate, NSMenuItemValidation 
         menu.addItem(statusMenuItem)
 
         menu.addItem(.separator())
+
+        dictationModeItem = NSMenuItem(title: L10n.string("menu.dictation_mode", fallback: "Dictation mode"), action: nil, keyEquivalent: "")
+        dictationModeItem.submenu = buildDictationModeSubmenu()
+        menu.addItem(dictationModeItem)
 
         // ─────────────────── Live Caption (local Qwen3) ───────────────────
         let liveCaptionTitle = L10n.string("menu.live_caption", fallback: "Live Caption")
@@ -333,6 +357,35 @@ final class StatusBarController: NSObject, NSMenuDelegate, NSMenuItemValidation 
 
     /// Exposes the actual constructed menu to the structural regression test.
     var statusMenuForTesting: NSMenu { statusItem.menu! }
+
+    #if DEBUG
+    func nativeMenuSnapshot() -> [[String: Any]] {
+        func rows(_ menu: NSMenu) -> [[String: Any]] {
+            menuWillOpen(menu); menu.update()
+            return menu.items.map { item in
+                var row: [String: Any] = ["title": item.title, "enabled": item.isEnabled,
+                    "checked": item.state == .on, "action": item.action?.description ?? "",
+                    "separator": item.isSeparatorItem]
+                if let submenu = item.submenu { row["children"] = rows(submenu) }
+                return row
+            }
+        }
+        return rows(statusMenuForTesting)
+    }
+    func nativePerformMenuAction(_ name: String, provider: String? = nil) -> Bool {
+        func find(_ menu: NSMenu) -> NSMenuItem? {
+            menuWillOpen(menu); menu.update()
+            for item in menu.items {
+                if item.action?.description == name,
+                   provider == nil || item.representedObject as? String == provider { return item }
+                if let sub = item.submenu, let found = find(sub) { return found }
+            }
+            return nil
+        }
+        guard let item = find(statusMenuForTesting), item.isEnabled, let action = item.action else { return false }
+        return NSApp.sendAction(action, to: item.target, from: item)
+    }
+    #endif
 
     // MARK: - Submenu builders
 
@@ -566,6 +619,64 @@ final class StatusBarController: NSObject, NSMenuDelegate, NSMenuItemValidation 
 
 
     // MARK: - Dictation Engine
+
+    private func buildDictationModeSubmenu() -> NSMenu {
+        let menu = NSMenu(); menu.delegate = self
+        localModeItem = NSMenuItem(title: L10n.string("menu.dictation_mode.local", fallback: "Local"), action: nil, keyEquivalent: "")
+        let local = NSMenu(); local.delegate = self; localModeItem.submenu = local
+        liveToggleItem = NSMenuItem(title: L10n.string("live.toggle", fallback: "Live preview (Experimental)"), action: #selector(selectLocalLive), keyEquivalent: "")
+        standardModeItem = NSMenuItem(title: L10n.string("menu.dictation_mode.standard", fallback: "Standard"), action: #selector(selectLocalStandard), keyEquivalent: "")
+        for item in [liveToggleItem!, standardModeItem!] { item.target = self; local.addItem(item) }
+        menu.addItem(localModeItem)
+        cloudModeItem = NSMenuItem(title: L10n.string("menu.dictation_mode.cloud", fallback: "Cloud"), action: nil, keyEquivalent: "")
+        let cloud = NSMenu(); cloud.delegate = self; cloudModeItem.submenu = cloud
+        for engine in [AppConfig.DictationEngine.openai, .gemini] {
+            let item = NSMenuItem(title: engine == .openai ? "OpenAI" : "Gemini", action: #selector(selectCloudProvider), keyEquivalent: "")
+            item.representedObject = engine.rawValue; item.target = self
+            cloud.addItem(item); cloudProviderItems.append(item)
+        }
+        menu.addItem(cloudModeItem)
+        menu.addItem(.separator())
+        liveResultItem = NSMenuItem(title: L10n.string("live.result.last", fallback: "Last Live Result…"), action: #selector(showLiveResult), keyEquivalent: "")
+        liveResultItem.toolTip = L10n.string("live.result.last.hint", fallback: "Available after a live result or a failed recording; cleared when the next live recording starts.")
+        liveResultItem.target = self
+        menu.addItem(liveResultItem)
+        refreshDictationModeItems()
+        return menu
+    }
+
+    private func refreshDictationModeItems() {
+        guard liveToggleItem != nil else { return }
+        let engine = AppConfig.shared.dictationEngine
+        localModeItem.state = engine == .local ? .on : .off
+        cloudModeItem.state = engine == .local ? .off : .on
+        liveToggleItem.state = engine == .local && previewController.isEnabled ? .on : .off
+        standardModeItem.state = engine == .local && !previewController.isEnabled ? .on : .off
+        for item in cloudProviderItems {
+            item.state = item.representedObject as? String == engine.rawValue ? .on : .off
+            item.isEnabled = previewController.canSelectMode
+        }
+        liveToggleItem.isEnabled = previewController.canSelectMode
+        standardModeItem.isEnabled = previewController.canSelectMode
+        liveResultItem.isEnabled = hasLiveResult
+    }
+
+    private func selectLocalMode(live: Bool) {
+        previewController.requestLocalMode(live) { [weak self] in
+            self?.onDictationEngineChanged?(.local)
+            self?.refreshDictationModeItems()
+        }
+        refreshDictationModeItems()
+    }
+    @objc private func selectLocalLive() { selectLocalMode(live: true) }
+    @objc private func selectLocalStandard() { selectLocalMode(live: false) }
+    @objc private func selectCloudProvider(_ sender: NSMenuItem) {
+        guard previewController.canSelectMode, let raw = sender.representedObject as? String,
+              let engine = AppConfig.DictationEngine(rawValue: raw), engine != .local else { return }
+        onDictationEngineChanged?(engine)
+        refreshDictationModeItems(); refreshStatusLine(); updateUnloadMenuItem(for: currentState)
+    }
+    @objc private func showLiveResult() { onShowLiveResult?() }
 
     @objc private func openSettings() {
         Task { @MainActor [weak self] in
@@ -1218,7 +1329,14 @@ final class StatusBarController: NSObject, NSMenuDelegate, NSMenuItemValidation 
         }
     }
 
+    private var modelActionIsAvailable: Bool {
+        if case .loading = currentState { return false }
+        if !localEngine.isLoaded { return AppConfig.shared.dictationEngine == .local && !LocalLiveOwnership.isBusy }
+        switch currentState { case .idle, .unloaded: return !LocalLiveOwnership.isBusy; default: return false }
+    }
+
     private func updateUnloadMenuItem(for state: State) {
+        defer { unloadMenuItem.isEnabled = modelActionIsAvailable }
         let localModelLoaded = localEngine.isLoaded
         if !localModelLoaded {
             let localSelected = AppConfig.shared.dictationEngine == .local

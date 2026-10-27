@@ -6,7 +6,7 @@ private let log = Logger(subsystem: "com.felix.hushtype", category: "config")
 final class AppConfig {
     static let shared = AppConfig()
 
-    private let defaults = UserDefaults.standard
+    private let defaults: UserDefaults
 
     private enum Keys {
         static let language = "hushtype.language"
@@ -29,6 +29,7 @@ final class AppConfig {
         static let lastStartedCaptionUsesMicSource = "hushtype.lastStartedCaptionUsesMicSource"
         static let punctuationMode = "hushtype.punctuationMode"
         static let dictationEngine = "hushtype.dictationEngine"
+        static let localLiveCapReminderAcknowledgedVersion = "hushtype.localLiveCapReminderAcknowledgedVersion"
         static let cloudDictationModelOpenAI = "hushtype.cloudDictationModelOpenAI"
         static let cloudDictationModelGemini = "hushtype.cloudDictationModelGemini"
         static let interfaceLanguage = "hushtype.interfaceLanguage"
@@ -42,6 +43,21 @@ final class AppConfig {
         case local
         case openai
         case gemini
+    }
+
+    var localLivePreviewEnabled: Bool {
+        get {
+            guard defaults.object(forKey: "hushtype.localLivePreviewEnabled") != nil else { return true }
+            return defaults.bool(forKey: "hushtype.localLivePreviewEnabled")
+        }
+        set { defaults.set(newValue, forKey: "hushtype.localLivePreviewEnabled") }
+    }
+
+    var hasExplicitLocalLiveChoice: Bool { defaults.object(forKey: "hushtype.localLivePreviewEnabled") != nil }
+
+    var localLiveCapReminderAcknowledgedVersion: Int {
+        get { defaults.integer(forKey: Keys.localLiveCapReminderAcknowledgedVersion) }
+        set { defaults.set(newValue, forKey: Keys.localLiveCapReminderAcknowledgedVersion) }
     }
 
     var dictationEngine: DictationEngine {
@@ -426,7 +442,10 @@ final class AppConfig {
         AppSupportPaths.openAIKeyFileURL
     }
 
-    private init() {}
+    private init(defaults: UserDefaults = .standard) { self.defaults = defaults }
+    #if DEBUG
+    static func forUpgradeTesting(defaults: UserDefaults) -> AppConfig { AppConfig(defaults: defaults) }
+    #endif
 }
 
 extension Notification.Name {
