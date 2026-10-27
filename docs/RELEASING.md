@@ -35,9 +35,12 @@ xcrun stapler validate Lamitype.app
 spctl --assess --type execute --verbose=4 Lamitype.app
 
 make create-dmg
+codesign --force --sign 'Developer ID Application: Kuang Cheng Fu (8Z5RQYC6M5)' --timestamp Lamitype-v0.5.15.dmg
+codesign --verify --verbose=2 Lamitype-v0.5.15.dmg
 xcrun notarytool submit Lamitype-v0.5.15.dmg --keychain-profile "${NOTARY_PROFILE:?Set the authorized notarytool profile name}" --wait
 xcrun stapler staple Lamitype-v0.5.15.dmg
 xcrun stapler validate Lamitype-v0.5.15.dmg
+spctl --assess --type open --context context:primary-signature --verbose=4 Lamitype-v0.5.15.dmg
 hdiutil verify Lamitype-v0.5.15.dmg
 shasum -a 256 Lamitype-v0.5.15.dmg
 ```
@@ -57,4 +60,17 @@ Use a disposable macOS account with the official v0.5.13 release installed, then
 - Cloud startup must keep its selected provider, load no local model on cold launch and retain its existing consent flow. A real provider test requires a test key and authorized spend; cold-start checks do not certify provider transcription.
 - On a clean account, confirm normal first-run permissions, model setup and reminder. Check the final DMG's Gatekeeper behavior through an actual download/quarantine path.
 
-Record the commit, version/build, final DMG digest, signing/notarization receipts and outcomes before declaring release readiness. Publication/tagging/pushing is a separate step requiring user instruction. The bilingual [v0.5.15 notes](releases/v0.5.15.md) remain marked candidate until those gates pass.
+Record the commit, version/build, final DMG digest, signing/notarization receipts and outcomes before declaring release readiness. Mark every check as passed, failed or not run, with its actual environment. Static designated-requirement compatibility does not certify TCC continuity; a command-line download/signature check does not certify clean-account first use through browser quarantine. Publication does not turn an unperformed check into a pass.
+
+## Publish, verify and close
+
+Publication/tagging/pushing requires user instruction. Once authorized:
+
+1. Finalize both READMEs and the bilingual release body, Traditional Chinese first. Scan all three for U+2014/U+2013; each must contain zero. Review the staged diff so internal workstreams, credentials and QA recordings stay excluded from the public repo.
+2. Squash-merge the reviewed scoped branch, then create and push an annotated version tag on that main commit. Confirm its version/build matches the signed artifact. Documentation-only corrections after release do not move the tag or require a new binary.
+3. Publish the stable GitHub Release with that exact body and signed, notarized DMG. Verify its asset name and SHA-256.
+4. Check website copy, FAQ/JSON-LD, llms.txt and localized media against the release. Use the site's GitHub-to-Cloudflare Workers Builds pipeline. Check both `/download?lang=zh` and `/download?lang=en` response headers for the new DMG. If a fallback occurs, record its reason and verify `releases/latest` reaches the new release; report fallback separately from direct-DMG success. Verify the legacy byfkc redirect without reviving the retired README sync.
+5. Download the public DMG independently, compare its SHA-256 and attach it read-only. Verify the mounted app's deep-strict signature, staple, Gatekeeper acceptance and bundle version. Quit the installed app, retain its exact bundle in a temporary rollback location, install the mounted app with `ditto`, and require mounted/installed executable hashes and signatures to match. Launch the installed public app and record the rollback disposition.
+6. Mark the local release draft SHIPPED; update Build Status, Product and GTM indexes, the architecture guide's Recently Shipped entry, and the site's canonical GTM/deployment records. Close the originating build-machine handoff so an older unsigned/development candidate cannot be mistaken for the public installer. Preserve dated evidence and explicitly carry forward incomplete manual coverage.
+
+The bilingual [v0.5.15 notes](releases/v0.5.15.md) are published release documentation. Machine-specific execution evidence and coverage exceptions belong in the local release record.
