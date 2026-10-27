@@ -118,6 +118,8 @@ final class LiveCaptionManager {
     /// Turn live caption on with the requested audio source. Idempotent.
     /// Throws if permission is denied or the source fails to start.
     func start(source requestedSource: AudioSourceKind) async throws {
+        guard LocalLiveOwnership.beginCaptionTransition() else { throw LiveRecognitionError.unavailable }
+        defer { LocalLiveOwnership.endCaptionTransition() }
         guard !isActive else { return }
         let engine = AppConfig.shared.liveCaptionEngine
         log.info("LiveCaption start requested (source=\(String(describing: requestedSource), privacy: .public), engine=\(engine.rawValue, privacy: .public))")
@@ -305,6 +307,7 @@ final class LiveCaptionManager {
         }
 
         backend = newBackend
+        LocalLiveOwnership.localCaptionActive = engine == .local
         backendEventTask = makeBackendConsumerTask(for: newBackend)
 
         // Audio source.
@@ -393,6 +396,7 @@ final class LiveCaptionManager {
             backendEventTask?.cancel()
             backendEventTask = nil
             backend = nil
+        LocalLiveOwnership.localCaptionActive = false
             hidePanel()
             if case .system = requestedSource {
                 showSystemAudioStartFailedAlert(error)
@@ -433,6 +437,8 @@ final class LiveCaptionManager {
     /// Engine choice is not affected; only the audio source flips. Engine
     /// changes go through `switchEngine(to:)`.
     func switchSource(to newSource: AudioSourceKind) async throws {
+        guard LocalLiveOwnership.beginCaptionTransition() else { throw LiveRecognitionError.unavailable }
+        defer { LocalLiveOwnership.endCaptionTransition() }
         guard isActive else {
             try await start(source: newSource)
             return
@@ -458,6 +464,7 @@ final class LiveCaptionManager {
         await backendEventTask?.value
         backendEventTask = nil
         backend = nil
+        LocalLiveOwnership.localCaptionActive = false
 
         // start(source:) will re-instantiate everything. Panel content
         // clears (matches today's behavior — `start(source:)` calls
@@ -475,6 +482,8 @@ final class LiveCaptionManager {
     /// rely on the next `start()` to pick up the new value — this method is
     /// only meaningful for the active-session swap.
     func switchEngine(to engine: AppConfig.LiveCaptionEngine) async {
+        guard LocalLiveOwnership.beginCaptionTransition() else { return }
+        defer { LocalLiveOwnership.endCaptionTransition() }
         guard isActive, let source = currentSource else {
             AppConfig.shared.liveCaptionEngine = engine
             return
@@ -598,6 +607,9 @@ final class LiveCaptionManager {
     /// or reset `isActive` — caller decides whether this is a full stop or
     /// part of an engine swap.
     private func teardown(stopAudio: Bool) async {
+        // A pending local teardown must retire before live can lease the model.
+        LocalLiveOwnership.captionTransitions += 1
+        defer { LocalLiveOwnership.endCaptionTransition() }
         forceSplitTimer?.cancel()
         forceSplitTimer = nil
 
@@ -623,6 +635,7 @@ final class LiveCaptionManager {
         await backendEventTask?.value
         backendEventTask = nil
         backend = nil
+        LocalLiveOwnership.localCaptionActive = false
 
         // Drop the SileroVAD model — same rationale as before: ~30 MB of
         // MLX-backed weights, holding it cached after stop misleads the user.

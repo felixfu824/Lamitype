@@ -23,6 +23,9 @@ GTM/
 GTM_WORKSTREAM.md
 PRODUCT_WORKSTREAM.md
 
+# Local QA captures, transcripts and machine-specific test evidence
+/testing/
+
 # Agent config (local only)
 .claude/
 

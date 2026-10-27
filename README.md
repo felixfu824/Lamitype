@@ -34,18 +34,15 @@
   <img src="Resources/lamitype-memory-zh.svg" alt="模型權重檔案大小：Lamitype 本機約 708 MB（道地繁中）、Lamitype 雲端引擎約 0 MB，對比 Whisper large-v3-turbo 1,618 MB 與 Parakeet 2,472 MB（不支援中文）" width="100%">
 </p>
 
-<sub>數字為各工具預設精度的模型權重檔案大小；Lamitype 的約 708 MB 是 Qwen3-ASR 0.6B 的 4-bit MLX 量化版。選用雲端引擎（OpenAI / Gemini）時，**本機模型權重約 0 MB**，品質同級或更好，代價是每句多幾秒的網路延遲，依時長計費或使用 Gemini 免費（Free tier）API Key。另有 [4-bit Whisper-turbo](https://huggingface.co/mlx-community/whisper-large-v3-turbo-4bit/tree/main)（約 463 MB），但中文輸出仍偏簡體、品質平庸，所以我們的定位是「能做出道地繁中的輕量 ASR」，而非「最小的模型」。</sub>
-
-<sub>**來源與計算方式（2026-09-10 驗證）：** Lamitype 主要模型權重檔為 708,236,945 bytes（708.237 MB；1 MB = 1,000,000 bytes），數據來自[固定版本的 Hugging Face 檔案](https://huggingface.co/aufklarer/Qwen3-ASR-0.6B-MLX-4bit/tree/bc441bd1e4295c1f42d9879f056049a925b6e013)。下載時另含支援檔案。App 目前未固定此版本；若上游模型倉庫更新，模型權重大小可能改變。</sub>
+<sub>數字為各工具預設精度的模型權重檔案大小；Lamitype 的約 708 MB 是 Qwen3-ASR 0.6B 的 4-bit MLX 量化版。選用雲端引擎（OpenAI / Gemini）時，**以雲端引擎啟動時不載入本機模型**（從本機切換時可能仍保留模型，須手動卸載），品質同級或更好，代價是每句多幾秒的網路延遲，依時長計費或使用 Gemini 免費（Free tier）API Key。另有 [4-bit Whisper-turbo](https://huggingface.co/mlx-community/whisper-large-v3-turbo-4bit/tree/main)（約 463 MB），但中文輸出仍偏簡體、品質平庸，所以我們的定位是「能做出道地繁中的輕量 ASR」，而非「最小的模型」。</sub>
 
 ---
 
-## v0.5.14 有什麼新功能
+## v0.5.15 有什麼新功能
 
-- **修正切換音訊裝置後聽寫收不到聲音。** 接上外接喇叭或麥克風之後，聽寫現在會使用目前的裝置。麥克風啟動失敗或錄音途中裝置被切換時，浮動視窗會顯示提示，約 4 秒自動消失；再按一次即可。
-- 短按翻譯改以按鍵時間判定（0.3 秒）。
+**新增的「即時預覽（實驗功能）」** 按住右側 ⌥，邊說邊看草稿；放開後，貼上最終文字。草稿可能修正，只有結束錄音後的最終文字會插入。
 
-v0.5.13 的內容（自動校對聽寫文字、統一的 Text Polish 提示詞、校對實驗室）見 [GitHub Releases](https://github.com/felixfu824/Lamitype/releases/tag/v0.5.13)。
+**每段即時錄音最多 60 秒。** 可提早放開。首次使用會先顯示提醒，可選擇不再顯示。較長的連續錄音請使用標準模式。
 
 ---
 
@@ -53,7 +50,7 @@ v0.5.13 的內容（自動校對聽寫文字、統一的 Text Polish 提示詞�
 
 **隱私與主導權優先。** 預設模式下語音不離開你的 Mac，模型在本機執行，無雲端帳號、無使用追蹤；首次會下載模型（權重約 708 MB，另含支援檔案）。選擇雲端聽寫時，音訊用**你自己的金鑰**經 HTTPS **直連** OpenAI 或 Gemini，中間沒有 Lamitype 伺服器；每次啟動 App 後，第一次送出雲端請求前都會先徵求同意。**要不要把音訊交給供應商，由你決定。**
 
-**記憶體友善：與你的 AI 助手共存。** 本機模型權重約 708 MB。實測載入本機模型後，Lamitype 整個程序的 RAM 峰值約 2.1 GB，已包含 MLX 閒置快取。Lamitype 將閒置快取限制為 1 GB，避免無上限增長；這不是整個程序的記憶體硬上限。你可從選單卸載模型，釋放模型權重與快取緩衝區。切到雲端引擎時不載入本機模型；引擎選擇會跨重啟保留，切回本機時再自動載入。
+**記憶體友善：與你的 AI 助手共存。** 本機模型權重約 708 MB。先前一般本機模式量測的整個程序 RAM 峰值約 2.1 GB，已包含 MLX 閒置快取；這不是所有模式的記憶體上限。一般閒置快取上限為 1 GiB；實驗性的即時預覽會暫時使用 128 MiB，待辨識工作真正結束後還原先前設定。兩者都不是整個程序的記憶體硬上限。你可從選單卸載模型，釋放模型權重與快取緩衝區。以雲端引擎啟動時不載入本機模型；若從本機切換，已載入的模型可能仍保留，直到你從選單卸載。引擎選擇會跨重啟保留，切回本機時再自動載入。
 
 **雲端聽寫（Opt-in）。** 支援 **OpenAI**（預設 `gpt-4o-mini-transcribe`）與 **Gemini**（預設 `gemini-3.5-flash-lite`，可選 `gemini-3.7-flash`），使用你的金鑰直連供應商。Gemini 提供 Free tier API Key，但 Google 免費方案可能使用你提交的音訊改進產品，付費方案則不會。內建護欄包括每次啟動 App 後第一次雲端請求前徵求同意、每日花費警示與當日鎖定（預設 US$5），以及在上傳前擋下過長錄音。
 
@@ -115,7 +112,7 @@ v0.5.13 的內容（自動校對聽寫文字、統一的 Text Polish 提示詞�
 
 **與 AI 助手對話。** 給 Claude 或 ChatGPT 一段詳細的 prompt，打字要 5 分鐘，用說的只要 30 秒。按住 Right ⌥，自然地說完整段 prompt（可任意混用語言）、放開，文字就出現在聊天輸入框中。本機聽寫不需要先把錄音交給另一個轉錄服務；送出文字後，仍依你使用的 AI 服務處理。
 
-**記憶體吃緊的工作日。** Claude Code 跑三個 session、瀏覽器開 20 個分頁，不想再多一個常駐模型？選單切到 OpenAI 或 Gemini 雲端引擎，本機模型保持卸載、聽寫照用，每句多等一兩秒、費用記在你自己的 API 帳單上（若使用 Gemini Free-tier API Key：$0）。
+**記憶體吃緊的工作日。** Claude Code 跑三個 session、瀏覽器開 20 個分頁，不想再多一個常駐模型？選單切到 OpenAI 或 Gemini 雲端引擎，以雲端引擎啟動時不載入本機模型；若剛從本機切換，可卸載仍保留的模型，聽寫照用，每句多等一兩秒、費用記在你自己的 API 帳單上（若使用 Gemini Free-tier API Key：$0）。
 
 **通勤時的語音筆記。** 在捷運上，Mac 留在家裡。在 iPhone 上點「Start Listening」，切到備忘錄，按 HushType 鍵盤上的麥克風按鈕。語音透過 Tailscale 傳回你的 Mac，約 1 秒完成轉錄，文字出現。<br>誠實註記：手機端功能已許久未測試。
 
@@ -166,7 +163,7 @@ iOS（透過你的 Mac 作為伺服器）：
 
 ### 方案 A：下載 DMG（不需要任何開發工具）
 
-1. 從[最新版本](https://github.com/felixfu824/Lamitype/releases)下載 `Lamitype.dmg`
+1. 從[最新版本](https://github.com/felixfu824/Lamitype/releases)下載版本命名的 `Lamitype-vX.Y.Z.dmg`
 2. 打開 DMG，將 Lamitype 拖到「應用程式」
 3. 從「應用程式」或 Spotlight 開啟 Lamitype；Developer ID 簽章與 Apple 公證可直接通過 Gatekeeper
 4. 依需要授予**輔助使用**、**麥克風**與**螢幕與系統音訊錄製**權限
@@ -186,7 +183,7 @@ DMG 為完全獨立版本，OpenCC 及所有相依套件皆已內含。不需要
 
 更新等於**覆蓋 `.app` 資料夾**。偏好設定、ASR 模型、使用者資料都存在 `.app` 外面，不會被動到。
 
-**DMG：** 退出並刪除舊的 `/Applications/HushType.app` → 開啟新 DMG → 拖 `Lamitype.app` 到視窗內的 Applications 捷徑 → 從 Spotlight 重啟。
+**DMG：** 退出 Lamitype → 開啟新 DMG → 將 `Lamitype.app` 拖到 Applications，取代原本同一位置的 App → 重新開啟。設定與模型位於 App 外，會保留；一般更新不需要重設權限。
 
 **從原始碼編譯：** `git pull && make install`。
 
@@ -531,7 +528,7 @@ private static let rightOptionKeyCode: Int64 = 61
 
 ### 本機模式（預設）
 
-- **不儲存錄音。** Lamitype 不會把錄音存成檔案；語音資料僅在錄音與轉錄流程中使用，完成後即丟棄。若你主動啟用校對實驗室，App 會把聽寫與校對結果的文字暫存在本機；正常結束時刪除，異常結束後則在下次啟動清除。匯出檔與已儲存的校對提示詞不受影響。
+- **不會自動儲存錄音。** 一般聽寫只在錄音與轉錄時使用音訊，完成後即丟棄。實驗性的本機即時預覽可能在 RAM 保留一段失敗錄音，直到重新辨識成功、主動捨棄或結束 App；只有明確選擇**儲存音訊…**及檔案位置時，才會寫出 WAV。最終文字會在記憶體保留到下一次開始即時擷取或 App 結束；睡眠或偵測到安全輸入也會清除 App 持有的 RAM 錄音與結果，不會刪除已貼上的文字、剪貼簿內容或明確儲存的 WAV。若你主動啟用校對實驗室，App 會把聽寫與校對結果的文字暫存在本機；正常結束時刪除，異常結束後則在下次啟動清除。匯出檔、明確儲存的音訊與已儲存的校對提示詞不受影響。
 - **本機聽寫可離線運作。** 首次下載模型（權重約 708 MB，另含支援檔案）後，本機聽寫不需網路。手動檢查更新、雲端聽寫與 Live Translated Caption 等選用功能仍需連網。
 - **無遙測。** 無分析追蹤、無使用統計、無回傳機制。macOS App 除了初始模型下載（由 speech-swift 內的 HuggingFace Hub SDK 處理）以及選用的 GitHub releases 更新檢查外，不包含任何本機模式網路程式碼。
 - **可完全離網運作。** 事先在另一台機器準備模型資料夾（macOS App 為 `~/Library/Caches/qwen3-speech/models/aufklarer/Qwen3-ASR-0.6B-MLX-4bit/`，Python / iOS 伺服器則使用獨立的 Hugging Face 快取 `~/.cache/huggingface/hub/models--mlx-community--Qwen3-ASR-0.6B-4bit/`）再複製過來，App 將永遠不需要網路。

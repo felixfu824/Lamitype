@@ -4,7 +4,18 @@ import os
 private let log = Logger(subsystem: "com.felix.hushtype", category: "transcription")
 
 enum DictationPostProcessor {
-    static func apply(_ raw: String) -> String {
+    struct Options {
+        let chineseConversion: Bool
+        let numberConversion: Bool
+        let punctuation: PunctuationMode
+        static func snapshot() -> Options {
+            Options(chineseConversion: AppConfig.shared.chineseConversionEnabled,
+                    numberConversion: AppConfig.shared.numberConversionEnabled,
+                    punctuation: AppConfig.shared.punctuationMode)
+        }
+    }
+    static func apply(_ raw: String, options: Options? = nil) -> String {
+        let options = options ?? .snapshot()
         let rawText = raw
 
         // Classify once on the raw ASR text. Gates the Chinese-only stages
@@ -12,7 +23,7 @@ enum DictationPostProcessor {
         let script = ScriptDetector.detect(rawText)
 
         // Apply Traditional Chinese conversion
-        let convertedText = ChineseConverter.convert(rawText)
+        let convertedText = ChineseConverter.convert(rawText, enabled: options.chineseConversion)
         if convertedText != rawText {
             log.info("Traditional Chinese conversion applied in=\(rawText.count, privacy: .public)ch out=\(convertedText.count, privacy: .public)ch")
         }
@@ -20,7 +31,7 @@ enum DictationPostProcessor {
         // Apply number conversion (ITN) if enabled. Deterministic regex-based
         // pass that converts Chinese numerals to Arabic digits.
         let itnResult: NumberNormalizer.Result
-        if script == .zh && AppConfig.shared.numberConversionEnabled {
+        if script == .zh && options.numberConversion {
             itnResult = NumberNormalizer.normalize(convertedText)
             if itnResult.applied {
                 log.info("ITN applied in=\(convertedText.count, privacy: .public)ch out=\(itnResult.text.count, privacy: .public)ch note=\(itnResult.note, privacy: .public)")
@@ -43,7 +54,7 @@ enum DictationPostProcessor {
         // can re-introduce it.
         let finalText: String
         if script == .zh {
-            finalText = PunctuationNormalizer.apply(dictText, mode: AppConfig.shared.punctuationMode)
+            finalText = PunctuationNormalizer.apply(dictText, mode: options.punctuation)
             if finalText != dictText {
                 log.info("Punctuation cleanup applied in=\(dictText.count, privacy: .public)ch out=\(finalText.count, privacy: .public)ch")
             }

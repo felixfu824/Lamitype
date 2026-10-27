@@ -7,6 +7,7 @@ final class HotkeyManager {
     var onPress: (() -> Void)?
     var onRelease: (() -> Void)?
     var onCancelledRelease: (() -> Void)?
+    var onChordDuringHold: (() -> Void)?
     /// Fires on Right ⌘ + /. Single keyDown event — caller should treat it
     /// as a toggle (start if off, stop if running). Suppressed from
     /// propagation so the focused editor doesn't see it as a "toggle line
@@ -18,7 +19,21 @@ final class HotkeyManager {
     private var runLoopSource: CFRunLoopSource?
     private var isRightOptionDown = false
     private var otherKeyPressedDuringHold = false
+    #if DEBUG
+    private(set) var disabledTapCount = 0
+    private(set) var lastDisabledType = "none"
+    private(set) var pressDispatches = 0
+    private(set) var releaseDispatches = 0
+    private(set) var proactiveEnableCount = 0
+    private(set) var staleDisableCount = 0
+    var tapEnabledForTesting: Bool { eventTap.map { CGEvent.tapIsEnabled(tap: $0) } ?? false }
+    private(set) var maximumCallbackSeconds: TimeInterval = 0
+    var rightOptionIsDownForTesting: Bool { isRightOptionDown }
+    #endif
 
+    /// NX_DEVICERALTKEYMASK from IOKit/hidsystem/IOLLEvent.h. The aggregate
+    /// Option flag stays set when Left Option is held during Right release.
+    private static let rightOptionFlagBit: UInt64 = 0x40
     private static let rightOptionKeyCode: Int64 = 61 // kVK_RightOption
     /// kVK_ANSI_Slash — physical "/" key. With Shift held, this is "?".
     private static let slashKeyCode: Int64 = 44
@@ -35,7 +50,7 @@ final class HotkeyManager {
 
         let callback: CGEventTapCallBack = { proxy, type, event, refcon in
             let manager = Unmanaged<HotkeyManager>.fromOpaque(refcon!).takeUnretainedValue()
-            return manager.handleEvent(proxy: proxy, type: type, event: event)
+            return manager.handleEvent(type: type, event: event)
         }
 
         let selfPtr = Unmanaged.passUnretained(self).toOpaque()
@@ -73,13 +88,34 @@ final class HotkeyManager {
         log.info("Hotkey manager stopped")
     }
 
-    private func handleEvent(proxy: CGEventTapProxy, type: CGEventType, event: CGEvent) -> Unmanaged<CGEvent>? {
+    func handleEvent(type: CGEventType, event: CGEvent) -> Unmanaged<CGEvent>? {
+        #if DEBUG
+        let began = ProcessInfo.processInfo.systemUptime
+        defer { maximumCallbackSeconds = max(maximumCallbackSeconds, ProcessInfo.processInfo.systemUptime - began) }
+        #endif
         // Re-enable tap if it was disabled by the system
         if type == .tapDisabledByTimeout || type == .tapDisabledByUserInput {
-            if let tap = eventTap {
-                CGEvent.tapEnable(tap: tap, enable: true)
+            #if DEBUG
+            disabledTapCount += 1
+            lastDisabledType = type == .tapDisabledByTimeout ? "timeout" : "by-user-input"
+            #endif
+            // Resumption after a native dialog can precede delivery of its
+            // disable notice. Never let that stale notice cancel a fresh hold.
+            if let tap = eventTap, CGEvent.tapIsEnabled(tap: tap) {
+                #if DEBUG
+                staleDisableCount += 1
+                #endif
+                return Unmanaged.passUnretained(event)
             }
+            retireInterruptedHold()
+            if let tap = eventTap { CGEvent.tapEnable(tap: tap, enable: true) }
             return Unmanaged.passUnretained(event)
+        }
+
+        // Track if other keys are pressed during Right Option hold
+        if type == .keyDown && isRightOptionDown {
+            if !otherKeyPressedDuringHold { onChordDuringHold?() }
+            otherKeyPressedDuringHold = true
         }
 
         // Live Caption toggle: Right ⌘ + /. Single discrete keyDown. We
@@ -103,12 +139,6 @@ final class HotkeyManager {
             }
         }
 
-        // Track if other keys are pressed during Right Option hold
-        if type == .keyDown && isRightOptionDown {
-            otherKeyPressedDuringHold = true
-            return Unmanaged.passUnretained(event) // pass through
-        }
-
         guard type == .flagsChanged else {
             return Unmanaged.passUnretained(event)
         }
@@ -119,13 +149,16 @@ final class HotkeyManager {
         }
 
         let flags = event.flags
-        let optionPressed = flags.contains(.maskAlternate)
+        let optionPressed = (flags.rawValue & Self.rightOptionFlagBit) != 0
 
         if optionPressed && !isRightOptionDown {
             // Right Option pressed
             isRightOptionDown = true
             otherKeyPressedDuringHold = false
             log.debug("Right Option pressed")
+            #if DEBUG
+            pressDispatches += 1
+            #endif
             onPress?()
             return nil // suppress
         } else if !optionPressed && isRightOptionDown {
@@ -133,6 +166,9 @@ final class HotkeyManager {
             isRightOptionDown = false
             log.debug("Right Option released (otherKeys: \(self.otherKeyPressedDuringHold))")
             if !otherKeyPressedDuringHold {
+                #if DEBUG
+                releaseDispatches += 1
+                #endif
                 onRelease?()
             } else {
                 onCancelledRelease?()
@@ -142,6 +178,35 @@ final class HotkeyManager {
 
         return Unmanaged.passUnretained(event)
     }
+
+    private func retireInterruptedHold() {
+        let held = isRightOptionDown
+        isRightOptionDown = false; otherKeyPressedDuringHold = false
+        if held { onCancelledRelease?() }
+    }
+
+    /// Resume only the already-authorized tap after native UI or completion.
+    /// Never replay a key, recreate the tap, or ask for a permission grant.
+    func resumeIfNeeded() {
+        precondition(Thread.isMainThread)
+        guard let tap = eventTap, !CGEvent.tapIsEnabled(tap: tap) else { return }
+        retireInterruptedHold()
+        guard let current = eventTap, CFEqual(current, tap), !CGEvent.tapIsEnabled(tap: current) else { return }
+        CGEvent.tapEnable(tap: current, enable: true)
+        #if DEBUG
+        if CGEvent.tapIsEnabled(tap: current) { proactiveEnableCount += 1 }
+        #endif
+    }
+    #if DEBUG
+    func nativeInterruptAndResume() {
+        guard let tap = eventTap else { return }
+        CGEvent.tapEnable(tap: tap, enable: false); resumeIfNeeded()
+    }
+    func nativeDeliverStaleDisable() {
+        let event = CGEvent(keyboardEventSource: nil, virtualKey: 61, keyDown: false)!
+        _ = handleEvent(type: .tapDisabledByTimeout, event: event)
+    }
+    #endif
 
     private func promptAccessibilityPermission() {
         // Last-resort fallback. In the normal flow, OnboardingManager.runIfNeeded()

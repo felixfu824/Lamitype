@@ -4,6 +4,35 @@ import os
 
 private let log = Logger(subsystem: "com.felix.hushtype", category: "overlay")
 
+/// Keep native vibrancy and hosting layers inside the two rounded surfaces.
+/// A transparent NSPanel alone does not constrain native subview compositing.
+private final class FloatingOverlayHostingView: NSHostingView<FloatingOverlayView> {
+    private let model: OverlayStateModel
+    private let silhouette = CAShapeLayer()
+    override var isOpaque: Bool { false }
+
+    init(model: OverlayStateModel) {
+        self.model = model
+        super.init(rootView: FloatingOverlayView(model: model))
+        wantsLayer = true
+        layer?.backgroundColor = NSColor.clear.cgColor
+    }
+    @available(*, unavailable)
+    required init(rootView: FloatingOverlayView) { fatalError("Use init(model:)") }
+    @available(*, unavailable)
+    required init?(coder: NSCoder) { fatalError("Use init(model:)") }
+
+    override func layout() {
+        super.layout()
+        layer?.backgroundColor = NSColor.clear.cgColor
+        guard model.live != nil else { layer?.mask = nil; return }
+        silhouette.frame = bounds
+        silhouette.path = FloatingOverlayGeometry.liveSilhouette(in: bounds, flipped: isFlipped)
+        silhouette.fillColor = NSColor.black.cgColor
+        layer?.mask = silhouette
+    }
+}
+
 /// Borderless floating panel that displays the recording/transcribing
 /// indicator near the bottom of the screen.
 ///
@@ -42,7 +71,7 @@ final class FloatingOverlayWindow: NSPanel {
         isMovable = false
         ignoresMouseEvents = true  // pure indicator, never receives input
 
-        let hostingView = NSHostingView(rootView: FloatingOverlayView(model: stateModel))
+        let hostingView = FloatingOverlayHostingView(model: stateModel)
         hostingView.translatesAutoresizingMaskIntoConstraints = false
         contentView = hostingView
     }
@@ -69,6 +98,8 @@ final class FloatingOverlayWindow: NSPanel {
         let y = visible.minY + 80
         let frame = NSRect(origin: CGPoint(x: x, y: y), size: fittingSize)
         setFrame(frame, display: false)
+        contentView?.needsLayout = true
+        contentView?.layoutSubtreeIfNeeded()
 
         alphaValue = 0
         orderFrontRegardless()

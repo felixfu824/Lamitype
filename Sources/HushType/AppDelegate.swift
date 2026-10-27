@@ -1,4 +1,6 @@
 import AppKit
+import AVFoundation
+import AudioCommon
 import MLX
 import os
 import UserNotifications
@@ -62,8 +64,13 @@ private final class TapArbiter {
         var workItem: DispatchWorkItem!
     }
 
-    private var pendingTap: PendingTap?
-    private(set) var secondTapCandidate = false
+    private var pendingTap: PendingTap? {
+        didSet { LocalLivePreviewController.availabilityDidChange() }
+    }
+    private(set) var secondTapCandidate = false {
+        didSet { LocalLivePreviewController.availabilityDidChange() }
+    }
+    var hasPendingAction: Bool { pendingTap != nil || secondTapCandidate }
 
     func deferSingleTap(_ action: @escaping @MainActor () -> Void) {
         reset()
@@ -110,7 +117,14 @@ private final class TapArbiter {
 
 @MainActor
 final class AppDelegate: NSObject, NSApplicationDelegate {
+    private let appSupportDirectoryOverride: URL?
     nonisolated override init() {
+        appSupportDirectoryOverride = nil
+        super.init()
+    }
+    /// Dependency injection for the isolated native QA host; production uses the default initializer.
+    nonisolated init(appSupportDirectory: URL) {
+        appSupportDirectoryOverride = appSupportDirectory
         super.init()
     }
 
@@ -128,6 +142,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     private var state: AppState = .loading {
         didSet {
             log.info("State: \(String(describing: self.state))")
+            LocalLivePreviewController.availabilityDidChange()
             if EvalWindow.isPresented {
                 NotificationCenter.default.post(name: .evalAppActivityDidChange, object: nil)
             }
@@ -146,6 +161,18 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     /// The dictation press currently held, if any. Created only for an
     /// accepted press; cleared on release, cancellation or failure handoff.
     private var currentDictationPress: DictationPressRecord?
+    private var liveDictation: LocalLiveDictationSession?
+    private var liveClosedPressAwaitingRelease = false
+    private var livePhysicalKeyDown = false {
+        didSet { LocalLivePreviewController.availabilityDidChange() }
+    }
+    private var liveReminderIgnoredPress = false
+    private let defaultLiveHoldGate = DefaultLiveHoldGate()
+    private var livePrivacyTimer: Timer?
+    private var hotkeyFocusObserver: NSObjectProtocol?
+    private var liveBlockedPressUptime: TimeInterval?
+    private var liveBlockedReason = ""
+    private lazy var liveRecoveryWindow = LiveRecoveryWindow()
 
     /// Pending 4 s dismissal for the notice currently on screen.
     private var captureNoticeHideWork: DispatchWorkItem?
@@ -178,7 +205,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
             return
         }
 
-        let appSupport = FileManager.default.urls(
+        let appSupport = appSupportDirectoryOverride ?? FileManager.default.urls(
             for: .applicationSupportDirectory,
             in: .userDomainMask
         )[0]
@@ -213,8 +240,24 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         localEngine = Qwen3TranscriptionEngine()
         statusBar = StatusBarController(localEngine: localEngine)
         hotkeyManager = HotkeyManager()
+        #if DEBUG
+        if NativeFixtureAudioInput.isEnabled {
+            audioCapture = AudioCaptureService(makeDriver: {
+                MainActor.assumeIsolated { NativeFixtureCaptureDriver(url: NativeFixtureAudioInput.nextURL) }
+            })
+        } else { audioCapture = AudioCaptureService() }
+        #else
         audioCapture = AudioCaptureService()
+        #endif
         activeEngine = makeDictationEngine(for: AppConfig.shared.dictationEngine)
+        LocalLivePreviewController.shared.activityIsIdle = { [weak self] in
+            guard let self else { return false }
+            return (self.state == .idle || self.state == .unloaded) && (!self.livePhysicalKeyDown || self.liveReminderIgnoredPress)
+                && self.currentDictationPress == nil && !self.tapArbiter.hasPendingAction
+        }
+        #if DEBUG
+        runNativeE2EWhenReady()
+        #endif
         translationManager = TranslationManager()
         let manager = LiveCaptionManager(
             localEngine: localEngine,
@@ -229,6 +272,33 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         statusBar.setTextPolishAvailability(TextPolisher.isAvailableCached)
         NSApp.servicesProvider = self
 
+        statusBar.onShowLiveResult = { [weak self] in
+            guard let self else { return }
+            self.liveRecoveryWindow.showStoredResult()
+        }
+        NSWorkspace.shared.notificationCenter.addObserver(self, selector: #selector(liveSystemWillSleep), name: NSWorkspace.willSleepNotification, object: nil)
+        let privacyTimer = Timer(timeInterval: 0.5, repeats: true) { [weak self] _ in
+            MainActor.assumeIsolated {
+                guard let self, SecureInputProbe.isActive(), self.liveDictation != nil || self.statusBar.hasLiveResult else { return }
+                self.liveSystemWillSleep()
+            }
+        }
+        livePrivacyTimer = privacyTimer
+        RunLoop.main.add(privacyTimer, forMode: .common)
+
+        // A newly focused app-owned window invalidates a pending selection
+        // gesture. Main-queue deferred work may not run until a modal closes,
+        // so checking modalWindow only when that work executes is too late.
+        hotkeyFocusObserver = NotificationCenter.default.addObserver(
+            forName: NSWindow.didBecomeKeyNotification, object: nil, queue: .main
+        ) { [weak self] _ in
+            MainActor.assumeIsolated {
+                guard let self else { return }
+                self.tapArbiter.reset()
+                if self.defaultLiveHoldGate.cancel() { self.liveReminderIgnoredPress = self.livePhysicalKeyDown }
+            }
+        }
+
         // Wire hotkey callbacks
         hotkeyManager.onPress = { [weak self] in
             self?.handleHotkeyPress()
@@ -239,7 +309,14 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         hotkeyManager.onCancelledRelease = { [weak self] in
             self?.handleCancelledHotkeyRelease()
         }
+        hotkeyManager.onChordDuringHold = { [weak self] in
+            guard let self, self.defaultLiveHoldGate.cancel() else { return }
+            self.tapArbiter.reset(); self.liveReminderIgnoredPress = true
+        }
         hotkeyManager.onLiveCaptionToggle = { [weak self] in
+            #if DEBUG
+            if NativeLocalLiveCounters.gestureProbeOnly { NativeLocalLiveCounters.captionShortcutRoutes += 1; return }
+            #endif
             Task { @MainActor in self?.toggleLiveCaptionViaHotkey() }
         }
 
@@ -248,6 +325,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         audioCapture.onRMSLevel = { [weak self] level in
             DispatchQueue.main.async {
                 guard let self else { return }
+                if self.liveDictation?.phase == .recording { self.overlayState.liveLevel = level }
                 if case .recording(_, let provider) = self.overlayState.state {
                     self.overlayState.state = .recording(level: level, provider: provider)
                 }
@@ -389,6 +467,8 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         if evalStoreSessionStarted {
             EvalStore.shared.endSessionAndClear()
         }
+        cancelLiveDictation()
+        livePrivacyTimer?.invalidate()
         tapArbiter.reset()
         hotkeyManager.stop()
         hideOverlay()
@@ -398,6 +478,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     func applicationDidBecomeActive(_ notification: Notification) {
         TextPolisher.refreshAvailabilityCache()
         statusBar?.setTextPolishAvailability(TextPolisher.isAvailableCached)
+        hotkeyManager?.resumeIfNeeded()
     }
 
     // MARK: - Overlay helpers
@@ -447,6 +528,8 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         captureNoticeHideWork = nil
         overlayWindow.hide()
         overlayState.state = .hidden
+        overlayState.live = nil
+        overlayState.liveNotice = nil
     }
 
     // MARK: - Capture failure notice
@@ -456,11 +539,12 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     /// Shown regardless of `floatingOverlayEnabled`: that preference governs
     /// the routine Listening / Transcribing indicator, and a failure the user
     /// cannot see is worse than an indicator they switched off.
-    private func showCaptureNotice(message: String) {
+    private func showOverlayNotice(message: String, style: OverlayNoticeStyle = .failure) {
         captureNoticeHideWork?.cancel()
         captureNoticeHideWork = nil
 
-        let ticket = overlayState.beginNotice(message: message)
+        overlayState.live = nil
+        let ticket = overlayState.beginNotice(message: message, style: style)
         overlayWindow.show()
 
         let work = DispatchWorkItem { [weak self] in
@@ -491,8 +575,43 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     // MARK: - Hotkey Handlers
 
     private func handleHotkeyPress() {
-        // App-modal alerts must exclusively own input while they are visible.
-        guard NSApp.modalWindow == nil else { return }
+        livePhysicalKeyDown = true
+        if LocalLivePreviewController.shared.isRequestPending {
+            liveReminderIgnoredPress = true
+            return
+        }
+        guard NSApp.modalWindow == nil else {
+            defaultLiveHoldGate.cancel(); tapArbiter.reset()
+            liveReminderIgnoredPress = true
+            return
+        }
+        guard !liveClosedPressAwaitingRelease else { return }
+        // First-use consent belongs to a HOLD, preserving translation taps,
+        // double-tap polish and ordinary Option-key chords before confirmation.
+        let preview = LocalLivePreviewController.shared
+        if state == .idle, AppConfig.shared.dictationEngine == .local,
+           preview.needsDefaultConfirmation, !SecureInputProbe.isActive(),
+           !AppConfig.shared.liveCaptionUsesMicSource,
+           !LocalLiveOwnership.localCaptionActive, LocalLiveOwnership.captionTransitions == 0 {
+            _ = tapArbiter.cancelPendingForSecondPress()
+            if preview.reminderAlreadyAcknowledged {
+                liveReminderIgnoredPress = true
+                preview.request(true, from: .menu)
+                if preview.isRequestPending || preview.needsDefaultConfirmation { return }
+                liveReminderIgnoredPress = false
+            } else {
+                defaultLiveHoldGate.press { [weak self] _ in self?.confirmDefaultLiveHold() }
+                return
+            }
+        }
+        if let liveDictation {
+            if liveDictation.phase == .recovery {
+                _ = tapArbiter.cancelPendingForSecondPress()
+                liveBlockedPressUptime = ProcessInfo.processInfo.systemUptime
+                liveBlockedReason = L10n.string("live.recovery.blocked", fallback: "Retry, save and discard, or discard the recording first.")
+            }
+            return
+        }
 
         // A visible notice is never a gate: an otherwise eligible press
         // dismisses it and proceeds through the normal checks below.
@@ -542,6 +661,11 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
             return
         }
 
+        if AppConfig.shared.dictationEngine == .local && AppConfig.shared.localLivePreviewEnabled {
+            beginLiveDictation()
+            return
+        }
+
         // Timestamped immediately before the throwing start.
         let press = DictationPressRecord(keyDownUptime: ProcessInfo.processInfo.systemUptime)
         currentDictationPress = press
@@ -586,14 +710,40 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     /// blocking that tap and without stealing focus.
     private func presentDictationCaptureError(message: String, press: DictationPressRecord) {
         guard press.claimErrorPresentation() else { return }
-        showCaptureNotice(message: L10n.format(
+        showOverlayNotice(message: L10n.format(
             "alert.dictation.capture_failed.message",
             "Nothing was inserted. %1$@",
             arguments: [message]
         ))
     }
 
+    private func confirmDefaultLiveHold() {
+        // This press never captures, even if settings changed during the delay.
+        liveReminderIgnoredPress = livePhysicalKeyDown
+        tapArbiter.reset()
+        guard NSApp.modalWindow == nil, state == .idle, AppConfig.shared.dictationEngine == .local,
+              LocalLivePreviewController.shared.needsDefaultConfirmation,
+              !SecureInputProbe.isActive(), !AppConfig.shared.liveCaptionUsesMicSource, !LocalLiveOwnership.localCaptionActive,
+              LocalLiveOwnership.captionTransitions == 0 else { return }
+        LocalLivePreviewController.shared.request(true, from: .menu)
+    }
+
     private func handleHotkeyRelease() {
+        livePhysicalKeyDown = false
+        switch defaultLiveHoldGate.release() {
+        case .tap: handleTapDetected(); return
+        case .consumedHold: return
+        case .none: break
+        }
+        if liveReminderIgnoredPress { liveReminderIgnoredPress = false; return }
+        if liveClosedPressAwaitingRelease { liveClosedPressAwaitingRelease = false; return }
+        if let began = liveBlockedPressUptime {
+            liveBlockedPressUptime = nil
+            if ProcessInfo.processInfo.systemUptime - began < 0.3 { handleTapDetected() }
+            else { tapArbiter.reset(); showOverlayNotice(message: liveBlockedReason) }
+            return
+        }
+        if let liveDictation { liveDictation.release(); return }
         // Sampled first, before stopRecording tears the engine down and before
         // any UI work. Tap versus hold is a key-down-to-release measurement;
         // reading the clock after teardown would add that teardown to every
@@ -944,7 +1094,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     }
 
     private func handleTapDetected() {
-        guard state == .idle else {
+        guard NSApp.modalWindow == nil, state == .idle else {
             tapArbiter.reset()
             log.info("Ignoring tap - state is \(String(describing: self.state), privacy: .public)")
             return
@@ -958,7 +1108,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
 
         if AppConfig.shared.textPolishEnabled && TextPolisher.isAvailableCached {
             tapArbiter.deferSingleTap { [weak self] in
-                guard let self, self.state == .idle else {
+                guard let self, NSApp.modalWindow == nil, self.state == .idle else {
                     log.info("Deferred translation dropped - app is no longer idle")
                     return
                 }
@@ -977,6 +1127,14 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     }
 
     private func handleCancelledHotkeyRelease() {
+        livePhysicalKeyDown = false
+        if defaultLiveHoldGate.cancel() { tapArbiter.reset(); return }
+        if liveReminderIgnoredPress { liveReminderIgnoredPress = false; return }
+        if liveClosedPressAwaitingRelease { liveClosedPressAwaitingRelease = false; return }
+        if liveBlockedPressUptime != nil { liveBlockedPressUptime = nil; tapArbiter.reset(); return }
+        if let liveDictation, liveDictation.phase != .recovery {
+            liveDictation.cancel(); tapArbiter.reset(); return
+        }
         tapArbiter.reset()
         liveCaptionGatePressTimestamp = nil
 
@@ -1004,6 +1162,9 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     }
 
     private func handleTranslation(source: SelectionSource) {
+        #if DEBUG
+        if NativeLocalLiveCounters.gestureProbeOnly { NativeLocalLiveCounters.translationRoutes += 1; return }
+        #endif
         guard state == .idle else {
             log.info("Ignoring translation - state is \(String(describing: self.state), privacy: .public)")
             return
@@ -1079,6 +1240,9 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     // MARK: - Text Polish
 
     private func handlePolish(source: SelectionSource) {
+        #if DEBUG
+        if NativeLocalLiveCounters.gestureProbeOnly { NativeLocalLiveCounters.polishRoutes += 1; return }
+        #endif
         let target: NSRunningApplication?
         switch source {
         case .copySelection:
@@ -1351,6 +1515,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     /// For .translated mode we gate on the cloud-disclosure modal first.
     @MainActor
     private func startCaptionMode(_ mode: AppConfig.CaptionMode, source: AudioSourceKind) {
+        guard !LocalLiveOwnership.isBusy else { showLiveCaptionConflict(); return }
         guard let manager = self.liveCaptionManager else {
             NSSound.beep()
             return
@@ -1365,6 +1530,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         let targetEngine: AppConfig.LiveCaptionEngine = (mode == .translated) ? .cloudTranslate : .local
 
         Task { @MainActor in
+            guard !LocalLiveOwnership.isBusy else { self.showLiveCaptionConflict(); return }
             do {
                 let currentMode: AppConfig.CaptionMode? = manager.isActive
                     ? (AppConfig.shared.liveCaptionEngine == .cloudTranslate ? .translated : .local)
@@ -1383,6 +1549,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
                     // window plus a small buffer.
                     try? await Task.sleep(nanoseconds: 200_000_000)
                 }
+                guard !LocalLiveOwnership.isBusy else { self.showLiveCaptionConflict(); return }
                 AppConfig.shared.liveCaptionEngine = targetEngine
                 try await manager.start(source: source)
             } catch {
@@ -1405,6 +1572,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
             manager.stop()
             return
         }
+        guard !LocalLivePreviewController.shared.isRequestPending else { return }
         toggleProductWithLastSource(AppConfig.shared.lastStartedCaptionMode)
     }
 
@@ -1428,6 +1596,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     /// `SystemAudioPermissionFlow` first.
     @MainActor
     private func startCaptionModeOnSystemAudio(_ mode: AppConfig.CaptionMode, forcePicker: Bool) {
+        guard !LocalLiveOwnership.isBusy else { showLiveCaptionConflict(); return }
         guard self.liveCaptionManager != nil else {
             NSSound.beep()
             return
@@ -1453,6 +1622,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     /// model on Local → Cloud makes switching back instant; Cloud → Local
     /// performs the existing progress-bearing reload when needed.
     func switchDictationEngine(to engine: AppConfig.DictationEngine) {
+        guard !LocalLiveOwnership.isBusy else { return }
         let previous = AppConfig.shared.dictationEngine
         guard previous != engine else { return }
 
@@ -2197,3 +2367,400 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         return application.isActive
     }
 }
+
+// MARK: - Experimental local live dictation
+extension AppDelegate {
+    private func showLiveCaptionConflict() {
+        overlayState.liveNotice = L10n.string("live.caption.blocked", fallback: "Finish or cancel live dictation before starting or switching captions.")
+    }
+
+    private func beginLiveDictation() {
+        guard !SecureInputProbe.isActive(),
+              !LocalLivePreviewController.shared.needsDefaultConfirmation,
+              !LocalLivePreviewController.shared.isRequestPending else { return }
+        guard LocalLiveOwnership.captionTransitions == 0, !LocalLiveOwnership.localCaptionActive else {
+            liveBlockedPressUptime = ProcessInfo.processInfo.systemUptime
+            liveBlockedReason = L10n.string("live.caption.stop_first", fallback: "Stop local captions before using live dictation.")
+            return
+        }
+        guard localEngine.loadedModel != nil else { return }
+        let pressed = ProcessInfo.processInfo.systemUptime
+        let target = LiveInsertionTarget()
+        let language = AppConfig.shared.language
+        let options = DictationPostProcessor.Options.snapshot()
+        let initialPolish = AppConfig.shared.textPolishEnabled && AppConfig.shared.autoPolishDictationEnabled
+        let initialEval = EvalCapturePolicy.decide(enabled: AppConfig.shared.evalModeEnabled,
+            secureInput: SecureInputProbe.isActive(), targetBundleID: target.application?.bundleIdentifier,
+            excludedBundleIDs: AppConfig.shared.autoPolishExcludedBundleIDs) == .capture
+        let tokenizer = LiveSessionTokenizer(modelID: AppConfig.shared.modelId)
+        let session = LocalLiveDictationSession(capture: audioCapture) { [weak engine = localEngine] samples in
+            guard let model = engine?.loadedModel else { throw LiveRecognitionError.unavailable }
+            return try LiveQwenRecognizer(model: model, tokenizer: try tokenizer.load()).transcribe(audio: samples, language: language, maxTokens: 1024)
+        }
+        session.prepareRecognition = { [weak engine = localEngine] in
+            guard let engine else { throw LiveRecognitionError.unavailable }
+            try await engine.load()
+        }
+        session.formatDraft = { ChineseConverter.convert($0, enabled: options.chineseConversion) }
+        session.onUpdate = { [weak self, weak session] in
+            guard let self, let session, self.liveDictation === session else { return }
+            guard session.phase != .recovery, session.phase != .finished else { return }
+            // Retry is Copy-only and has no insertion target. Avoid querying
+            // Accessibility from an assistive action callback while retry starts.
+            if !session.retrying { target.observe() }
+            guard session.elapsed >= 0.3 || session.phase != .recording else { return }
+            self.overlayState.live = LiveOverlayState(phase: session.phase, draft: session.draft,
+                elapsed: min(60, session.elapsed), earlierDraftHidden: session.blockStart > 0, stoppedAtLimit: session.stoppedAtLimit, previewUnavailable: session.previewUnavailable)
+            if !self.overlayWindow.isVisible { self.overlayWindow.show() }
+            if session.phase != .recording { self.state = .transcribing; self.statusBar.setState(.transcribing) }
+        }
+        session.onTap = { [weak self] in self?.handleTapDetected() }
+        session.onAutoStop = { [weak self] in self?.liveClosedPressAwaitingRelease = self?.livePhysicalKeyDown ?? false }
+        session.onCaptureError = { [weak self] error in
+            self?.liveClosedPressAwaitingRelease = self?.livePhysicalKeyDown ?? false
+            self?.showOverlayNotice(message: error.localizedDescription)
+        }
+        session.prepareFinal = { [weak self, weak session] raw in
+            guard let self, let session, self.liveDictation === session, !session.cancelled, !SecureInputProbe.isActive() else { return nil }
+            self.state = .transcribing
+            let deterministic = try? await LocalLiveInference.run { DictationPostProcessor.apply(raw, options: options) }
+            guard !session.cancelled, !SecureInputProbe.isActive(), let deterministic else { return nil }
+            let decision = AutoPolishPolicy.decideNow(engine: .local, targetBundleID: target.application?.bundleIdentifier)
+            var output = deterministic
+            var outcome: EvalOutcome = .notPolished
+            if initialPolish, decision == .polish {
+                #if DEBUG
+                NativeLocalLiveCounters.polishCalls += 1
+                #endif
+                self.overlayState.live?.phase = .polishing
+                self.statusBar.setState(.polishing)
+                let polished = await DictationPolishStage.apply(deterministic) { await TextPolisher.polishDictation($0) }
+                guard !session.cancelled, !SecureInputProbe.isActive() else { return nil }
+                output = polished.text
+                switch polished.outcome {
+                case .polished(let changed): outcome = changed ? .polished : .unchanged
+                case .keptRaw: outcome = .keptOriginal
+                }
+            }
+            if initialEval {
+                EvalCapture.record(source: .dictation, appBundleID: target.application?.bundleIdentifier,
+                    original: deterministic, output: output, outcome: outcome, reason: nil,
+                    elapsed: nil, abandoned: false)
+            }
+            return output
+        }
+        session.onFailure = { [weak self, weak session] error in
+            guard let self, let session, self.liveDictation === session else { return }
+            self.state = .idle; self.statusBar.setState(.idle); self.hideOverlay()
+            self.liveRecoveryWindow.present(message: error.localizedDescription, hasAudio: true)
+            #if DEBUG
+            // Explicit fixture-diagnostics opt-in only; normal apps never export
+            // failed recordings. Preserve exact Float samples for upstream parity.
+            if CommandLine.arguments.contains("--qa-save-failed-audio"),
+               CommandLine.arguments.contains("--native-e2e"),
+               let index = CommandLine.arguments.firstIndex(of: "--e2e-output"),
+               CommandLine.arguments.indices.contains(index + 1) {
+                let directory = URL(fileURLWithPath: CommandLine.arguments[index + 1], isDirectory: true)
+                let stem = "diagnostic-final-\(NativeLocalLiveCounters.finalCalls)"
+                session.audio.withUnsafeBytes { bytes in
+                    try? Data(bytes).write(to: directory.appendingPathComponent(stem + ".f32"), options: .atomic)
+                }
+                let metadata: [String: Any] = ["samples": session.audio.count,
+                    "generatedTokens": NativeLocalLiveCounters.lastFinalGeneratedTokens,
+                    "endedByEOS": NativeLocalLiveCounters.lastFinalEndedByEOS,
+                    "modelID": AppConfig.shared.modelId, "language": language as Any? ?? NSNull(),
+                    "error": error.localizedDescription]
+                if let data = try? JSONSerialization.data(withJSONObject: metadata, options: [.prettyPrinted, .sortedKeys]) {
+                    try? data.write(to: directory.appendingPathComponent(stem + ".json"), options: .atomic)
+                }
+            }
+            #endif
+            self.statusBar.hasLiveResult = true
+        }
+        session.onResult = { [weak self] text, retried in
+            guard let self, !SecureInputProbe.isActive() else { return }
+            let sent: Bool
+            if !retried, let application = target.application, target.mayPaste() {
+                sent = TextInserter.insertLive(text, targetPID: application.processIdentifier,
+                                               verify: { target.mayPaste() })
+            } else {
+                sent = false
+            }
+            #if DEBUG
+            NativeLocalLiveCounters.results += 1
+            if sent { NativeLocalLiveCounters.pasteDispatches += 1 }
+            #endif
+            let message = sent
+                ? L10n.string("live.result.sent", fallback: "Paste sent · text is on the clipboard")
+                : L10n.string("live.result.copy", fallback: "Text ready. Copy to your destination.")
+            self.liveRecoveryWindow.storeResult(text: text, message: message)
+            self.statusBar.hasLiveResult = true
+            if !sent {
+                self.showOverlayNotice(message: L10n.string("live.result.manual_notice", fallback: "Automatic paste skipped. Open Dictation mode → Last Live Result… to copy."),
+                    style: .information(heading: L10n.string("live.result.ready", fallback: "Text ready")))
+            }
+        }
+        session.onFinished = { [weak self, weak session] in
+            guard let self, let session, self.liveDictation === session else { return }
+            self.liveDictation = nil
+            self.state = .idle; self.statusBar.setState(.idle)
+            if !self.overlayState.isShowingNotice { self.hideOverlay() }
+            self.hotkeyManager?.resumeIfNeeded()
+        }
+        liveRecoveryWindow.onRetry = { [weak self] in
+            guard let self else { return }
+            guard self.state == .idle || self.state == .unloaded else { return }
+            if self.liveDictation?.retry() == true { self.liveRecoveryWindow.working = true }
+        }
+        liveRecoveryWindow.onSave = { [weak self] in self?.saveLiveRecoveryAudio() }
+        liveRecoveryWindow.onDiscard = { [weak self] in
+            self?.liveDictation?.cancel()
+            self?.liveRecoveryWindow.hasAudio = false
+            self?.liveRecoveryWindow.text = ""
+            self?.statusBar.hasLiveResult = false
+        }
+        liveDictation = session
+        do {
+            if try session.start(pressUptime: pressed) {
+                liveRecoveryWindow.text = ""; statusBar.hasLiveResult = false
+                liveRecoveryWindow.window?.orderOut(nil)
+                state = .recording; statusBar.setState(.recording)
+            } else { liveDictation = nil; tapArbiter.reset() }
+        } catch {
+            tapArbiter.reset()
+            liveDictation = nil; liveClosedPressAwaitingRelease = true
+            showOverlayNotice(message: error.localizedDescription)
+        }
+    }
+
+    private func cancelLiveDictation() {
+        guard let liveDictation else { return }
+        liveClosedPressAwaitingRelease = livePhysicalKeyDown
+        liveDictation.cancel()
+    }
+
+    @objc private func liveSystemWillSleep() {
+        if defaultLiveHoldGate.cancel() { liveReminderIgnoredPress = livePhysicalKeyDown }
+        tapArbiter.reset()
+        cancelLiveDictation()
+        liveRecoveryWindow.text = ""; liveRecoveryWindow.hasAudio = false
+        liveRecoveryWindow.window?.orderOut(nil)
+        statusBar.hasLiveResult = false
+        hideOverlay()
+    }
+
+    private func saveLiveRecoveryAudio() {
+        guard let session = liveDictation, session.phase == .recovery, !SecureInputProbe.isActive() else { return }
+        let panel = NSSavePanel()
+        panel.nameFieldStringValue = "Lamitype-recording.wav"
+        #if DEBUG
+        // Configure before presentation: later proxy property changes need not
+        // update the remote Save UI. Native QA exports only into its own folder.
+        if CommandLine.arguments.contains("--native-e2e"),
+           let index = CommandLine.arguments.firstIndex(of: "--e2e-output"),
+           CommandLine.arguments.indices.contains(index + 1) {
+            panel.directoryURL = URL(fileURLWithPath: CommandLine.arguments[index + 1], isDirectory: true)
+            panel.nameFieldStringValue = "native-recovery-test.wav"
+        }
+        #endif
+        panel.begin { [weak self, weak session] response in
+            guard let self else { return }
+            DispatchQueue.main.async { [weak manager = self.hotkeyManager] in manager?.resumeIfNeeded() }
+            guard let session, self.liveDictation === session,
+                  response == .OK, let url = panel.url, !SecureInputProbe.isActive() else { return }
+            #if DEBUG
+            // Native Save-panel QA may write only its own declared export.
+            // NSSavePanel.url is not authoritative until its OK completion.
+            if CommandLine.arguments.contains("--native-e2e"),
+               let index = CommandLine.arguments.firstIndex(of: "--e2e-output"),
+               CommandLine.arguments.indices.contains(index + 1) {
+                let expected = URL(fileURLWithPath: CommandLine.arguments[index + 1], isDirectory: true)
+                    .appendingPathComponent("native-recovery-test.wav")
+                guard url.standardizedFileURL.path == expected.standardizedFileURL.path else {
+                    self.liveRecoveryWindow.message = "QA Save cancelled: destination outside the declared test export."
+                    return
+                }
+            }
+            #endif
+            do {
+                try WAVEncoder.encode(samples: session.audio).write(to: url, options: .atomic)
+                self.liveRecoveryWindow.message = L10n.string("live.recovery.saved", fallback: "Audio saved. Retry or discard the recording to continue.")
+            } catch { self.liveRecoveryWindow.message = error.localizedDescription }
+        }
+    }
+}
+
+#if DEBUG
+extension AppDelegate {
+    /// Explicit native-test launch is absent from release; ordinary launches never run it.
+    func runNativeE2EWhenReady() {
+        if CommandLine.arguments.contains("--native-cap-reminder-e2e") {
+            runNativeCapReminderE2EWhenReady()
+            return
+        }
+        guard ["com.felix.lamitype.localLiveQA", "com.felix.hushtype"].contains(Bundle.main.bundleIdentifier ?? ""),
+              CommandLine.arguments.contains("--native-e2e"),
+              let outputIndex = CommandLine.arguments.firstIndex(of: "--e2e-output"),
+              CommandLine.arguments.indices.contains(outputIndex + 1),
+              let audioIndex = CommandLine.arguments.firstIndex(of: "--qa-audio"),
+              CommandLine.arguments.indices.contains(audioIndex + 1) else { return }
+        let evidenceRoot = URL(fileURLWithPath: CommandLine.arguments[outputIndex + 1], isDirectory: true)
+        let audio = URL(fileURLWithPath: CommandLine.arguments[audioIndex + 1])
+        var capAudio = audio
+        if let index = CommandLine.arguments.firstIndex(of: "--qa-cap-audio"), CommandLine.arguments.indices.contains(index + 1) {
+            capAudio = URL(fileURLWithPath: CommandLine.arguments[index + 1])
+        }
+        Task { @MainActor [self] in
+            try? FileManager.default.createDirectory(at: evidenceRoot, withIntermediateDirectories: true)
+            let startupURL = evidenceRoot.appendingPathComponent("native-e2e-startup.json")
+            if let startup = try? JSONSerialization.data(withJSONObject: ["accessibility": AXIsProcessTrusted(), "postEvents": CGPreflightPostEventAccess(), "microphoneStatus": AVCaptureDevice.authorizationStatus(for: .audio).rawValue, "state": String(describing: state)], options: .prettyPrinted) { try? startup.write(to: startupURL, options: .atomic) }
+            if !AXIsProcessTrusted() {
+                // Explicit native-test launch only: request the exact Accessibility
+                // permission approved by the owner, without requesting PostEvent.
+                let options = [kAXTrustedCheckOptionPrompt.takeUnretainedValue() as String: true] as CFDictionary
+                NSApp.activate(ignoringOtherApps: true)
+                _ = AXIsProcessTrustedWithOptions(options)
+                return
+            }
+            if CommandLine.arguments.contains("--native-preflight-only") { return }
+            // The ordinary onboarding flow owns the microphone request. Give its
+            // native prompt time to finish before starting this opt-in test.
+            for _ in 0..<1200 {
+                if AVCaptureDevice.authorizationStatus(for: .audio) != .notDetermined { break }
+                try? await Task.sleep(nanoseconds: 100_000_000)
+            }
+            if let startup = try? JSONSerialization.data(withJSONObject: ["accessibility": AXIsProcessTrusted(), "postEvents": CGPreflightPostEventAccess(), "microphoneStatus": AVCaptureDevice.authorizationStatus(for: .audio).rawValue, "state": String(describing: state)], options: .prettyPrinted) { try? startup.write(to: startupURL, options: .atomic) }
+            guard CGPreflightPostEventAccess(), AVCaptureDevice.authorizationStatus(for: .audio) == .authorized else { return }
+            let originalEngine = AppConfig.shared.dictationEngine
+            let originalEval = AppConfig.shared.evalModeEnabled
+            let originalModelLoaded = localEngine?.isLoaded == true
+            AppConfig.shared.evalModeEnabled = false
+            defer {
+                AppConfig.shared.evalModeEnabled = originalEval
+                switchDictationEngine(to: originalEngine)
+            }
+            switchDictationEngine(to: .local)
+            for _ in 0..<600 {
+                if state == .idle, localEngine?.isLoaded == true { break }
+                try? await Task.sleep(nanoseconds: 100_000_000)
+            }
+            guard state == .idle, localEngine?.isLoaded == true else { return }
+            if CommandLine.arguments.contains("--native-e2e-reload-first") {
+                // Exercise the ordinary unload path and its confirmation; only
+                // this explicit native test dismisses its own modal notice.
+                let timer = Timer(timeInterval: 0.05, repeats: true) { [weak self] _ in
+                    MainActor.assumeIsolated {
+                        if self?.state == .unloaded, NSApp.modalWindow != nil { NSApp.stopModal(withCode: .alertFirstButtonReturn) }
+                    }
+                }
+                RunLoop.main.add(timer, forMode: .common); RunLoop.main.add(timer, forMode: .modalPanel)
+                await unloadModel(); timer.invalidate()
+            }
+            let root = evidenceRoot
+            let driver = NativeLocalLiveE2E(output: root.appendingPathComponent("native-e2e-results.json"), audio: audio, capAudio: capAudio,
+                inspect: { [self] in
+                    let samples = liveDictation?.audio.isEmpty == false ? liveDictation!.audio : audioCapture.recordingSnapshot()
+                    let sumSquares = samples.reduce(0.0) { $0 + Double($1) * Double($1) }
+                    return ["appState": String(describing: state), "selectedEngine": AppConfig.shared.dictationEngine.rawValue, "livePhase": liveDictation.map { String(describing: $0.phase) } ?? "none",
+                     "draft": overlayState.live?.draft ?? "", "elapsed": overlayState.live?.elapsed ?? -1,
+                     "capReached": liveDictation?.stoppedAtLimit ?? false,
+                     "closedPressLatch": liveClosedPressAwaitingRelease,
+                     "physicalKeyDown": livePhysicalKeyDown,
+                     "reminderIgnoredPress": liveReminderIgnoredPress,
+                     "managerKeyDown": hotkeyManager.rightOptionIsDownForTesting,
+                     "disabledTapCount": hotkeyManager.disabledTapCount,
+                     "lastDisabledType": hotkeyManager.lastDisabledType,
+                     "tapEnabled": hotkeyManager.tapEnabledForTesting,
+                     "proactiveEnableCount": hotkeyManager.proactiveEnableCount,
+                     "staleDisableCount": hotkeyManager.staleDisableCount,
+                     "hotkeyPressDispatches": hotkeyManager.pressDispatches,
+                     "hotkeyReleaseDispatches": hotkeyManager.releaseDispatches,
+                     "modalWindowVisible": NSApp.modalWindow != nil,
+                     "modalWindowTitle": NSApp.modalWindow?.title ?? "",
+                     "secureInput": SecureInputProbe.isActive(),
+                     "maximumHotkeyCallbackMilliseconds": hotkeyManager.maximumCallbackSeconds * 1000,
+                     "liveOverlayVisible": overlayState.live != nil && overlayWindow.isVisible,
+                     "ordinaryOverlayVisible": overlayState.live == nil && overlayWindow.isVisible,
+                     "floatingIndicatorEnabled": AppConfig.shared.floatingOverlayEnabled,
+                     "overlayFrame": NSStringFromRect(overlayWindow.frame),
+                     "visibleOverlayCount": NSApp.windows.filter { $0 is FloatingOverlayWindow && $0.isVisible }.count,
+                     "result": liveRecoveryWindow.text, "resultMessage": liveRecoveryWindow.message, "resultVisible": liveRecoveryWindow.window?.isVisible ?? false,
+                     "audioRMS": samples.isEmpty ? 0 : sqrt(sumSquares / Double(samples.count)),
+                     "audioPeak": samples.map { abs($0) }.max() ?? 0,
+                     "appFootprintMiB": MemoryUtils.physFootprintMB(),
+                     "mlxActiveBytes": MLX.Memory.activeMemory,
+                     "mlxCacheBytes": MLX.Memory.cacheMemory,
+                     "mlxCacheLimitBytes": MLX.Memory.cacheLimit,
+                     "recognitionBusy": liveDictation?.isBusy ?? false,
+                     "failedAudioAvailable": liveRecoveryWindow.hasAudio,
+                     "noticeVisible": overlayState.isShowingNotice && overlayWindow.isVisible,
+                     "failureNotice": overlayState.isShowingFailureNotice,
+                     "frontmostBundleID": NSWorkspace.shared.frontmostApplication?.bundleIdentifier ?? "",
+                     "lastFinalGeneratedTokens": NativeLocalLiveCounters.lastFinalGeneratedTokens,
+                     "lastFinalEndedByEOS": NativeLocalLiveCounters.lastFinalEndedByEOS,
+                     "finalCallCount": NativeLocalLiveCounters.finalCalls,
+                     "resultCount": NativeLocalLiveCounters.results,
+                     "polishCallCount": NativeLocalLiveCounters.polishCalls,
+                     "pasteDispatchCount": NativeLocalLiveCounters.pasteDispatches,
+                     "failedAudioFrames": liveDictation?.audio.count ?? 0,
+                     "cacheLease": LocalLiveOwnership.isBusy,
+                     "modelLoaded": localEngine.isLoaded]
+                }, snapshot: { [self] event in
+                    guard overlayWindow.isVisible, let view = overlayWindow.contentView,
+                          let rep = view.bitmapImageRepForCachingDisplay(in: view.bounds) else { return }
+                    view.cacheDisplay(in: view.bounds, to: rep)
+                    let folder = root.appendingPathComponent("native-screenshots")
+                    try? FileManager.default.createDirectory(at: folder, withIntermediateDirectories: true)
+                    if let data = rep.representation(using: .png, properties: [:]) {
+                        try? data.write(to: folder.appendingPathComponent(event + ".png"))
+                    }
+                }, openLastResult: { [self] in statusBar.nativePerformMenuAction("showLiveResult") },
+                readMemory: { [self] in
+                    ["appFootprintMiB": MemoryUtils.physFootprintMB(),
+                     "mlxActiveBytes": MLX.Memory.activeMemory, "mlxCacheBytes": MLX.Memory.cacheMemory,
+                     "mlxCacheLimitBytes": MLX.Memory.cacheLimit, "cacheLease": LocalLiveOwnership.isBusy,
+                     "failedAudioFrames": liveDictation?.audio.count ?? 0,
+                     "recognitionBusy": liveDictation?.isBusy ?? false,
+                     "modelLoaded": localEngine.isLoaded, "appState": String(describing: state),
+                     "livePhase": liveDictation.map { String(describing: $0.phase) } ?? "none",
+                     "overlayPhase": overlayState.live.map { String(describing: $0.phase) } ?? "none"]
+                }, performMenuAction: { [self] in statusBar.nativePerformMenuAction($0) },
+                clearPrivateState: { [self] in liveSystemWillSleep() },
+                setPreview: { AppConfig.shared.localLivePreviewEnabled = $0 },
+                setEngine: { [self] in switchDictationEngine(to: $0) },
+                dismissResult: { [self] in
+                    if liveRecoveryWindow.hasAudio { liveRecoveryWindow.discard() }
+                    else { liveRecoveryWindow.window?.orderOut(nil) }
+                }, interruptHotkey: { [self] in hotkeyManager.nativeInterruptAndResume() },
+                staleHotkey: { [self] in hotkeyManager.nativeDeliverStaleDisable() })
+            await driver.run()
+            switchDictationEngine(to: originalEngine)
+            if !originalModelLoaded, originalEngine != .local, state == .idle { await unloadModel() }
+        }
+    }
+
+    private func runNativeCapReminderE2EWhenReady() {
+        guard ["com.felix.lamitype.localLiveQA", "com.felix.hushtype"].contains(Bundle.main.bundleIdentifier ?? ""),
+              let index = CommandLine.arguments.firstIndex(of: "--e2e-output"), CommandLine.arguments.indices.contains(index + 1) else { return }
+        let root = URL(fileURLWithPath: CommandLine.arguments[index + 1], isDirectory: true)
+        Task { @MainActor [self] in
+            for _ in 0..<600 {
+                if state == .idle || state == .unloaded { break }
+                try? await Task.sleep(nanoseconds: 100_000_000)
+            }
+            let originalEngine = AppConfig.shared.dictationEngine
+            let driver = NativeCapReminderE2E(root: root, menuToggle: { [self] in
+                statusBar.nativePerformMenuAction(AppConfig.shared.localLivePreviewEnabled ? "selectLocalStandard" : "selectLocalLive")
+            }, menuAction: { [self] in statusBar.nativePerformMenuAction($0, provider: $1) }, inspect: { [self] in
+                ["appState": String(describing: state), "enabled": AppConfig.shared.localLivePreviewEnabled,
+                 "selectedEngine": AppConfig.shared.dictationEngine.rawValue, "menu": statusBar.nativeMenuSnapshot(),
+                 "acknowledgedVersion": AppConfig.shared.localLiveCapReminderAcknowledgedVersion,
+                 "physicalKeyDown": livePhysicalKeyDown, "reminderIgnoredPress": liveReminderIgnoredPress,
+                 "captureFrames": audioCapture.recordingSnapshot().count, "pending": LocalLivePreviewController.shared.isRequestPending]
+            })
+            await driver.run()
+            switchDictationEngine(to: originalEngine)
+        }
+    }
+}
+#endif

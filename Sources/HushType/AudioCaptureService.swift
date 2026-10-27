@@ -176,9 +176,13 @@ final class AudioCaptureService {
 
     // MARK: - Public API
 
-    func startRecording() throws {
-        try start(mode: .recording)
+    func startRecording(limitSeconds: TimeInterval? = nil) throws {
+        try start(mode: .recording, limitSeconds: limitSeconds)
     }
+
+    /// One immutable snapshot per requested preview, never one queued copy per audio tap.
+    func recordingSnapshot() -> [Float] { current?.snapshotSamples() ?? [] }
+    var recordingLimitReached: Bool { current?.limitReached ?? false }
 
     /// Ends the push-to-talk capture. Throws the latched terminal failure
     /// instead of returning a truncated or empty utterance.
@@ -263,7 +267,7 @@ final class AudioCaptureService {
 
     // MARK: - Shared start
 
-    private func start(mode: Mode) throws {
+    private func start(mode: Mode, limitSeconds: TimeInterval? = nil) throws {
         dispatchPrecondition(condition: .onQueue(.main))
         guard current == nil else { throw AudioCaptureError.busy }
 
@@ -318,7 +322,8 @@ final class AudioCaptureService {
             converter: converter,
             onSamples: onSamples,
             onRMSLevel: onRMSLevel,
-            onError: onError
+            onError: onError,
+            limitSeconds: mode == .recording ? limitSeconds : nil
         )
         current = capture
 
@@ -492,6 +497,17 @@ private final class Capture {
     private var cancelled = false
     private var errorDelivered = false
     private var samples: [Float] = []
+    private let sampleLimit: Int?
+    private let deadline: TimeInterval?
+    private var reachedLimit = false
+    var limitReached: Bool {
+        lock.lock(); defer { lock.unlock() }
+        return reachedLimit
+    }
+    func snapshotSamples() -> [Float] {
+        lock.lock(); defer { lock.unlock() }
+        return samples
+    }
 
     init(
         mode: AudioCaptureService.Mode,
@@ -501,7 +517,8 @@ private final class Capture {
         converter: AVAudioConverter?,
         onSamples: (([Float]) -> Void)?,
         onRMSLevel: ((Float) -> Void)?,
-        onError: ((Error) -> Void)?
+        onError: ((Error) -> Void)?,
+        limitSeconds: TimeInterval? = nil
     ) {
         self.mode = mode
         self.driver = driver
@@ -511,6 +528,8 @@ private final class Capture {
         self.onSamples = onSamples
         self.onRMSLevel = onRMSLevel
         self.onError = onError
+        sampleLimit = limitSeconds.map { Int($0 * 16000) }
+        deadline = limitSeconds.map { ProcessInfo.processInfo.systemUptime + $0 }
     }
 
     // MARK: Hardware ownership (main queue)
@@ -542,6 +561,11 @@ private final class Capture {
     func noteBufferIfAccepting() -> Bool {
         lock.lock(); defer { lock.unlock() }
         guard accepting else { return false }
+        if let deadline, ProcessInfo.processInfo.systemUptime >= deadline {
+            reachedLimit = true
+            accepting = false
+            return false
+        }
         sawBuffer = true
         return true
     }
@@ -549,7 +573,15 @@ private final class Capture {
     func appendIfAccepting(_ newSamples: [Float]) -> Bool {
         lock.lock(); defer { lock.unlock() }
         guard accepting else { return false }
-        samples.append(contentsOf: newSamples)
+        if let deadline, ProcessInfo.processInfo.systemUptime >= deadline {
+            reachedLimit = true
+            accepting = false
+            return false
+        }
+        if let sampleLimit {
+            samples.append(contentsOf: newSamples.prefix(max(0, sampleLimit - samples.count)))
+            if samples.count >= sampleLimit { accepting = false; reachedLimit = true }
+        } else { samples.append(contentsOf: newSamples) }
         return true
     }
 

@@ -17,6 +17,10 @@ final class DictationSettingsModel: ObservableObject {
         }
     }
 
+    @Published private(set) var livePreviewEnabled: Bool
+    @Published private(set) var livePreviewCanChange: Bool
+    @Published var liveBusy = false
+
     @Published var openAIModel: String {
         didSet { AppConfig.shared.cloudDictationModelOpenAI = openAIModel }
     }
@@ -40,10 +44,16 @@ final class DictationSettingsModel: ObservableObject {
     @Published private(set) var dictionaryStatus = ""
 
     private let onSwitchEngine: (AppConfig.DictationEngine) -> Void
+    private let previewController: LocalLivePreviewController
 
-    init(onSwitchEngine: @escaping (AppConfig.DictationEngine) -> Void) {
+    init(onSwitchEngine: @escaping (AppConfig.DictationEngine) -> Void, previewController: LocalLivePreviewController? = nil) {
         self.onSwitchEngine = onSwitchEngine
+        let previewController = previewController ?? .shared
+        self.previewController = previewController
         engine = AppConfig.shared.dictationEngine
+        livePreviewEnabled = previewController.isEnabled
+        livePreviewCanChange = previewController.canChange
+        liveBusy = LocalLiveOwnership.isBusy
         openAIModel = AppConfig.shared.cloudDictationModelOpenAI
         geminiModel = AppConfig.shared.cloudDictationModelGemini
         speechLanguage = AppConfig.shared.language
@@ -62,12 +72,24 @@ final class DictationSettingsModel: ObservableObject {
 
     func refresh() {
         engine = AppConfig.shared.dictationEngine
+        refreshLivePreview()
         openAIModel = AppConfig.shared.cloudDictationModelOpenAI
         geminiModel = AppConfig.shared.cloudDictationModelGemini
         speechLanguage = AppConfig.shared.language
         numberConversionEnabled = AppConfig.shared.numberConversionEnabled
         punctuationMode = AppConfig.shared.punctuationMode
         refreshDictionaryStatus()
+    }
+
+    func refreshLivePreview() {
+        livePreviewEnabled = previewController.isEnabled
+        livePreviewCanChange = previewController.canChange
+        liveBusy = LocalLiveOwnership.isBusy
+    }
+
+    func requestLivePreviewEnabled(_ enabled: Bool, from source: LocalLivePreviewController.Source) {
+        previewController.request(enabled, from: source)
+        refreshLivePreview()
     }
 
     func openDictionary() {
@@ -156,6 +178,26 @@ struct DictationPane: View {
                 .pickerStyle(.radioGroup)
             }
             .padding(.bottom, 8)
+
+            SettingsRow {
+                VStack(alignment: .leading, spacing: 4) {
+                    Toggle(L10n.string("live.toggle", fallback: "Live preview (Experimental)"), isOn: Binding(
+                        get: { model.livePreviewEnabled },
+                        set: { model.requestLivePreviewEnabled($0, from: .settings(LamitypeSettingsWindowController.shared.reminderParentWindow)) }
+                    ))
+                        .disabled(!model.livePreviewCanChange)
+                        .accessibilityIdentifier("local-live-preview-toggle")
+                    Text(L10n.string("live.settings.detail", fallback: "See draft text while you speak. Stops after 60 seconds; final text may change. Always shows the preview and countdown. Turn off for Standard dictation: text appears after recording stops."))
+                        .font(.caption).foregroundStyle(.secondary).fixedSize(horizontal: false, vertical: true)
+                    if model.liveBusy {
+                        Text(L10n.string("live.settings.busy", fallback: "Finish or cancel live dictation before changing these settings."))
+                            .font(.caption).foregroundStyle(.secondary)
+                    } else if model.engine == .local, !model.livePreviewCanChange {
+                        Text(L10n.string("live.cap_reminder.busy", fallback: "Finish the current action before changing live preview."))
+                            .font(.caption).foregroundStyle(.secondary)
+                    }
+                }
+            }
 
             SettingsRow(L10n.string("settings.engine.openai_model", fallback: "OpenAI model:")) {
                 Picker("", selection: $model.openAIModel) {
@@ -289,6 +331,19 @@ struct DictationPane: View {
             }
         }
         .settingsPaneLayout()
+        .disabled(model.liveBusy)
+        .onReceive(NotificationCenter.default.publisher(for: .localLiveActivityChanged)) { _ in model.refreshLivePreview() }
+        .onReceive(NotificationCenter.default.publisher(for: .localLivePreviewControlsChanged)) { _ in model.refreshLivePreview() }
+        .onReceive(NotificationCenter.default.publisher(for: NSWindow.didBecomeKeyNotification)) { note in
+            guard let window = note.object as? NSWindow,
+                  window === LamitypeSettingsWindowController.shared.reminderParentWindow else { return }
+            DispatchQueue.main.async { model.refreshLivePreview() }
+        }
+        .onReceive(NotificationCenter.default.publisher(for: NSWindow.didEndSheetNotification)) { note in
+            guard let window = note.object as? NSWindow,
+                  window === LamitypeSettingsWindowController.shared.reminderParentWindow else { return }
+            DispatchQueue.main.async { model.refreshLivePreview() }
+        }
         .onAppear { model.refresh() }
         .onReceive(NotificationCenter.default.publisher(for: NSApplication.didBecomeActiveNotification)) { _ in
             model.refresh()

@@ -139,6 +139,9 @@ final class LamitypeSettingsWindowController {
 
     private init() {}
 
+    /// Only used by an explicit toggle in the already-presented Settings pane.
+    var reminderParentWindow: NSWindow? { packageController.window }
+
     func presentAndFocus(
         pane: Pane? = nil,
         onSwitchEngine: ((AppConfig.DictationEngine) -> Void)? = nil,
