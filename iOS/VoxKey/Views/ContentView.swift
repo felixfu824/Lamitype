@@ -20,7 +20,7 @@ struct ContentView: View {
                     Text("Server Address")
                         .font(.headline)
 
-                    TextField("http://100.75.151.28:8000", text: $serverURL)
+                    TextField("http://100.x.x.x:8000", text: $serverURL)
                         .textFieldStyle(.roundedBorder)
                         .textInputAutocapitalization(.never)
                         .keyboardType(.URL)
@@ -141,7 +141,7 @@ struct ContentView: View {
         }
         .onAppear {
             let saved = defaults.string(forKey: AppGroup.serverURL)
-            serverURL = saved ?? "http://100.75.151.28:8000"
+            serverURL = saved ?? "http://100.x.x.x:8000"
             if saved == nil {
                 defaults.set(serverURL, forKey: AppGroup.serverURL)
             }

@@ -2,6 +2,8 @@
 .build/
 .swiftpm/
 HushType.app/
+Lamitype.app/
+VoxKey.app/
 logs/
 
 # iOS build artifacts
@@ -9,6 +11,80 @@ iOS/HushType.xcodeproj/
 iOS/build/
 xcuserdata/
 
+# Local agent and transient docs (not for public repo)
+HANDOVER.md
+CLAUDE.md
+AGENTS.md
+
+# Workstream folders and docs (local planning, not for public repo)
+Product_WS/
+GtM_WS/
+GTM/
+GTM_WORKSTREAM.md
+PRODUCT_WORKSTREAM.md
+
+# Local QA captures, transcripts and machine-specific test evidence
+/testing/
+
+# Agent config (local only)
+.claude/
+
+# Design / scratch files
+*.excalidraw
+excalidraw.log
+analysis/
+
+# Python cache
+__pycache__/
+
+# DMG builds (local distribution only)
+*.dmg
+
 # System
 .DS_Store
 *.xcuserdata
+
+# Codex CLI config
+.codex/
+
+# Local credentials and machine configuration
+.env
+.env.*
+!.env.example
+!.env.sample
+!.env.template
+.envrc
+/secrets/
+/credentials/
+/openai.json
+/gemini.json
+/.aws/
+/.ssh/
+/.agents/
+*.pem
+*.key
+*.p12
+*.pfx
+*.mobileprovision
+*.provisionprofile
+
+# Editor state and local project generation
+/.idea/
+/.vscode/
+iOS/*.xcodeproj/
+iOS/DerivedData/
+DerivedData/
+*.xcuserstate
+
+# Local profiling, capture and release handoff output
+*.xcresult/
+*.trace/
+*.profraw
+*.profdata
+/qa-evidence/
+/captures/
+/recordings/
+/release-artifacts/
+/dist/
+/*.zip
+/*.tar.gz
