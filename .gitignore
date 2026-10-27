@@ -46,3 +46,45 @@ __pycache__/
 
 # Codex CLI config
 .codex/
+
+# Local credentials and machine configuration
+.env
+.env.*
+!.env.example
+!.env.sample
+!.env.template
+.envrc
+/secrets/
+/credentials/
+/openai.json
+/gemini.json
+/.aws/
+/.ssh/
+/.agents/
+*.pem
+*.key
+*.p12
+*.pfx
+*.mobileprovision
+*.provisionprofile
+
+# Editor state and local project generation
+/.idea/
+/.vscode/
+iOS/*.xcodeproj/
+iOS/DerivedData/
+DerivedData/
+*.xcuserstate
+
+# Local profiling, capture and release handoff output
+*.xcresult/
+*.trace/
+*.profraw
+*.profdata
+/qa-evidence/
+/captures/
+/recordings/
+/release-artifacts/
+/dist/
+/*.zip
+/*.tar.gz
