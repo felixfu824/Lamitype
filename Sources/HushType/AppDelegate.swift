@@ -274,9 +274,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
 
         statusBar.onShowLiveResult = { [weak self] in
             guard let self else { return }
-            if !self.liveRecoveryWindow.text.isEmpty || self.liveRecoveryWindow.hasAudio {
-                self.liveRecoveryWindow.window?.makeKeyAndOrderFront(nil)
-            }
+            self.liveRecoveryWindow.showStoredResult()
         }
         NSWorkspace.shared.notificationCenter.addObserver(self, selector: #selector(liveSystemWillSleep), name: NSWorkspace.willSleepNotification, object: nil)
         let privacyTimer = Timer(timeInterval: 0.5, repeats: true) { [weak self] _ in
@@ -2481,7 +2479,13 @@ extension AppDelegate {
         }
         session.onResult = { [weak self] text, retried in
             guard let self, !SecureInputProbe.isActive() else { return }
-            let sent = !retried && target.mayPaste() && TextInserter.insertLive(text, verify: { target.mayPaste() })
+            let sent: Bool
+            if !retried, let application = target.application, target.mayPaste() {
+                sent = TextInserter.insertLive(text, targetPID: application.processIdentifier,
+                                               verify: { target.mayPaste() })
+            } else {
+                sent = false
+            }
             #if DEBUG
             NativeLocalLiveCounters.results += 1
             if sent { NativeLocalLiveCounters.pasteDispatches += 1 }

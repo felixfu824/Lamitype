@@ -98,7 +98,7 @@ enum FloatingOverlayGeometry {
     static let cornerRadius: CGFloat = 16
     static let previewWidth: CGFloat = 380
     static let previewHeight: CGFloat = 144
-    static let progressWidth: CGFloat = 320
+    static let progressWidth: CGFloat = previewWidth
     static let progressHeight: CGFloat = 48
     static let panelGap: CGFloat = 16
 
@@ -152,9 +152,8 @@ struct FloatingOverlayView: View {
             .overlay(RoundedRectangle(cornerRadius: FloatingOverlayGeometry.cornerRadius, style: .continuous)
                 .stroke(Color.primary.opacity(0.08), lineWidth: 0.5))
 
-            // Match the ordinary indicator's 24 pt content + 12 pt vertical
-            // padding, 16 pt corners and bottom-screen anchor. Width only grows
-            // enough to reserve the timer in both supported interface languages.
+            // Live preview, Live progress and ordinary activity share a width.
+            // Retain the ordinary indicator's height, corners and screen anchor.
             HStack(spacing: 10) {
                 Image(systemName: live.phase == .recording ? "mic.fill" : "ellipsis")
                     .font(.system(size: 14, weight: .semibold))
@@ -211,6 +210,7 @@ struct FloatingOverlayView: View {
         }
         .padding(.horizontal, 18)
         .padding(.vertical, 12)
+        .frame(width: FloatingOverlayGeometry.progressWidth)
         .background(VisualEffectBlur(material: .hudWindow))
         .clipShape(RoundedRectangle(cornerRadius: 16, style: .continuous))
         .overlay(
@@ -221,7 +221,7 @@ struct FloatingOverlayView: View {
         .fixedSize()
     }
 
-    /// Routine Listening / Transcribing / Polishing pill, unchanged.
+    /// Routine Listening / Transcribing / Polishing pill.
     private var activityContent: some View {
         HStack(spacing: 12) {
             Image(systemName: iconName)
@@ -232,6 +232,8 @@ struct FloatingOverlayView: View {
                 .font(.system(size: 13, weight: .medium))
                 .foregroundStyle(.primary)
                 .frame(width: labelWidth, alignment: .leading)
+
+            Spacer(minLength: 0)
 
             ZStack {
                 switch model.state {
@@ -280,7 +282,7 @@ struct FloatingOverlayView: View {
                     .foregroundStyle(.primary)
                     .fixedSize(horizontal: false, vertical: true)
             }
-            .frame(width: labelWidth, alignment: .leading)
+            .frame(maxWidth: .infinity, alignment: .leading)
         }
         // Colour is never the only signal: the heading names the failure.
         .accessibilityElement(children: .combine)

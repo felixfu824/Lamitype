@@ -6,7 +6,7 @@ Do not reset permissions or change bundle identity to bypass a failed upgrade. D
 
 ## Prepare the exact source
 
-1. Use the reviewed local commit and check `git status --short`. Keep version/build in `Resources/Info.plist`; v0.5.15 uses build 52. If runtime source changes, increment the build and rerun the affected checks.
+1. Use the reviewed local commit and check `git status --short`. Keep version/build in `Resources/Info.plist`; v0.5.15 uses build 54. If runtime source changes, increment the build and rerun the affected checks.
 2. Run the regression and source checks below. Optional model/audio/permission tests require their documented opt-in environment and separate evidence; skips do not certify those paths.
 
 ```sh

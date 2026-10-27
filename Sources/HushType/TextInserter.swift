@@ -6,8 +6,8 @@ private let log = Logger(subsystem: "com.felix.hushtype", category: "insertion")
 struct TextInserter {
     static func insert(_ text: String) { _ = insertAttempt(text) }
 
-    static func insertLive(_ text: String, verify: () -> Bool) -> Bool {
-        guard !text.isEmpty, verify() else { return false }
+    static func insertLive(_ text: String, targetPID: pid_t, verify: () -> Bool) -> Bool {
+        guard targetPID > 0, !text.isEmpty, verify() else { return false }
         let source = CGEventSource(stateID: .hidSystemState)
         guard let down = CGEvent(keyboardEventSource: source, virtualKey: 0x09, keyDown: true),
               let up = CGEvent(keyboardEventSource: source, virtualKey: 0x09, keyDown: false) else { return false }
@@ -37,9 +37,12 @@ struct TextInserter {
             }
             return false
         }
-        down.post(tap: .cghidEventTap)
+        // Deliver only to the application whose original field still passes
+        // verification. Global HID delivery can paste twice in Claude Desktop.
+        // Never fall back to a global event or reactivate a changed target.
+        down.postToPid(targetPID)
         usleep(50_000)
-        up.post(tap: .cghidEventTap)
+        up.postToPid(targetPID)
         usleep(500_000)
         return true // Dispatch only; target acceptance is not observable.
     }

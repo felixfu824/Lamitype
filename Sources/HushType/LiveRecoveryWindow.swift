@@ -10,6 +10,7 @@ final class LiveRecoveryWindow: NSWindowController, NSWindowDelegate, Observable
     var onRetry: (() -> Void)?
     var onSave: (() -> Void)?
     var onDiscard: (() -> Void)?
+    private var presentationRevision = 0
 
     init() {
         let panel = NSPanel(contentRect: NSRect(x: 0, y: 0, width: 460, height: 260),
@@ -26,7 +27,32 @@ final class LiveRecoveryWindow: NSWindowController, NSWindowDelegate, Observable
 
     func present(text: String = "", message: String, hasAudio: Bool) {
         self.text = text; self.message = message; self.hasAudio = hasAudio; working = false
-        window?.makeKeyAndOrderFront(nil)
+        showStoredResult()
+    }
+
+    /// Menu tracking can reactivate the previous app after its action returns.
+    /// Front the result once now and once after the menu has finished closing.
+    func showStoredResult() {
+        guard !SecureInputProbe.isActive(), !text.isEmpty || hasAudio else { return }
+        presentationRevision += 1
+        let revision = presentationRevision
+        bringResultToFront()
+        DispatchQueue.main.async { [weak self] in
+            guard let self, self.presentationRevision == revision else { return }
+            self.bringResultToFront()
+        }
+    }
+
+    private func bringResultToFront() {
+        guard !SecureInputProbe.isActive(), !text.isEmpty || hasAudio, let window else { return }
+        NSApp.activate(ignoringOtherApps: true)
+        window.makeKeyAndOrderFront(nil)
+        window.orderFrontRegardless()
+    }
+
+    private func hideResult() {
+        presentationRevision += 1
+        window?.orderOut(nil)
     }
     /// Completed text is retained for explicit Last Live Result access.
     /// Also closes a previously visible failure/retry panel without focusing
@@ -34,19 +60,19 @@ final class LiveRecoveryWindow: NSWindowController, NSWindowDelegate, Observable
     func storeResult(text: String, message: String) {
         self.text = text; self.message = message
         hasAudio = false; working = false
-        window?.orderOut(nil)
+        hideResult()
     }
 
     func windowShouldClose(_ sender: NSWindow) -> Bool {
+        presentationRevision += 1
         if hasAudio { onDiscard?() }
         return true
     }
-    func discard() { onDiscard?(); text = ""; window?.orderOut(nil) }
-    func copy() {
+    func discard() { onDiscard?(); text = ""; hideResult() }
+    func copy(to pasteboard: NSPasteboard = .general) {
         guard !SecureInputProbe.isActive() else { discard(); return }
-        let pasteboard = NSPasteboard.general
         pasteboard.clearContents()
-        if pasteboard.setString(text, forType: .string) { window?.orderOut(nil) }
+        if pasteboard.setString(text, forType: .string) { hideResult() }
         else { message = L10n.string("live.result.copy_failed", fallback: "Could not copy. Your text is still available here.") }
     }
 }

@@ -68,7 +68,9 @@ RULES = [
     # historical identity. Keep exact frozen counts, not a broad new exemption.
     Rule("readme internal module paths", "README*.md", r"Sources/HushType", 5),
     Rule("native reminder QA stable defaults", "Sources/HushType/NativeCapReminderE2E.swift", r'"hushtype\.[A-Za-z0-9.]+"', 6),
-    Rule("readme continuity", "README*.md", r"[^\n]*(?:formerly HushType|old HushType|舊 HushType|Reset Old HushType|/Applications/HushType\.app)[^\n]*", 6),
+    # The two obsolete delete-HushType upgrade instructions were replaced by
+    # same-location Lamitype replacement; retain the four continuity/repair lines.
+    Rule("readme continuity", "README*.md", r"[^\n]*(?:formerly HushType|old HushType|舊 HushType|Reset Old HushType|/Applications/HushType\.app)[^\n]*", 4),
     Rule("readme iOS companion", "README*.md", r"[^\n]*(?:HushType keyboard|HushType 鍵盤|HushType KB|Open HushType|開啟 HushType|HushType app|HushType App|\*\*HushType\*\*|Keyboards > HushType)[^\n]*", 24),
 ]
 

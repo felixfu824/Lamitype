@@ -36,32 +36,13 @@
 
 <sub>Bars compare primary model weight files at the precisions shown, measured in decimal MB; they do not compare running RAM or accuracy. Lamitype Local keeps speech on-device and uses ≈708 MB of model weights. Optional cloud dictation uses your API key and provider connection, leaving the local model unloaded (~0 MB in local weights). A smaller [4-bit MLX Whisper-turbo weight file](https://huggingface.co/mlx-community/whisper-large-v3-turbo-4bit/tree/main) is ≈463 MB, so this is not a smallest-model claim.</sub>
 
-<sub>**Source and method (verified 2026-09-10):** Lamitype's primary weight file is 708,236,945 bytes (708.237 MB; 1 MB = 1,000,000 bytes), measured at the [pinned Hugging Face revision](https://huggingface.co/aufklarer/Qwen3-ASR-0.6B-MLX-4bit/tree/bc441bd1e4295c1f42d9879f056049a925b6e013). Supporting files are additional. The app does not currently pin that revision, so the model weight size may change if the upstream repository is updated.</sub>
-
 ---
 
-## v0.5.15 release candidate: Live preview (Experimental)
+## What's new in v0.5.15
 
-v0.5.15 adds an experimental Local dictation option, **on by default when no Live/Standard choice is saved**. Existing explicit Standard and cloud choices are preserved. Change it under **Settings → Dictation → Local → Live preview (Experimental)** or **Dictation mode → Local → Live preview (Experimental)** in the menu bar. Choose **Local → Standard** for text after recording stops, or **Cloud → OpenAI / Gemini**. These controls share the existing Dictation-tab preferences. See the [release notes](docs/releases/v0.5.15.md); the candidate is not yet signed/notarized for public distribution.
+**New: Live preview (Experimental).** Hold Right Option to see drafts as you speak; release to paste the final text. Drafts may change. Only the final result is inserted after recording ends.
 
-Enabling shows a 60-second reminder. If no choice was previously saved, the first Right Option **hold** shows the reminder before microphone capture; confirm, release, then hold again to record. Short translation taps, double-tap polish and Option-key chords keep their existing meaning. Choose **Enable Live Preview** to continue, optionally checking **Don’t show again**; **Cancel** leaves the setting unchanged and does not remember the checkbox. The remembered choice applies to both controls across relaunches. If preview was already ON before this update, it stays ON without a startup popup; toggle OFF then ON to see the reminder.
-
-- Hold Right Option to see revisable draft text in the existing floating overlay: two separate rounded panels, with preview above the progress bar and a transparent gap. Only final text is inserted; the draft and countdown remain visible even if the ordinary floating indicator is off.
-- Release to finish early. At **60 seconds**, recording stops automatically and Lamitype recognizes the whole captured recording once. Release the key before starting another recording; there is no automatic continuation. For longer uninterrupted recording, turn Live preview off to use ordinary Local dictation.
-- Automatic paste requires the original text field to remain verified. If focus changes or the field cannot be verified, a brief floating-bar notice points to **Last Live Result…**, where you can choose **Copy**. Completed results never open a window automatically. The final text is available under **Dictation mode → Last Live Result…** until the next live capture starts or the app quits.
-- A failed final keeps one recording in memory for **Retry locally**, **Save Audio…**, or **Discard**. Saving is explicit and does not discard the in-memory copy; discard it when finished. Quitting, sleep, or detection of Secure Input clears app-held RAM audio/results for privacy. Already pasted text, clipboard contents and explicitly saved WAVs are not removed.
-- Stop local captions before using Local Live. With preview off, ordinary Local dictation uses its existing path. OpenAI/Gemini ignore this preference and retain their own limits and consent flow.
-
-Draft words may change, and an earlier draft block may disappear; the final pass still covers the entire captured recording. This is periodically refreshed recognition, not token-by-token streaming. The 128 MiB experimental MLX setting limits idle allocator reuse, not total app memory.
-
-Native tests on the M3 MacBook Air passed using both paced test-file input and speaker playback captured by the built-in microphone, including English, Mandarin/mixed speech, ordinary Local, cross-app paste, focus changes, cancellation and the cap. Controlled physical-input tests cover repeated short recordings, three full-minute caps, alternating Standard/Live, cancellation, recovery and model unload/reload. The packaged release candidate completed 50 same-clip measured Live sessions after two warmups, sampled externally: settled 939.8–941.3 MiB, with about 1 MiB last-three versus first-three median growth. Full-minute tests sampled peaks above 2 GiB. These are observations on this Mac, not memory guarantees. Paid-provider requests and public upgrade permission continuity remain unvalidated; transcription errors remain. This is not a published release.
-
-## What's new in v0.5.14
-
-- **Fixed dictation receiving no audio after switching audio devices.** After plugging in an external speaker or microphone, dictation now uses the current device. If the microphone fails to start or the device changes during a recording, the floating HUD shows a notice that clears after about 4 seconds; press again.
-- Tap-to-translate is decided by key-down time (0.3 s).
-
-The v0.5.13 changes (Auto Polish Dictation, one Text Polish prompt, Eval Mode) are described in [GitHub Releases](https://github.com/felixfu824/Lamitype/releases/tag/v0.5.13).
+**Up to 60 seconds per Live recording.** Release early to finish. A reminder appears on first use, with an option not to show it again. Use Standard for longer uninterrupted recording.
 
 ---
 
@@ -181,7 +162,7 @@ iOS (via your Mac as server):
 
 ### Option A: Download DMG (no build tools needed)
 
-1. Download `Lamitype.dmg` from the [latest release](https://github.com/felixfu824/Lamitype/releases)
+1. Download the versioned `Lamitype-vX.Y.Z.dmg` from the [latest release](https://github.com/felixfu824/Lamitype/releases)
 2. Open the DMG and drag Lamitype to Applications
 3. Open Lamitype from Applications or Spotlight; its Developer ID signature and Apple notarization pass Gatekeeper directly
 4. Grant **Accessibility**, **Microphone**, and **Screen & System Audio Recording** when needed
@@ -201,7 +182,7 @@ See [Prerequisites](#prerequisites-and-dependencies) and [macOS Setup Guide](#se
 
 Updating means **replacing the `.app` bundle**. Preferences, the ASR model, and user data live outside the bundle and are preserved.
 
-**DMG:** quit and delete the old `/Applications/HushType.app`, drag the new `Lamitype.app` onto the Applications shortcut in the new DMG, then relaunch from Spotlight.
+**DMG:** quit Lamitype, open the new DMG, drag `Lamitype.app` into Applications and replace the app at the same location, then relaunch. Settings and cached models live outside the app and are preserved. Routine updates do not require resetting permissions.
 
 **From source:** `git pull && make install`.
 
