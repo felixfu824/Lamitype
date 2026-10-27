@@ -125,7 +125,7 @@ brew install opencc xcodegen
 ```bash
 # If using Tailscale (works from anywhere):
 tailscale ip -4
-# Example output: 100.75.151.28
+# Example output: 100.x.x.x
 
 # If using LAN only (same WiFi):
 ipconfig getifaddr en0
