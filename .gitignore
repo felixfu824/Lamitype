@@ -1,13 +1,12 @@
 # macOS build artifacts
 .build/
 .swiftpm/
-HushType.app/
-Lamitype.app/
-VoxKey.app/
+/*.app/
+dmg_staging/
 logs/
+*.log
 
 # iOS build artifacts
-iOS/HushType.xcodeproj/
 iOS/build/
 xcuserdata/
 
@@ -31,7 +30,6 @@ PRODUCT_WORKSTREAM.md
 
 # Design / scratch files
 *.excalidraw
-excalidraw.log
 analysis/
 
 # Python cache
