@@ -38,7 +38,7 @@ final class DictationPostProcessorTests: XCTestCase {
         XCTAssertEqual(output, expected, "Golden mismatch for input: \(input)")
     }
 
-    // MARK: - Golden ITN (cribbed verbatim from scripts/test_number_normalizer.swift)
+    // MARK: - Golden ITN (cribbed from the original standalone harness; full corpus now in NumberNormalizerTests)
 
     func testItnThreeApples() {
         assertGolden("三個蘋果", "3個蘋果")
