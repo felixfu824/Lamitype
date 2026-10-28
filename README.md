@@ -545,6 +545,99 @@ private static let rightOptionKeyCode: Int64 = 61
 
 ---
 
+## 專案結構
+
+```
+Lamitype/
+├── Package.swift                      SPM 設定（macOS target）
+├── Makefile                           build / install / clean / dmg
+├── Sources/HushType/                  macOS 選單列 App
+│   ├── main.swift                     NSApplication 啟動入口
+│   ├── AppDelegate.swift              總協調器 + 狀態機
+│   ├── StatusBarController.swift      選單列圖示 + 選單 + 設定視窗路由
+│   ├── OnboardingManager.swift        首次啟動 / 修復權限的流程協調
+│   ├── OnboardingSetupWindowController.swift  輔助使用 + 麥克風的設定視窗
+│   ├── PermissionSettingsGuidePanel.swift     macOS 權限清單的浮動提示視窗
+│   ├── DraggableAppTileView.swift     可拖進系統設定的 Lamitype.app 圖塊
+│   ├── SystemAudioPermissionFlow.swift        螢幕與系統音訊錄製權限流程
+│   ├── SystemAudioPermissionWindowController.swift  系統音訊權限設定面板
+│   ├── HotkeyManager.swift            Right Option 的 CGEvent tap
+│   ├── AudioCaptureService.swift      AVAudioEngine 麥克風錄音（16kHz 單聲道、RMS 發佈器）
+│   ├── TranscriptionEngine.swift      可拋出錯誤的引擎 protocol + 本機 Qwen3ASR 引擎（MLX）
+│   ├── OpenAITranscribeEngine.swift   雲端聽寫引擎：OpenAI（HTTPS 直連）
+│   ├── GeminiTranscribeEngine.swift   雲端聽寫引擎：Gemini（HTTPS 直連）
+│   ├── CloudUsageTracker.swift        每日花費計量 + 上傳前上限檢查
+│   ├── CloudDictationOnboardingAlert.swift  每個工作階段的雲端聽寫同意提示
+│   ├── Settings/                         統一設定介面
+│   │   ├── SettingsWindowController.swift  視窗控制器 + 分頁路由
+│   │   ├── GeneralPane.swift             一般偏好設定 + 權限
+│   │   ├── DictationPane.swift           語音輸入引擎 + 辨識設定
+│   │   ├── CaptionPane.swift             字幕面板 + 翻譯字幕設定
+│   │   ├── TextPane.swift                Text Polish、自動校對 + 翻譯設定
+│   │   ├── CloudPane.swift               花費護欄 + 供應商金鑰
+│   │   └── AboutPane.swift               版本、專案連結、更新檢查
+│   ├── GeminiKeyStore.swift           使用者 Gemini API 金鑰檔案處理（0600）
+│   ├── ChineseConverter.swift         OpenCC s2twp（簡體 → 繁體）
+│   ├── NumberNormalizer.swift         確定性的中文數字 → 阿拉伯數字 ITN
+│   ├── DictionaryReplacer.swift       自訂字典（最後一道後處理）
+│   ├── TextInserter.swift             剪貼簿 + Cmd+V 貼上（結果會保留在剪貼簿）
+│   ├── TextPolisher.swift             Text Polish 流程協調 + 輸出防護
+│   ├── AutoPolishPolicy.swift         自動校對判斷（開關、引擎、排除的 App）
+│   ├── DictationPolishStage.swift     插入前的校對階段，失敗時退回原始逐字稿
+│   ├── AutoPolishExclusionPicker.swift 自動校對的排除 App 選擇器
+│   ├── FoundationModelsPolisher.swift macOS 26+ Apple FM 校對（預熱 session pool）
+│   ├── PolishPrompt.swift             預設與完整自訂校對提示詞
+│   ├── PolishCardWindow.swift         浮動校對結果卡片 NSPanel
+│   ├── PolishCardView.swift           SwiftUI 校對結果卡片檢視
+│   ├── InputSourceManager.swift       CJK 輸入法偵測
+│   ├── FloatingOverlayWindow.swift    聆聽指示條用的無邊框 NSPanel
+│   ├── FloatingOverlayView.swift      SwiftUI 指示條：RMS 音量條 + 轉錄中轉圈
+│   ├── TranslationManager.swift       Apple Translation Framework 整合
+│   ├── TranslationCardWindow.swift    浮動翻譯卡片 NSPanel
+│   ├── TranslationCardView.swift      SwiftUI 翻譯卡片檢視
+│   ├── LiveCaptionManager.swift       本機 / 雲端即時字幕協調
+│   ├── LiveCaptionWindow.swift        浮動即時字幕面板
+│   ├── LiveCaptionView.swift          SwiftUI 即時字幕面板檢視
+│   ├── LiveCaptionWorker.swift        串流本機 ASR worker
+│   ├── LocalQwen3Backend.swift        本機 Live Caption 後端
+│   ├── OpenAITranslateBackend.swift   雲端翻譯字幕後端
+│   ├── OpenAIKeyStore.swift           使用者 OpenAI API 金鑰檔案處理
+│   ├── CloudOnboardingAlert.swift     一次性雲端揭露
+│   ├── SystemAudioSource.swift        ScreenCaptureKit 系統音訊來源
+│   ├── SystemAudioPicker.swift        系統音訊的 App / 來源選擇器
+│   ├── MemoryUtils.swift              程序記憶體讀取工具
+│   └── AppConfig.swift                UserDefaults 包裝
+├── scripts/
+│   └── build_mlx_metallib.sh          MLX Metal shader 編譯
+└── Resources/
+    ├── Info.plist                     LSUIElement、麥克風使用說明
+    ├── Lamitype.png                   App 圖示（1024x1024）
+    └── Lamitype.icns                  macOS App 圖示
+```
+
+> 為聚焦於 macOS App，上方結構省略了實驗性 iOS 伺服器與 iOS App 相關的檔案。
+
+## 依自己的環境客製
+
+若要在自己的裝置上執行 Lamitype，可以修改這些項目：
+
+| 項目 | 位置 | 範例 |
+|---|---|---|
+| 快捷鍵 | `Sources/HushType/HotkeyManager.swift` | 任何修飾鍵的鍵碼 |
+| OpenCC 設定 | `Sources/HushType/ChineseConverter.swift` | 把 `s2twp` 改成 `s2t`，即為標準繁體 |
+
+---
+
+## 疑難排解
+
+**macOS：`MLX error: Failed to load the default metallib`**
+執行：`bash scripts/build_mlx_metallib.sh release`
+
+**macOS：快捷鍵沒有反應**
+到「系統設定 → 隱私權與安全性 → 輔助使用」確認 Lamitype 已在清單中且開關已開啟。如果清單裡沒有 Lamitype，或開關無法使用，請重新啟動 Lamitype，在「設定 Lamitype」視窗點 **重設舊的 HushType 項目**，再重新加入或啟用 Lamitype。如果剛授予輔助使用權限但快捷鍵仍然沒有反應，請在「設定 Lamitype」視窗點 **重新啟動 Lamitype**，或自行結束後再重新開啟；macOS 會在 process 層級快取權限檢查結果。
+
+---
+
 ## 已知限制
 
 - iOS 需要 Mac 開機且伺服器運行中（無雲端備援）

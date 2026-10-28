@@ -655,7 +655,7 @@ To run Lamitype on your own devices, change these:
 Run: `bash scripts/build_mlx_metallib.sh release`
 
 **macOS: Hotkey not working**
-Check Accessibility permission in System Settings → Privacy & Security → Accessibility. Lamitype must be in the list and toggled on. If Lamitype is missing or the switch does not work, relaunch Lamitype and use **Reset Old Lamitype Entry** from the setup window, then add/enable Lamitype again. If you just granted Accessibility and the hotkey still does not work, click **Restart Lamitype** in the setup window or quit and relaunch manually; macOS caches the permission check per-process.
+Check Accessibility permission in System Settings → Privacy & Security → Accessibility. Lamitype must be in the list and toggled on. If Lamitype is missing or the switch does not work, relaunch Lamitype and use **Reset Old HushType Entry** from the setup window, then add/enable Lamitype again. If you just granted Accessibility and the hotkey still does not work, click **Restart Lamitype** in the setup window or quit and relaunch manually; macOS caches the permission check per-process.
 
 **iOS: "App Transport Security" error**
 The Info.plist must have `NSAllowsArbitraryLoads = true` with NO `NSExceptionDomains`; they conflict and cause iOS to ignore the global allow.
