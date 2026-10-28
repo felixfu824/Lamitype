@@ -95,6 +95,7 @@ final class CloudDictationIntegrationTests: XCTestCase {
         // Without an explicit provider, only honor an installed-app preference
         // that is already set to Gemini. This avoids silently choosing a paid
         // provider (and avoids ever exercising Live Translated Caption).
+        // Intentionally reads the installed app's real defaults domain (read-only); skips unless it is set to Gemini.
         let configured = UserDefaults(suiteName: "com.felix.hushtype")?
             .string(forKey: "hushtype.dictationEngine")
         guard configured == Provider.gemini.rawValue else {

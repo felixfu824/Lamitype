@@ -198,10 +198,10 @@ final class LocalLivePreviewControllerTests: XCTestCase {
         XCTAssertEqual(alert.window.identifier, LocalLiveCapReminderAlert.windowIdentifier)
         XCTAssertFalse(alert.informativeText.isEmpty)
     }
-    func testSuppressionPersistsInDefaultsWithoutEnablingOnConstruction() {
-        let suite = "LamitypeCapReminderTests.\(UUID().uuidString)"
-        let defaults = UserDefaults(suiteName: suite)!
-        defer { defaults.removePersistentDomain(forName: suite) }
+    func testSuppressionPersistsInDefaultsWithoutEnablingOnConstruction() throws {
+        let testSuite = try makeTestDefaultsSuite(prefix: "LamitypeCapReminderTests")
+        let suite = testSuite.name
+        let defaults = testSuite.defaults
         var done: ((LocalLivePreviewController.Choice) -> Void)?
         func controller(_ store: UserDefaults) -> LocalLivePreviewController {
             LocalLivePreviewController(activityIsIdle: { true }, isLocal: { true }, hasOwnershipWork: { false },
