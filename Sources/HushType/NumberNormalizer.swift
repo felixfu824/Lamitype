@@ -200,6 +200,7 @@ internal enum DegreeAmbiguityGuard {
 
     private static func matchesDegreeBeiPattern(_ text: String) -> Bool {
         let chars = Array(text)
+        guard chars.count >= 3 else { return false }
         let nums: Set<Character> = ["一", "二", "兩", "三", "四", "五",
                                     "六", "七", "八", "九", "十"]
         for i in 0..<chars.count - 2 {
@@ -509,6 +510,7 @@ internal enum OutputGuard {
     static func hasPartialConversion(_ output: String) -> Bool {
         let arabic: Set<Character> = ["0", "1", "2", "3", "4", "5", "6", "7", "8", "9"]
         let chars = Array(output)
+        guard chars.count >= 2 else { return false }
         for i in 0..<chars.count - 1 {
             let a = chars[i]
             let b = chars[i + 1]
