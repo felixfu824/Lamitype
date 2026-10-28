@@ -26,9 +26,10 @@ final class UpgradeCompatibilityTests: XCTestCase {
         return values
     }
     private func withStore(_ values: [String: Any], _ body: (AppConfig, UserDefaults, String) throws -> Void) throws {
-        let domain = "com.felix.lamitype.upgrade-test." + UUID().uuidString
-        let store = try XCTUnwrap(UserDefaults(suiteName: domain))
-        defer { store.removePersistentDomain(forName: domain) }
+        let suite = try TestDefaultsSuite(prefix: "com.felix.lamitype.upgrade-test")
+        defer { suite.destroy() }
+        let domain = suite.name
+        let store = suite.defaults
         let data = try PropertyListSerialization.data(fromPropertyList: values, format: .binary, options: 0)
         let decoded = try XCTUnwrap(PropertyListSerialization.propertyList(from: data, format: nil) as? [String: Any])
         store.setPersistentDomain(decoded, forName: domain)

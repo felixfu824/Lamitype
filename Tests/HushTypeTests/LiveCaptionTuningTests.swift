@@ -80,9 +80,7 @@ final class LiveCaptionTuningTests: XCTestCase {
 
 final class LiveCaptionPanelFrameStoreTests: XCTestCase {
     func testSavedFrameRoundTripsAndResetClearsAllFrameKeys() throws {
-        let suiteName = "Lamitype-LiveCaptionFrameTests-\(UUID().uuidString)"
-        let defaults = try XCTUnwrap(UserDefaults(suiteName: suiteName))
-        addTeardownBlock { defaults.removePersistentDomain(forName: suiteName) }
+        let defaults = try makeTestDefaultsSuite(prefix: "Lamitype-LiveCaptionFrameTests").defaults
         let expected = NSRect(x: 120, y: 90, width: 900, height: 220)
 
         LiveCaptionPanelFrameStore.save(expected, defaults: defaults)
