@@ -164,13 +164,15 @@ final class NumberNormalizerTests: XCTestCase {
         XCTAssertEqual(NumberNormalizer.normalize("你好嗎").note, "no-op")
     }
 
-    /// KNOWN SOURCE BUG (not fixed here; tests-only change): inputs shorter
-    /// than 2 characters ("" or a single Han character such as "好") trap with
-    /// "Range requires lowerBound <= upperBound" in
-    /// `DegreeAmbiguityGuard.matchesDegreeBeiPattern` (`0..<chars.count - 2`).
-    /// A trap cannot be caught or marked with `XCTExpectFailure`, so this is
-    /// skipped; remove the skip once the loop bound is guarded.
-    func testVeryShortInputIsNoOp() throws {
-        throw XCTSkip("Known bug: NumberNormalizer.normalize traps on input shorter than 2 characters (DegreeAmbiguityGuard range 0..<count-2)")
+    /// Inputs shorter than the guard patterns ("" or a single Han character
+    /// such as a bare "好" from ASR) used to trap on a negative loop bound.
+    func testVeryShortInputIsNoOp() {
+        for input in ["", "好", "嗯", "五"] {
+            let res = NumberNormalizer.normalize(input)
+            XCTAssertEqual(res.text, input)
+            XCTAssertFalse(res.applied)
+        }
+        XCTAssertFalse(OutputGuard.hasPartialConversion(""))
+        XCTAssertFalse(OutputGuard.hasPartialConversion("5"))
     }
 }
