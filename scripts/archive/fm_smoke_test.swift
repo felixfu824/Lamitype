@@ -1,7 +1,7 @@
 // Smoke test: Apple FoundationModels for Lamitype AI cleanup.
 //
-// Run:  swift scripts/fm_smoke_test.swift
-// Or:   swiftc -O -o /tmp/fm_smoke scripts/fm_smoke_test.swift && /tmp/fm_smoke
+// Run:  swift scripts/archive/fm_smoke_test.swift
+// Or:   swiftc -O -o /tmp/fm_smoke scripts/archive/fm_smoke_test.swift && /tmp/fm_smoke
 //
 // This is a throwaway experiment — not part of the build.
 
