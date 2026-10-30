@@ -320,7 +320,7 @@
 
 /* Disabled explanation beneath Number Conversion. */
 
-"menu.number_conversion.subtitle" = "中文數字 → 阿拉伯數字";
+"menu.number_conversion.subtitle" = "口語數字 → 阿拉伯數字（中文與英文）";
 
 /* Punctuation cleanup submenu. */
 

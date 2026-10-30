@@ -41,11 +41,12 @@ final class DictationPostProcessorTests: XCTestCase {
     // MARK: - Golden ITN (cribbed from the original standalone harness; full corpus now in NumberNormalizerTests)
 
     func testItnThreeApples() {
-        assertGolden("三個蘋果", "3個蘋果")
+        // SPEC_itn-span §4.1: measure-word counts below ten stay written.
+        assertGolden("三個蘋果", "三個蘋果")
     }
 
     func testItnBoughtFiveBooks() {
-        assertGolden("我買了五本書", "我買了5本書")
+        assertGolden("我買了五本書", "我買了五本書")
     }
 
     func testItnAboutTenPeople() {
@@ -53,7 +54,8 @@ final class DictationPostProcessorTests: XCTestCase {
     }
 
     func testItnTwentyFiveDegrees() {
-        assertGolden("二十五度", "25°")
+        // SPEC_itn-span §4.1: preserve the original measurement unit.
+        assertGolden("二十五度", "25度")
     }
 
     func testItnTwoThousandThirtyMillion() {
@@ -99,6 +101,15 @@ final class DictationPostProcessorTests: XCTestCase {
 
     func testEnglishPassthrough() {
         assertGolden("Hello world, this is a test.", "Hello world, this is a test.")
+    }
+
+    func testEnglishNumberConversion() {
+        assertGolden("twelve folders", "12 folders")
+    }
+
+    func testNumberPreferenceGatesEnglishAndChinese() {
+        let options = DictationPostProcessor.Options(chineseConversion: false, numberConversion: false, punctuation: .soft)
+        XCTAssertEqual(DictationPostProcessor.apply("twelve folders 十二個", options: options), "twelve folders 十二個")
     }
 
     // MARK: - Mixed zh + EN with a number, full-chain output

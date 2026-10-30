@@ -19,7 +19,7 @@ enum DictationPostProcessor {
         let rawText = raw
 
         // Classify once on the raw ASR text. Gates the Chinese-only stages
-        // (OpenCC, ITN, punctuation strip) so they never touch JP/KO/EN.
+        // (OpenCC, punctuation strip). ITN also handles English.
         let script = ScriptDetector.detect(rawText)
 
         // Apply Traditional Chinese conversion
@@ -28,18 +28,17 @@ enum DictationPostProcessor {
             log.info("Traditional Chinese conversion applied in=\(rawText.count, privacy: .public)ch out=\(convertedText.count, privacy: .public)ch")
         }
 
-        // Apply number conversion (ITN) if enabled. Deterministic regex-based
-        // pass that converts Chinese numerals to Arabic digits.
+        // One preference gates deterministic Chinese and English span conversion.
         let itnResult: NumberNormalizer.Result
-        if script == .zh && options.numberConversion {
-            itnResult = NumberNormalizer.normalize(convertedText)
+        if (script == .zh || script == .other) && options.numberConversion {
+            itnResult = NumberNormalizer.normalize(convertedText, script: script)
             if itnResult.applied {
                 log.info("ITN applied in=\(convertedText.count, privacy: .public)ch out=\(itnResult.text.count, privacy: .public)ch note=\(itnResult.note, privacy: .public)")
             } else if itnResult.note != "no-op" {
                 log.debug("ITN skipped: \(itnResult.note, privacy: .public)")
             }
         } else {
-            itnResult = NumberNormalizer.Result(text: convertedText, applied: false, note: "disabled")
+            itnResult = NumberNormalizer.Result(text: convertedText, applied: false, note: "disabled", edits: [])
         }
 
         // Apply user customized dictionary as the final post-processing step.

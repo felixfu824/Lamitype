@@ -265,7 +265,7 @@ struct DictationPane: View {
             )) {
                 Toggle(L10n.string(
                     "menu.number_conversion.subtitle",
-                    fallback: "Chinese numerals → Arabic digits"
+                    fallback: "Spoken numbers → digits (Chinese and English)"
                 ), isOn: $model.numberConversionEnabled)
             }
 

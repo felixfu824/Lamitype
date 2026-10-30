@@ -320,7 +320,7 @@
 
 /* Disabled explanation beneath Number Conversion. */
 
-"menu.number_conversion.subtitle" = "Chinese numerals → Arabic digits";
+"menu.number_conversion.subtitle" = "Spoken numbers → digits (Chinese and English)";
 
 /* Punctuation cleanup submenu. */
 
