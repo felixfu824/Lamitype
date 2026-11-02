@@ -320,7 +320,7 @@
 
 /* Disabled explanation beneath Number Conversion. */
 
-"menu.number_conversion.subtitle" = "Chinese numerals → Arabic digits";
+"menu.number_conversion.subtitle" = "Spoken numbers → digits";
 
 /* Punctuation cleanup submenu. */
 
@@ -1538,6 +1538,9 @@
 
 /* Dictation customized dictionary behavior note. */
 "settings.dictation.dictionary.note" = "One replacement per line. Applied after transcription, on every dictation engine including cloud.";
+
+/* Dictation number conversion language scope note. */
+"settings.dictation.number_conversion.note" = "Chinese and English. Japanese and Korean text is left as spoken.";
 
 /* Dictation punctuation cleanup note. */
 "settings.dictation.punctuation.note" = "Trims the over-eager Chinese punctuation the model inserts on pauses. Chinese text only.";

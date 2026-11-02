@@ -320,7 +320,7 @@
 
 /* Disabled explanation beneath Number Conversion. */
 
-"menu.number_conversion.subtitle" = "中文數字 → 阿拉伯數字";
+"menu.number_conversion.subtitle" = "口語數字 → 阿拉伯數字";
 
 /* Punctuation cleanup submenu. */
 
@@ -1538,6 +1538,9 @@
 
 /* 語音輸入自訂字典行為說明。 */
 "settings.dictation.dictionary.note" = "一行一組替換，在轉錄完成後套用，三個語音輸入引擎（含雲端）都會套。";
+
+/* 語音輸入數字轉換語言範圍說明。 */
+"settings.dictation.number_conversion.note" = "中文與英文。日文與韓文維持原樣。";
 
 /* 語音輸入標點清理說明。 */
 "settings.dictation.punctuation.note" = "移除模型在停頓處插入的過多中文標點。只作用於中文。";
