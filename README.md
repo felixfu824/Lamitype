@@ -38,11 +38,15 @@
 
 ---
 
-## v0.5.15 有什麼新功能
+## v0.5.16 有什麼新功能
 
-**新增的「即時預覽（實驗功能）」** 按住右側 ⌥，邊說邊看草稿；放開後，貼上最終文字。草稿可能修正，只有結束錄音後的最終文字會插入。
+說出口的金額、比例與時間，直接以文件和試算表慣用的數字格式輸入。
 
-**每段即時錄音最多 60 秒。** 可提早放開。首次使用會先顯示提醒，可選擇不再顯示。較長的連續錄音請使用標準模式。
+**數字轉換更完整。** 中文（繁體／簡體）、英文與中英混用都適用，涵蓋金額、百分比、帶單位的小數、時間、日期、電話、版本與型號。例如「四萬五千塊」→「4.5萬塊」、「一億兩千萬」→「1.2億」、「三點半開會」→「3:30開會」、「iPhone十七Pro」→「iPhone17Pro」。
+
+**日常說法維持原樣。** 「千萬不要」、「一個人」、「兩杯咖啡」不會被改成數字。轉換在本地完成。
+
+**即時預覽可直接貼進試算表。** Google Sheets 等試算表軟體原本顯示「已略過自動貼上」的情境，現在會貼上最終文字（偵測到切換 App、視窗或分頁，或游標在密碼欄位時，仍不會自動貼上）。
 
 ---
 
@@ -54,7 +58,7 @@
 
 **雲端聽寫（Opt-in）。** 支援 **OpenAI**（預設 `gpt-4o-mini-transcribe`）與 **Gemini**（預設 `gemini-3.5-flash-lite`，可選 `gemini-3.7-flash`），使用你的金鑰直連供應商。Gemini 提供 Free tier API Key，但 Google 免費方案可能使用你提交的音訊改進產品，付費方案則不會。內建護欄包括每次啟動 App 後第一次雲端請求前徵求同意、每日花費警示與當日鎖定（預設 US$5），以及在上傳前擋下過長錄音。
 
-**真正能用的繁體中文。** Whisper 與多數開源模型預設輸出簡體或大陸用語（软件 而非 軟體）。Lamitype 串接 Qwen3-ASR 與 OpenCC `s2twp`，把「软件、鼠标、质量」轉成台灣慣用的「軟體、滑鼠、品質」。它支援英中同句混用辨識，也可依語境將中文數字轉成阿拉伯數字（`一零一大樓` → `101 大樓`），預設開啟。本機與雲端引擎共用同一套確定性後處理規則。
+**真正能用的繁體中文。** Whisper 與多數開源模型預設輸出簡體或大陸用語（软件 而非 軟體）。Lamitype 串接 Qwen3-ASR 與 OpenCC `s2twp`，把「软件、鼠标、质量」轉成台灣慣用的「軟體、滑鼠、品質」。它支援英中同句混用辨識，也可依語境將中英文數字轉成阿拉伯數字（`一零一大樓` → `101 大樓`），預設開啟。本機與雲端引擎共用同一套確定性後處理規則。
 
 **文字就地修正。** 在任何 App 選取文字、雙擊 Right ⌥，裝置端 Apple Foundation Models 會嘗試就地校對錯字、文法與標點（需 macOS 26+ 與 Apple Intelligence）。提示詞要求保留語意、語氣與中英混用，輸出防護會擋下部分明顯偏離；小型模型仍可能漏修或過度修改。
 
@@ -93,7 +97,7 @@
 | 功能 | 預設 | 系統需求 |
 |---|---|---|
 | 簡體 → 繁體 後處理（OpenCC `s2twp`）| **ON** | - |
-| 阿拉伯數字轉換（確定性 ITN）| **ON** | - |
+| 口語數字 → 阿拉伯數字（中文與英文，確定性 ITN）| **ON** | - |
 | 中文標點清理，修剪模型過度斷句（soft / hard / off）| **soft** | - |
 | 自訂字典（專有名詞 / 行話）| 檔案驅動 | - |
 
@@ -252,6 +256,8 @@ make install
 - **放開**：指示條切換為「Transcribing」，文字貼到游標並保留在剪貼簿。
 - **輕按 Right Option（<0.3 秒）**：選取文字後輕按，浮動卡片顯示 Apple Translation Framework 翻譯結果。詳見下方[文字翻譯](#選用功能文字翻譯)。
 - **雙擊 Right Option**：選取文字後雙擊，就地校對並替換。詳見下方 [Text Polish](#選用功能text-polishmacos-26)。
+
+本機「即時預覽（實驗功能）」可從「聽寫模式」或「設定 → 語音輸入」選擇：按住右側 ⌥ 看草稿，放開後才貼上最終文字。草稿可能修正，每段最多 60 秒；較長的連續錄音請使用標準模式。
 
 **設定視窗（選單列 → 設定…）：**
 
@@ -480,7 +486,7 @@ defaults write com.felix.hushtype hushtype.cloudDictationModelGemini -string "ge
 # 繁體中文轉換（預設:true）
 defaults write com.felix.hushtype hushtype.chineseConversionEnabled -bool false
 
-# 中文數字轉阿拉伯數字（ITN,預設:true）
+# 中英文口語數字轉阿拉伯數字（繁體／簡體中文與英文；ITN，預設:true）
 defaults write com.felix.hushtype hushtype.numberConversionEnabled -bool false
 
 # 底部浮動「Listening / Transcribing」指示條（預設:true）
@@ -578,7 +584,7 @@ Lamitype/
 │   │   └── AboutPane.swift               版本、專案連結、更新檢查
 │   ├── GeminiKeyStore.swift           使用者 Gemini API 金鑰檔案處理（0600）
 │   ├── ChineseConverter.swift         OpenCC s2twp（簡體 → 繁體）
-│   ├── NumberNormalizer.swift         確定性的中文數字 → 阿拉伯數字 ITN
+│   ├── NumberNormalizer.swift         中文與英文口語數字 → 阿拉伯數字 ITN
 │   ├── DictionaryReplacer.swift       自訂字典（最後一道後處理）
 │   ├── TextInserter.swift             剪貼簿 + Cmd+V 貼上（結果會保留在剪貼簿）
 │   ├── TextPolisher.swift             Text Polish 流程協調 + 輸出防護

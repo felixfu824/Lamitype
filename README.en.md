@@ -38,11 +38,15 @@
 
 ---
 
-## What's new in v0.5.15
+## What's new in v0.5.16
 
-**New: Live preview (Experimental).** Hold Right Option to see drafts as you speak; release to paste the final text. Drafts may change. Only the final result is inserted after recording ends.
+Spoken amounts, percentages and times now arrive in the number formats you would type in documents and spreadsheets.
 
-**Up to 60 seconds per Live recording.** Release early to finish. A reminder appears on first use, with an option not to show it again. Use Standard for longer uninterrupted recording.
+**More complete number conversion.** Works in Mandarin (Traditional and Simplified), English and mixed Chinese-English, covering amounts, percentages, decimals with units, times, dates, phone numbers, versions and model codes: "forty-five thousand dollars" → "$45,000", "twelve point five percent" → "12.5%", "three thirty pm" → "3:30 pm", 「三點半開會」→「3:30開會」.
+
+**Everyday wording stays as words.** Idioms, small everyday counts and names such as "Twenty One Pilots" are left alone. Conversion runs on your Mac.
+
+**Live preview pastes into spreadsheets.** Google Sheets and similar grids that used to show "Automatic paste skipped" now receive the final text (detected app, window or tab changes, and password fields, still block automatic paste).
 
 ---
 
@@ -54,7 +58,7 @@
 
 **Cloud dictation (opt-in).** Lamitype supports **OpenAI** (default `gpt-4o-mini-transcribe`) and **Gemini** (default `gemini-3.5-flash-lite`, with `gemini-3.7-flash` as the quality option), using your key in a direct connection. Gemini offers a free-tier API key, but Google may use audio submitted on the free tier to improve its products; the paid tier does not. Guardrails include consent before the first cloud request after each app launch, a daily spend warning with same-day lockout (default US$5), and blocking over-long recordings before upload.
 
-**Traditional Chinese that actually works.** Whisper and most open-source models default to Simplified or Mainland phrasing. Lamitype chains Qwen3-ASR with OpenCC `s2twp` to turn terms such as 软件, 鼠标, and 质量 into Taiwan usage: 軟體, 滑鼠, and 品質. It supports EN/ZH code-switching and offers context-aware Chinese numeral conversion (`一零一大樓` → `101 大樓`), on by default. Local and cloud engines use the same deterministic post-processing rules.
+**Traditional Chinese that actually works.** Whisper and most open-source models default to Simplified or Mainland phrasing. Lamitype chains Qwen3-ASR with OpenCC `s2twp` to turn terms such as 软件, 鼠标, and 质量 into Taiwan usage: 軟體, 滑鼠, and 品質. It supports EN/ZH code-switching and offers context-aware Chinese and English number conversion (`一零一大樓` → `101 大樓`), on by default. Local and cloud engines use the same deterministic post-processing rules.
 
 **Fix text where it stands.** Select text in any app and double-tap Right ⌥ to have on-device Apple Foundation Models attempt an in-place proofread for spelling, grammar, typos, and punctuation (requires macOS 26+ and Apple Intelligence). The prompt asks it to preserve meaning, tone, and language mix, and output guards reject some clear deviations. The small model can still miss or over-edit text.
 
@@ -93,7 +97,7 @@
 | Feature | Default | Requirement |
 |---|---|---|
 | 簡體 → 繁體 post-processing (OpenCC `s2twp`) | **ON** | - |
-| 阿拉伯數字 conversion (deterministic ITN) | **ON** | - |
+| Spoken numbers → digits (Chinese and English, deterministic ITN) | **ON** | - |
 | Chinese punctuation cleanup: trims the model's over-segmentation (soft / hard / off) | **soft** | - |
 | Customized dictionary (proper nouns / jargon) | File-driven | - |
 
@@ -251,6 +255,8 @@ make install
 - **Release**: pill switches to "Transcribing"; transcribed text pastes at your cursor and stays on the clipboard.
 - **Tap Right Option (<0.3s)**: with text selected, translates via Apple Translation Framework into a floating card. See [Text Translation](#optional-text-translation).
 - **Double-tap Right Option**: with text selected, proofreads and replaces it in place. See [Text Polish](#optional-text-polish-macos-26).
+
+Choose Local → Live preview (Experimental) in Dictation mode or Settings → Dictation to see drafts while holding Right Option. Drafts may change; only the final text is pasted on release. Each Live recording is limited to 60 seconds; use Standard for longer uninterrupted recording.
 
 **Settings window (menu bar → Settings…):**
 
@@ -479,7 +485,7 @@ defaults write com.felix.hushtype hushtype.cloudDictationModelGemini -string "ge
 # Traditional Chinese conversion (default: true)
 defaults write com.felix.hushtype hushtype.chineseConversionEnabled -bool false
 
-# Number conversion / ITN: Chinese numeral → Arabic digit (default: true)
+# Number conversion / ITN: Mandarin (Traditional/Simplified) and English spoken numbers → digits (default: true)
 defaults write com.felix.hushtype hushtype.numberConversionEnabled -bool false
 
 # Floating "Listening / Transcribing" indicator (default: true)
@@ -579,7 +585,7 @@ Lamitype/
 │   │   └── AboutPane.swift               Version, project links, update check
 │   ├── GeminiKeyStore.swift           User Gemini API key file handling (0600)
 │   ├── ChineseConverter.swift         OpenCC s2twp (Simplified → Traditional)
-│   ├── NumberNormalizer.swift         Deterministic Chinese-numeral → Arabic-digit ITN
+│   ├── NumberNormalizer.swift         Deterministic Mandarin/English spoken-number → digit ITN
 │   ├── DictionaryReplacer.swift       Customized dictionary (final post-processing step)
 │   ├── TextInserter.swift             Clipboard + Cmd+V paste (result persists on clipboard)
 │   ├── TextPolisher.swift             Text Polish orchestration + output guards
