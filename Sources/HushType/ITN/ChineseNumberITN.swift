@@ -219,8 +219,15 @@ enum ChineseNumberITN {
             s.kind = s.percent ? .percent : .decimal
             return
         }
-        if let digits = P.digitString(core), core.count >= 3 {
-            let allowed = core.count >= 4 || matching(T.digitSuffixes, chars, s.end) != nil || T.digitPrefixes.contains(where: before.hasSuffix)
+        let measure = matching(T.measures + T.additionalMeasures, chars, s.end)
+        let directToken = String(chars[..<s.start].reversed().prefix(while: { T.isLatin($0) || T.isASCII($0) }).reversed())
+        let betweenLatin = directToken.last.map(T.isLatin) == true && after.first.map(T.isLatin) == true &&
+            matching(T.units + T.additionalUnits, chars, s.end) == nil
+        let modelSuffix = betweenLatin && allowsLatinSuffix(token: directToken, core: core, after: after)
+        // Clock/decimal handling keeps priority over model-code suffixes.
+        if betweenLatin && !s.trailingPoint && s.tailUnit == nil && !modelSuffix { protect(&s); return }
+        if let digits = P.digitString(core), core.count >= 3 || modelSuffix && core.count >= 2 {
+            let allowed = modelSuffix || core.count >= 4 || matching(T.digitSuffixes, chars, s.end) != nil || T.digitPrefixes.contains(where: before.hasSuffix)
             guard allowed, !s.percent, !s.negative, !s.trailingPoint, s.tailUnit == nil else { protect(&s); return }
             s.replacement = digits
             s.kind = after.hasPrefix("年") ? .year : .digitString
@@ -268,20 +275,17 @@ enum ChineseNumberITN {
            monthImmediatelyBefore(chars, s.start) {
             s.replacement = String(int); s.kind = .date; return
         }
-        let measure = matching(T.measures + T.additionalMeasures, chars, s.end)
         if addressChainBefore(chars, s.start) {
             if after.hasPrefix("段") { protect(&s); return }
             if ["號", "号", "巷", "弄", "樓", "楼"].contains(where: after.hasPrefix) {
                 s.replacement = String(int); s.kind = .count; return
             }
         }
-        let directToken = String(before.reversed().prefix(while: { T.isLatin($0) || T.isASCII($0) }).reversed())
-        if let last = before.last, T.isLatin(last) {
-            // A Chinese fragment buried between Latin words is not a complete
-            // model suffix (am四pm). Rewriting it can create a new spaced cue.
-            if after.first.map(T.isLatin) == true && matching(T.units + T.additionalUnits, chars, s.end) == nil { protect(&s); return }
+        // A following measure uses the ordinary count rules, even when the
+        // product name and count are glued together (iPad一臺 / Pixel十個).
+        if measure == nil, let last = before.last, T.isLatin(last) {
             if directToken.contains(where: T.isASCII) {
-                guard measure == nil, int != 1 else { protect(&s); return }
+                guard int != 1 else { protect(&s); return }
             }
             s.replacement = String(int); s.kind = .modelCode; return
         }
@@ -364,6 +368,11 @@ enum ChineseNumberITN {
 
     private static func groupDigits(_ group: String) -> String? {
         P.digitString(group) ?? P.integer(group).map(String.init)
+    }
+    private static func allowsLatinSuffix(token: String, core: String, after: String) -> Bool {
+        let uppercaseCode = (1...4).contains(token.count) && token.allSatisfy { $0 >= "A" && $0 <= "Z" }
+        let uppercaseFollower = after.first.map { $0 >= "A" && $0 <= "Z" } == true
+        return uppercaseCode || uppercaseFollower && ((P.integer(core) ?? 0) >= 10 || P.digitString(core) != nil)
     }
     private static func minuteValue(_ group: String) -> Int64? {
         if let digits = P.digitString(group) { return digits.count <= 2 ? Int64(digits) : nil }

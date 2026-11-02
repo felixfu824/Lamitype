@@ -36,6 +36,16 @@ enum EnglishNumberITN {
     private static let ordinalFollowers: Set<String> = ["of", "place", "floor", "birthday", "century",
         "time", "row", "round", "anniversary", "edition"]
     private static let fractions: Set<String> = ["hundredth", "thousandth", "millionth", "billionth"]
+    /// "<n>-second <noun>" is a duration when the noun names a timed thing.
+    private static let durationNouns: Set<String> = ["clip", "video", "ad", "spot", "commercial", "delay",
+        "break", "pause", "timer", "countdown", "window", "call", "segment", "intro", "trailer", "demo",
+        "rule", "limit"]
+    /// Nouns that always make "<n>-second" an ordinal. They win over `durationNouns`.
+    private static let hyphenOrdinalNouns: Set<String> = ordinalFollowers.union(["president", "street",
+        "avenue", "amendment", "week", "day"])
+    /// Words after a Title-Case run that are numbers or number units, never a name.
+    private static let nameFollowerExclusions: Set<String> = ["million", "billion", "thousand", "hundred",
+        "percent", "dollars", "dollar", "cents"]
 
     static func edits(in chars: [Character]) -> [ITNEdit] {
         let tokens = tokenize(chars)
@@ -153,7 +163,7 @@ enum EnglishNumberITN {
     private static func ordinalSecond(_ start: Int, _ end: Int, _ tokens: [Token], _ chars: [Character]) -> Bool {
         if end - start == 1 && tokens[start].word == "one" { return false }
         let gap = String(chars[tokens[end - 1].range.upperBound..<tokens[end].range.lowerBound])
-        if gap == "-" { return true }
+        if gap == "-" { return !hyphenatedDuration(end, tokens, chars) }
         if end + 1 == tokens.count || !joined(tokens[end], tokens[end + 1], chars) { return true }
         if ordinalFollowers.contains(tokens[end + 1].word) { return true }
         let context = tokens[max(0, start - 3)..<start].map(\.word)
@@ -166,10 +176,45 @@ enum EnglishNumberITN {
         return false
     }
 
+    /// "thirty-second clip": the noun after a hyphenated "<n>-second" decides.
+    /// Ordinal nouns win; a listed duration noun (or its plural) makes it a
+    /// duration; anything else, or no noun, stays an ordinal.
+    private static func hyphenatedDuration(_ secondIndex: Int, _ tokens: [Token], _ chars: [Character]) -> Bool {
+        let next = secondIndex + 1
+        guard next < tokens.count, joined(tokens[secondIndex], tokens[next], chars),
+              chars[tokens[secondIndex].range.upperBound..<tokens[next].range.lowerBound]
+                .allSatisfy(\.isWhitespace) else { return false }
+        let word = tokens[next].word
+        func listed(_ set: Set<String>) -> Bool {
+            set.contains(word) || (word.hasSuffix("s") && set.contains(String(word.dropLast())))
+        }
+        if listed(hyphenOrdinalNouns) { return false }
+        return listed(durationNouns)
+    }
+
+    /// A Title-Case run next to Han text is a number, not a name,
+    /// unless a capitalised non-number word follows it directly ("Twenty One Pilots").
+    private static func hanAdjacentWaiver(_ start: Int, _ end: Int,
+                                          _ tokens: [Token], _ chars: [Character]) -> Bool {
+        var before = tokens[start].range.lowerBound - 1
+        while before >= 0, chars[before].isWhitespace { before -= 1 }
+        var after = tokens[end - 1].range.upperBound
+        while after < chars.count, chars[after].isWhitespace { after += 1 }
+        let touchesHan = (before >= 0 && ScriptDetector.isHan(chars[before]))
+            || (after < chars.count && ScriptDetector.isHan(chars[after]))
+        guard touchesHan else { return false }
+        if end < tokens.count, joined(tokens[end - 1], tokens[end], chars) {
+            let follower = tokens[end]
+            if follower.original.first?.isUppercase == true, !Parser.isNumber(follower.word),
+               !nameFollowerExclusions.contains(follower.word) { return false }
+        }
+        return true
+    }
+
     private static func titleCaseRun(_ start: Int, _ end: Int, _ tokens: [Token], _ chars: [Character]) -> Bool {
         let numberWords = tokens[start..<end].filter { Parser.isNumber($0.word) }
         guard !numberWords.isEmpty, numberWords.allSatisfy({ $0.original.first?.isUppercase == true }) else { return false }
-        if numberWords.count > 1 { return true }
+        if numberWords.count > 1 { return !hanAdjacentWaiver(start, end, tokens, chars) }
         guard start > 0 else { return false }
         let gap = chars[tokens[start - 1].range.upperBound..<tokens[start].range.lowerBound]
         return !gap.contains(where: { $0 == "." || $0 == "!" || $0 == "?" || $0 == "\n" })

@@ -263,10 +263,19 @@ struct DictationPane: View {
                 "menu.number_conversion",
                 fallback: "Number Conversion:"
             )) {
-                Toggle(L10n.string(
-                    "menu.number_conversion.subtitle",
-                    fallback: "Spoken numbers → digits (Chinese and English)"
-                ), isOn: $model.numberConversionEnabled)
+                VStack(alignment: .leading, spacing: 4) {
+                    Toggle(L10n.string(
+                        "menu.number_conversion.subtitle",
+                        fallback: "Spoken numbers → digits"
+                    ), isOn: $model.numberConversionEnabled)
+                    Text(L10n.string(
+                        "settings.dictation.number_conversion.note",
+                        fallback: "Chinese and English. Japanese and Korean text is left as spoken."
+                    ))
+                    .font(.caption)
+                    .foregroundStyle(.secondary)
+                    .fixedSize(horizontal: false, vertical: true)
+                }
             }
 
             SettingsRow(L10n.string(

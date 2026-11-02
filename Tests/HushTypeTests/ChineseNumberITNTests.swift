@@ -4,8 +4,8 @@ import XCTest
 final class ChineseNumberITNTests: XCTestCase {
     // Mirrors are deterministic test data, independent of installed OpenCC.
     private func simplified(_ text: String) -> String {
-        let trad = Array("剛盤輪戶頂碼頃歐鎊韓盧當買個點號兩萬億負塊錢歲間撥機樓顆項頁節場隻張條輛棟層種筆屆週禮時鐘頭幣圓釐臺獲選圍蟬聯勝體開會講後寫蘋書預應該對這國邊樣陣聽獨舉亂門統輩氣時模託記別連假木頭")
-        let simp = Array("刚盘轮户顶码顷欧镑韩卢当买个点号两万亿负块钱岁间拨机楼颗项页节场只张条辆栋层种笔届周礼时钟头币圆厘台获选围蝉联胜体开会讲后写苹书预应该对这国边样阵听独举乱门统辈气时模托记别连假木头")
+        let trad = Array("剛盤輪戶頂碼頃歐鎊韓盧當買個點號兩萬億負塊錢歲間撥機樓顆項頁節場隻張條輛棟層種筆屆週禮時鐘頭幣圓釐臺獲選圍蟬聯勝體開會講後寫蘋書預應該對這國邊樣陣聽獨舉亂門統輩氣時模託記別連假木頭積電製訂")
+        let simp = Array("刚盘轮户顶码顷欧镑韩卢当买个点号两万亿负块钱岁间拨机楼颗项页节场只张条辆栋层种笔届周礼时钟头币圆厘台获选围蝉联胜体开会讲后写苹书预应该对这国边样阵听独举乱门统辈气时模托记别连假木头积电制订")
         let map = Dictionary(zip(trad, simp), uniquingKeysWith: { a, _ in a })
         return String(text.map { map[$0] ?? $0 })
     }
@@ -185,6 +185,63 @@ final class ChineseNumberITNTests: XCTestCase {
                ("五百法郎", "500法郎"), ("一百分", "100分"), ("差三分", "差三分"),
                ("十分感謝", "十分感謝"), ("十分重要", "十分重要"), ("四零三路", "403路"),
                ("一路", "一路"), ("三點七十分", "三點七十分"), ("存款負五十萬", "存款負50萬")])
+    }
+
+    func testV23D1AndA2LatinGluedCounts() {
+        check([
+            ("我買了iPad一臺。", "我買了iPad一臺。"),
+            ("我買了iPad一台。", "我買了iPad一台。"),
+            ("買了MacBook兩台", "買了MacBook兩台"),
+            ("訂了Uber一輛", "訂了Uber一輛"),
+            ("我有iPhone三支", "我有iPhone三支"),
+            ("iPad一臺", "iPad一臺"), ("iPad一台", "iPad一台"),
+            ("MacBook兩台", "MacBook兩台"), ("Type-C三條", "Type-C三條"),
+            ("AirPods一副", "AirPods一副"),
+            ("iPhone十七台", "iPhone17台"), ("Pixel十個", "Pixel10個"),
+            ("AirPods十二副", "AirPods12副"),
+            ("三副", "三副"), ("十二副", "12副"),
+            ("4K十台", "4K10台"), ("3D十個", "3D10個")
+        ])
+    }
+
+    func testV23D1ModelCodeNoRegressions() {
+        check([
+            ("iPhone十七跟Pixel十", "iPhone17跟Pixel10"),
+            ("台積電N二製程", "台積電N2製程"), ("N三好", "N3好"),
+            ("COVID十九疫情", "COVID19疫情"),
+            ("Windows十一月", "Windows11月"),
+            ("Sprint二十三", "Sprint23"),
+            ("iPad 一台", "iPad 一台"), ("iPad一臺Pro", "iPad一臺Pro"),
+            ("5G三年", "5G三年"), ("4K三台", "4K三台"),
+            ("3D三個", "3D三個"), ("5G一", "5G一"), ("5G三", "5G3")
+        ])
+    }
+
+    func testV23D2AndA3LatinGluedModelSuffixes() {
+        check([
+            ("Q三Revenue", "Q3Revenue"), ("FY二五Budget", "FY25Budget"),
+            ("H一Plan", "H1Plan"), ("GPT五Turbo", "GPT5Turbo"),
+            ("iPhone十七Pro", "iPhone17Pro"),
+            ("iPhone十七Pro Max", "iPhone17Pro Max"),
+            ("Galaxy S二十五Ultra", "Galaxy S25Ultra"),
+            ("am四pm", "am四pm"), ("iPad一臺Pro", "iPad一臺Pro"),
+            // Both exception branches and their token/case boundaries.
+            ("ABCD五turbo", "ABCD5turbo"), ("ABCDE五turbo", "ABCDE五turbo"),
+            ("gpt五turbo", "gpt五turbo"), ("iPhone十七pro", "iPhone十七pro"),
+            ("iPhone二五Pro", "iPhone25Pro"), ("Q零三Revenue", "Q03Revenue"),
+            ("Q一二三Revenue", "Q123Revenue"),
+            ("FY二五budget", "FY25budget"), ("fy二五budget", "fy二五budget"),
+            ("iPhone三GB", "iPhone3GB")
+        ])
+    }
+
+    func testV23A3TimeBranchKeepsPriority() {
+        check([
+            ("PM三點Call你", "PM三點Call你"),
+            ("PM三點半Call你", "PM3:30Call你"),
+            ("PM三點十分Call你", "PM3:10Call你"),
+            ("下午PM三點Call你", "下午PM3點Call你")
+        ])
     }
     func testReviewRound3bSection9() {
         check([

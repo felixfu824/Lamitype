@@ -229,6 +229,173 @@ final class EnglishNumberITNTests: XCTestCase {
         check([("Twenty folders arrived", "20 folders arrived"), ("I need twenty folders", "I need 20 folders")])
     }
 
+    // MARK: v2.3 D3 (A1): Title-Case runs adjacent to Han
+
+    /// Mixed zh/en inputs run through the full normalizer so the Chinese pass runs too.
+    private func normalized(_ input: String, file: StaticString = #filePath, line: UInt = #line) -> String {
+        let output = NumberNormalizer.normalize(input).text
+        XCTAssertEqual(NumberNormalizer.normalize(output).text, output,
+                       "Idempotence: \(input)", file: file, line: line)
+        return output
+    }
+
+    private func checkNormalized(_ cases: [(String, String)], file: StaticString = #filePath, line: UInt = #line) {
+        for (input, expected) in cases {
+            XCTAssertEqual(normalized(input, file: file, line: line), expected, input, file: file, line: line)
+        }
+    }
+
+    func testTitleCaseRunAdjacentToHanConverts() {
+        checkNormalized([
+            ("這個Deal大概Five Million美金", "這個Deal大概5 million美金"),
+            ("下午Three Thirty的Meeting改到四點半", "下午3:30的Meeting改到4:30"),
+            ("下午Three Thirty的Meeting", "下午3:30的Meeting"),
+            // Han on one side only is enough, spaces are ignored.
+            ("我買了Forty Five 個", "我買了45 個"),
+            ("Forty Five 個蘋果", "45 個蘋果"),
+            ("他說 Five Million 美金", "他說 5 million 美金"),
+        ])
+    }
+
+    func testTitleCaseRunRecordedRowT() {
+        // Verbatim live row T. The Q三Revenue and 百分之十二 parts come from the Chinese pass.
+        // A single capitalised number word mid-text keeps the b208949 guard: Felix judged
+        // "Twenty份copies" unrealistic speech, so it is not worth a rule.
+        checkNormalized([
+            ("這個Deal大概Five Million美金，我需要Twenty份copies。下午Three thirty的meeting改到四點半。Q三Revenue成長百分之十二。",
+             "這個Deal大概5 million美金，我需要Twenty份copies。下午3:30的meeting改到4:30。Q3Revenue成長12%。"),
+        ])
+        // The English half alone, independent of the Chinese Q-code rule.
+        checkNormalized([
+            ("這個Deal大概Five Million美金，我需要Twenty份copies。下午Three thirty的meeting改到四點半。",
+             "這個Deal大概5 million美金，我需要Twenty份copies。下午3:30的meeting改到4:30。"),
+        ])
+    }
+
+    func testTitleCaseNamesAdjacentToHanStay() {
+        check([("Twenty One Pilots played last night.", "Twenty One Pilots played last night.")])
+        checkNormalized([
+            ("Twenty One Pilots played last night.", "Twenty One Pilots played last night."),
+            ("我很喜歡Twenty One Pilots", "我很喜歡Twenty One Pilots"),
+            ("他是Forty Two Club的會員", "他是Forty Two Club的會員"),
+            // Capitalised follower after a hyphen or spaces is still a name.
+            ("我很喜歡Twenty One Pilots的歌", "我很喜歡Twenty One Pilots的歌"),
+        ])
+    }
+
+    func testTitleCaseWaiverFollowerIgnoresNumberWordsAndUnits() {
+        checkNormalized([
+            // Million, Percent, Dollars, Cents are not names.
+            ("這個Deal大概Five Million Dollars左右", "這個Deal大概$5,000,000左右"),
+            ("成長Twenty Five Percent很多", "成長25%很多"),
+            ("我有Twenty Five Dollars在身上", "我有$25在身上"),
+        ])
+        // A capitalised non-number word right after the run reads as a name, so it stays.
+        checkNormalized([("我需要Twenty One Copies", "我需要Twenty One Copies")])
+    }
+
+    func testTitleCaseWithoutHanAdjacencyKeepsExistingGuard() {
+        check([("BUY Forty-Five THOUSAND Dollars NOW", "BUY Forty-Five THOUSAND Dollars NOW"),
+               ("I bought Twenty Dollars", "I bought Twenty Dollars"),
+               ("Twenty One Pilots", "Twenty One Pilots"),
+               ("the Forty-Niners won", "the Forty-Niners won")])
+        // Han is present in the sentence but not adjacent to the run.
+        checkNormalized([("這是Deal then Twenty One Pilots now", "這是Deal then Twenty One Pilots now")])
+    }
+
+    func testSingleCapitalisedNumberWordKeepsTodaysBehaviour() {
+        checkNormalized([
+            ("我需要Twenty Copies", "我需要20 Copies"),
+            ("我需要Twenty份copies", "我需要20份copies"),
+        ])
+        check([("Twenty folders arrived", "20 folders arrived")])
+    }
+
+    func testSingleCapitalisedNumberWordNextToHanKeepsB208949Guard() {
+        // Mid-text single capitalised number words stay; only multi-word runs get the Han waiver.
+        checkNormalized([
+            ("這個Deal大概Twenty份copies", "這個Deal大概Twenty份copies"),
+            ("這個Deal大概Twenty Copies", "這個Deal大概Twenty Copies"),
+        ])
+        // Unchanged since b208949: the first Latin token has no guard (start == 0).
+        checkNormalized([("我喜歡Twenty Pilots", "我喜歡20 Pilots")])
+    }
+
+    func testBrandsAndNamesInsideChinese() {
+        checkNormalized([
+            ("我在Seven買咖啡", "我在Seven買咖啡"),
+            ("我去Seven Eleven買東西", "我去Seven Eleven買東西"),
+            ("我喜歡Twenty One Pilots", "我喜歡Twenty One Pilots"),
+            ("我看了Ocean's Eleven", "我看了Ocean's Eleven"),
+            ("One Piece很好看", "One Piece很好看"),
+            ("我們用Office Three Sixty Five", "我們用Office Three Sixty Five"),
+            // Accepted: these brands also write their names with digits.
+            ("我在Forever Twenty One買衣服", "我在Forever 21買衣服"),
+            ("他在Thirty Seconds to Mars樂團", "他在30 Seconds to Mars樂團"),
+        ])
+    }
+
+    func testKnownMissNameWithoutFollowerConverts() {
+        // Accepted by design (A1): a name with no capitalised follower cannot be told from a number.
+        checkNormalized([("我喜歡Twenty One", "我喜歡21")])
+    }
+
+    // MARK: v2.3 D4 (A4): hyphenated <n>-second durations
+
+    func testHyphenatedSecondDurations() {
+        check([("It was a thirty-second clip.", "It was a 30-second clip."),
+               ("thirty-second clips", "30-second clips"),
+               ("a sixty-second timer", "a 60-second timer"),
+               ("a ninety-second ad spot", "a 90-second ad spot"),
+               ("a forty-five-second delay", "a 45-second delay"),
+               ("a thirty-second video", "a 30-second video"),
+               ("a fifteen-second commercial", "a 15-second commercial"),
+               ("a twenty-second countdown", "a 20-second countdown"),
+               ("the thirty-second intro", "the 30-second intro"),
+               ("a ten-second pause", "a 10-second pause"),
+               ("a twenty-one-second trailer", "a 21-second trailer")])
+    }
+
+    func testHyphenatedMinuteAndHourStayAsWritten() {
+        // "<n>-minute" and "<n>-hour" never became ordinals; the hyphen chain is protected as before.
+        check([("a forty-five-minute delay", "a forty-five-minute delay"),
+               ("a two-hour call", "a two-hour call")])
+    }
+
+    func testHyphenatedSecondOrdinalsStay() {
+        check([("a twenty-second birthday party", "a 22nd birthday party"),
+               ("a twenty-second anniversary", "a 22nd anniversary"),
+               ("the twenty-second of May", "the 22nd of May"),
+               ("She came in thirty-second.", "She came in 32nd."),
+               ("the thirty-second floor", "the 32nd floor"),
+               ("the thirty-second president", "the 32nd president"),
+               ("the thirty-second century", "the 32nd century"),
+               ("the thirty-second time", "the 32nd time"),
+               ("the thirty-second edition", "the 32nd edition"),
+               ("the thirty-second round", "the 32nd round"),
+               ("the thirty-second row", "the 32nd row"),
+               ("on thirty-second street", "on 32nd street"),
+               ("on thirty-second avenue", "on 32nd avenue"),
+               ("the thirty-second amendment", "the 32nd amendment"),
+               ("the thirty-second week", "the 32nd week"),
+               ("the thirty-second day", "the 32nd day"),
+               ("thirty-second place", "32nd place"),
+               // No follower or an unlisted noun defaults to ordinal.
+               ("the thirty-second", "the 32nd"),
+               ("the thirty-second guy", "the 32nd guy")])
+    }
+
+    func testHyphenatedSecondKnownMiss() {
+        // Not fixed by design: no hyphenated number signal.
+        check([("twenty-one pilots", "21 pilots")])
+    }
+
+    func testHyphenatedSecondDoesNotChangeUnhyphenatedBehaviour() {
+        check([("a thirty second clip", "a 30 second clip"),
+               ("twenty-second timeout", "22nd timeout"),
+               ("She came in thirty second.", "She came in 32nd.")])
+    }
+
     func testThreeDigitStringsNeedACue() {
         check([("two three four people", "two three four people"), ("one two three", "one two three"),
                ("Room three oh five", "Room 305"), ("gate one two three", "gate 123"),

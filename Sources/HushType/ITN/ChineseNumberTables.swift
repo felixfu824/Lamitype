@@ -17,7 +17,7 @@ enum ChineseNumberTables {
     static let digitSuffixes = words("年 號 号 室 樓 楼 大樓 大楼 地震 連假 连假 事件 路") + measures
     static let digitPrefixes = words("房間 房间 撥 拨 分機 分机 第")
     static let additionalProtectedWords = ["五月天", "九成九", "又一度", "又二度", "又三度", "又四度", "又五度", "七七八八"]
-    static let additionalMeasures = ["號", "号", "巷", "弄"]
+    static let additionalMeasures = ["號", "号", "巷", "弄", "副"]
     static let additionalUnits = ["剛果法郎", "刚果法郎"]
     static let currencies = words("美金 美元 台幣 臺幣 台币 人民幣 人民币 日圓 日圆 日元 港幣 港币 法郎 歐元 欧元 英鎊 英镑 韓元 韩元 盧比 卢比 比索 披索 新台幣 新臺幣 新台币")
     static let approximationPrefixes = words("幾 几 數 数 好幾 好几 上 近 破 約 约")

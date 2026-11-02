@@ -1,22 +1,29 @@
 import AppKit
 
-/// Strict, fail-closed field identity. No app reactivation or best-effort PID paste.
+/// Live paste requires the original active app, unchanged AX window and CGWindowID,
+/// and unchanged focused element when one is exposed. Activation/focus changes and
+/// secure input block delivery. No app reactivation is attempted. Accepted risk:
+/// apps exposing no focused element cannot reveal moves within the same window
+/// (including cells or document tabs); window identity still has to match.
 @MainActor
 final class LiveInsertionTarget {
     private nonisolated static let notifications = WeakNotificationRegistry<LiveFocusInvalidation>()
     private let focusInvalidation = LiveFocusInvalidation()
     let application: NSRunningApplication?
-    private let field: AXUIElement?
-    private let window: AXUIElement?
+    private let capturedAX: LivePasteAXSnapshot?
+    private let captured: LivePasteGate.Captured
     private var observer: AXObserver?
     private var activationObserver: NSObjectProtocol?
     private(set) var changed = false
 
     init() {
         application = NSWorkspace.shared.frontmostApplication
-        let appElement = application.map { AXUIElementCreateApplication($0.processIdentifier) }
-        field = appElement.flatMap { Self.element($0, kAXFocusedUIElementAttribute) }
-        window = field.flatMap { Self.element($0, kAXWindowAttribute) }
+        let snapshot = application.map { LivePasteAXSnapshot(pid: $0.processIdentifier, capturing: true) }
+        capturedAX = snapshot
+        captured = LivePasteGate.Captured(
+            processIdentifier: application?.processIdentifier, hasWindow: snapshot?.window != nil,
+            windowID: snapshot?.windowID, hasElement: snapshot?.element != nil
+        )
         if let application {
             var axObserver: AXObserver?
             if AXObserverCreate(application.processIdentifier, { _, _, _, context in
@@ -58,42 +65,100 @@ final class LiveInsertionTarget {
         if let activationObserver { NSWorkspace.shared.notificationCenter.removeObserver(activationObserver) }
     }
 
-    func observe() { if focusInvalidation.isInvalidated || !matchesCurrentField() { changed = true } }
+    /// Runs on every draft update, so it skips the system-wide CGWindowID read:
+    /// a transient layer-0 child window (tab hover card, bubble) during recording
+    /// must not latch `changed`. AX notifications stay the latching signal.
+    func observe() { if focusInvalidation.isInvalidated || !matchesCurrentField(readsWindowID: false) { changed = true } }
     func mayPaste() -> Bool {
-        guard !changed, !focusInvalidation.isInvalidated, !SecureInputProbe.isActive(), matchesCurrentField() else { return false }
+        guard !changed, !focusInvalidation.isInvalidated, !SecureInputProbe.isActive(), matchesCurrentField(readsWindowID: true) else { return false }
         // Synchronous AX queries can deliver native focus notifications. Honor
         // invalidation detected during verification before returning permission.
         return !SecureInputProbe.isActive() && !changed && !focusInvalidation.isInvalidated
     }
 
-    private func matchesCurrentField() -> Bool {
-        guard let application, !application.isTerminated, application.isActive,
-              let field, let window,
-              let current = Self.element(AXUIElementCreateApplication(application.processIdentifier), kAXFocusedUIElementAttribute),
-              CFEqual(field, current), let currentWindow = Self.element(current, kAXWindowAttribute),
-              CFEqual(window, currentWindow),
-              let role = Self.string(current, kAXRoleAttribute),
-              [kAXTextFieldRole, kAXTextAreaRole, kAXComboBoxRole].contains(role) else { return false }
-        var subrole: CFTypeRef?
-        let subroleStatus = AXUIElementCopyAttributeValue(current, kAXSubroleAttribute as CFString, &subrole)
-        guard Self.isNonSecureSubrole(status: subroleStatus, value: subrole) else { return false }
-        var settable: DarwinBoolean = false
-        guard AXUIElementIsAttributeSettable(current, kAXValueAttribute as CFString, &settable) == .success else { return false }
-        return settable.boolValue
+    private func matchesCurrentField(readsWindowID: Bool) -> Bool {
+        let invalidatedBefore = focusInvalidation.isInvalidated
+        let secureBefore = SecureInputProbe.isActive()
+        let currentAX = application.map {
+            LivePasteAXSnapshot(pid: $0.processIdentifier, capturing: false, readsWindowID: readsWindowID)
+        }
+        // AX reads can synchronously deliver native notifications. Sample the
+        // latches and Secure Input only after all AX/CG identity reads complete.
+        let secureAfter = SecureInputProbe.isActive()
+        let current = LivePasteGate.Current(
+            processIdentifier: NSWorkspace.shared.frontmostApplication?.processIdentifier,
+            isTerminated: application?.isTerminated ?? true, isActive: application?.isActive ?? false,
+            activationChanged: changed, focusInvalidatedBeforeVerification: invalidatedBefore,
+            focusInvalidatedAfterVerification: focusInvalidation.isInvalidated,
+            secureInputBeforeVerification: secureBefore, secureInputAfterVerification: secureAfter,
+            windowMatches: LivePasteAXSnapshot.equal(capturedAX?.window, currentAX?.window),
+            windowID: readsWindowID ? currentAX?.windowID : captured.windowID, hasElement: currentAX?.element != nil,
+            elementMatches: LivePasteAXSnapshot.equal(capturedAX?.element, currentAX?.element),
+            role: currentAX?.role, subrole: currentAX?.subrole ?? .unreadable
+        )
+        return LivePasteGate.allows(captured: captured, current: current)
     }
 
     /// Subrole is optional for ordinary editable controls. Explicit absence is
     /// distinct from a timeout, invalid element or failed security-related read.
     static func isNonSecureSubrole(status: AXError, value: CFTypeRef?) -> Bool {
+        LivePasteAXSnapshot.subrole(status: status, value: value).isNonSecure
+    }
+}
+
+/// System-read adapter shared with the standalone probe. Only value snapshots
+/// and CFEqual identity results cross into LivePasteGate.
+struct LivePasteAXSnapshot {
+    let element: AXUIElement?
+    let window: AXUIElement?
+    let windowID: UInt32?
+    let role: String?
+    let subrole: LivePasteGate.Subrole
+
+    init(pid: pid_t, capturing: Bool, readsWindowID: Bool = true) {
+        let app = AXUIElementCreateApplication(pid)
+        element = Self.element(app, kAXFocusedUIElementAttribute)
+        if capturing {
+            window = element.flatMap { Self.element($0, kAXWindowAttribute) }
+                ?? Self.element(app, kAXFocusedWindowAttribute)
+        } else {
+            window = Self.element(app, kAXFocusedWindowAttribute)
+        }
+        windowID = readsWindowID ? Self.frontmostWindowID(pid: pid) : nil
+        role = element.flatMap { Self.string($0, kAXRoleAttribute) }
+        if let element {
+            var value: CFTypeRef?
+            let status = AXUIElementCopyAttributeValue(element, kAXSubroleAttribute as CFString, &value)
+            subrole = Self.subrole(status: status, value: value)
+        } else {
+            subrole = .unreadable
+        }
+    }
+
+    static func equal(_ lhs: AXUIElement?, _ rhs: AXUIElement?) -> Bool {
+        guard let lhs, let rhs else { return false }
+        return CFEqual(lhs, rhs)
+    }
+
+    static func subrole(status: AXError, value: CFTypeRef?) -> LivePasteGate.Subrole {
         switch status {
         case .success:
-            guard let subrole = value as? String else { return false }
-            return subrole != kAXSecureTextFieldSubrole
+            return (value as? String).map { .value($0) } ?? .unreadable
         case .attributeUnsupported, .noValue:
-            return value == nil
+            return value == nil ? .absent : .unreadable
         default:
-            return false
+            return .unreadable
         }
+    }
+
+    private static func frontmostWindowID(pid: pid_t) -> CGWindowID? {
+        guard let windows = CGWindowListCopyWindowInfo([.optionOnScreenOnly, .excludeDesktopElements], kCGNullWindowID)
+                as? [[String: Any]] else { return nil }
+        // CGWindowListCopyWindowInfo returns windows in front-to-back order.
+        return windows.first {
+            ($0[kCGWindowOwnerPID as String] as? NSNumber)?.int32Value == pid
+                && ($0[kCGWindowLayer as String] as? NSNumber)?.intValue == 0
+        }.flatMap { ($0[kCGWindowNumber as String] as? NSNumber)?.uint32Value }
     }
 
     private static func element(_ element: AXUIElement, _ attribute: String) -> AXUIElement? {

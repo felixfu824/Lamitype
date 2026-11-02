@@ -12336,5 +12336,1050 @@
    "3.05万"
   ],
   "keep": false
+ },
+ {
+  "id": "v23-zh-001",
+  "lang": "zh",
+  "script": "trad",
+  "group": "v23-zh",
+  "input": "我買了iPad一臺。",
+  "expect": [
+   "我買了iPad一臺。"
+  ],
+  "keep": true
+ },
+ {
+  "id": "v23-zh-002",
+  "lang": "zh",
+  "script": "simp",
+  "group": "v23-zh",
+  "input": "我买了iPad一台。",
+  "expect": [
+   "我买了iPad一台。"
+  ],
+  "keep": true
+ },
+ {
+  "id": "v23-zh-003",
+  "lang": "zh",
+  "script": "simp",
+  "group": "v23-zh",
+  "input": "我買了iPad一台。",
+  "expect": [
+   "我買了iPad一台。"
+  ],
+  "keep": true
+ },
+ {
+  "id": "v23-zh-004",
+  "lang": "zh",
+  "script": "simp",
+  "group": "v23-zh",
+  "input": "買了MacBook兩台",
+  "expect": [
+   "買了MacBook兩台"
+  ],
+  "keep": true
+ },
+ {
+  "id": "v23-zh-005",
+  "lang": "zh",
+  "script": "simp",
+  "group": "v23-zh",
+  "input": "买了MacBook两台",
+  "expect": [
+   "买了MacBook两台"
+  ],
+  "keep": true
+ },
+ {
+  "id": "v23-zh-006",
+  "lang": "zh",
+  "script": "trad",
+  "group": "v23-zh",
+  "input": "訂了Uber一輛",
+  "expect": [
+   "訂了Uber一輛"
+  ],
+  "keep": true
+ },
+ {
+  "id": "v23-zh-007",
+  "lang": "zh",
+  "script": "simp",
+  "group": "v23-zh",
+  "input": "订了Uber一辆",
+  "expect": [
+   "订了Uber一辆"
+  ],
+  "keep": true
+ },
+ {
+  "id": "v23-zh-008",
+  "lang": "zh",
+  "script": "trad",
+  "group": "v23-zh",
+  "input": "我有iPhone三支",
+  "expect": [
+   "我有iPhone三支"
+  ],
+  "keep": true
+ },
+ {
+  "id": "v23-zh-009",
+  "lang": "zh",
+  "script": "trad",
+  "group": "v23-zh",
+  "input": "iPad一臺",
+  "expect": [
+   "iPad一臺"
+  ],
+  "keep": true
+ },
+ {
+  "id": "v23-zh-010",
+  "lang": "zh",
+  "script": "simp",
+  "group": "v23-zh",
+  "input": "iPad一台",
+  "expect": [
+   "iPad一台"
+  ],
+  "keep": true
+ },
+ {
+  "id": "v23-zh-011",
+  "lang": "zh",
+  "script": "simp",
+  "group": "v23-zh",
+  "input": "MacBook兩台",
+  "expect": [
+   "MacBook兩台"
+  ],
+  "keep": true
+ },
+ {
+  "id": "v23-zh-012",
+  "lang": "zh",
+  "script": "simp",
+  "group": "v23-zh",
+  "input": "MacBook两台",
+  "expect": [
+   "MacBook两台"
+  ],
+  "keep": true
+ },
+ {
+  "id": "v23-zh-013",
+  "lang": "zh",
+  "script": "trad",
+  "group": "v23-zh",
+  "input": "Type-C三條",
+  "expect": [
+   "Type-C三條"
+  ],
+  "keep": true
+ },
+ {
+  "id": "v23-zh-014",
+  "lang": "zh",
+  "script": "simp",
+  "group": "v23-zh",
+  "input": "Type-C三条",
+  "expect": [
+   "Type-C三条"
+  ],
+  "keep": true
+ },
+ {
+  "id": "v23-zh-015",
+  "lang": "zh",
+  "script": "trad",
+  "group": "v23-zh",
+  "input": "AirPods一副",
+  "expect": [
+   "AirPods一副"
+  ],
+  "keep": true
+ },
+ {
+  "id": "v23-zh-016",
+  "lang": "zh",
+  "script": "simp",
+  "group": "v23-zh",
+  "input": "iPhone十七台",
+  "expect": [
+   "iPhone17台"
+  ],
+  "keep": false
+ },
+ {
+  "id": "v23-zh-017",
+  "lang": "zh",
+  "script": "trad",
+  "group": "v23-zh",
+  "input": "Pixel十個",
+  "expect": [
+   "Pixel10個"
+  ],
+  "keep": false
+ },
+ {
+  "id": "v23-zh-018",
+  "lang": "zh",
+  "script": "simp",
+  "group": "v23-zh",
+  "input": "Pixel十个",
+  "expect": [
+   "Pixel10个"
+  ],
+  "keep": false
+ },
+ {
+  "id": "v23-zh-019",
+  "lang": "zh",
+  "script": "trad",
+  "group": "v23-zh",
+  "input": "AirPods十二副",
+  "expect": [
+   "AirPods12副"
+  ],
+  "keep": false
+ },
+ {
+  "id": "v23-zh-020",
+  "lang": "zh",
+  "script": "trad",
+  "group": "v23-zh",
+  "input": "三副",
+  "expect": [
+   "三副"
+  ],
+  "keep": true
+ },
+ {
+  "id": "v23-zh-021",
+  "lang": "zh",
+  "script": "trad",
+  "group": "v23-zh",
+  "input": "十二副",
+  "expect": [
+   "12副"
+  ],
+  "keep": false
+ },
+ {
+  "id": "v23-zh-022",
+  "lang": "zh",
+  "script": "simp",
+  "group": "v23-zh",
+  "input": "4K十台",
+  "expect": [
+   "4K10台"
+  ],
+  "keep": false
+ },
+ {
+  "id": "v23-zh-023",
+  "lang": "zh",
+  "script": "trad",
+  "group": "v23-zh",
+  "input": "3D十個",
+  "expect": [
+   "3D10個"
+  ],
+  "keep": false
+ },
+ {
+  "id": "v23-zh-024",
+  "lang": "zh",
+  "script": "simp",
+  "group": "v23-zh",
+  "input": "3D十个",
+  "expect": [
+   "3D10个"
+  ],
+  "keep": false
+ },
+ {
+  "id": "v23-zh-025",
+  "lang": "zh",
+  "script": "trad",
+  "group": "v23-zh",
+  "input": "iPhone十七跟Pixel十",
+  "expect": [
+   "iPhone17跟Pixel10"
+  ],
+  "keep": false
+ },
+ {
+  "id": "v23-zh-026",
+  "lang": "zh",
+  "script": "simp",
+  "group": "v23-zh",
+  "input": "台積電N二製程",
+  "expect": [
+   "台積電N2製程"
+  ],
+  "keep": false
+ },
+ {
+  "id": "v23-zh-027",
+  "lang": "zh",
+  "script": "simp",
+  "group": "v23-zh",
+  "input": "台积电N二制程",
+  "expect": [
+   "台积电N2制程"
+  ],
+  "keep": false
+ },
+ {
+  "id": "v23-zh-028",
+  "lang": "zh",
+  "script": "trad",
+  "group": "v23-zh",
+  "input": "N三好",
+  "expect": [
+   "N3好"
+  ],
+  "keep": false
+ },
+ {
+  "id": "v23-zh-029",
+  "lang": "zh",
+  "script": "trad",
+  "group": "v23-zh",
+  "input": "COVID十九疫情",
+  "expect": [
+   "COVID19疫情"
+  ],
+  "keep": false
+ },
+ {
+  "id": "v23-zh-030",
+  "lang": "zh",
+  "script": "trad",
+  "group": "v23-zh",
+  "input": "Windows十一月",
+  "expect": [
+   "Windows11月"
+  ],
+  "keep": false
+ },
+ {
+  "id": "v23-zh-031",
+  "lang": "zh",
+  "script": "trad",
+  "group": "v23-zh",
+  "input": "Sprint二十三",
+  "expect": [
+   "Sprint23"
+  ],
+  "keep": false
+ },
+ {
+  "id": "v23-zh-032",
+  "lang": "zh",
+  "script": "simp",
+  "group": "v23-zh",
+  "input": "iPad 一台",
+  "expect": [
+   "iPad 一台"
+  ],
+  "keep": true
+ },
+ {
+  "id": "v23-zh-033",
+  "lang": "zh",
+  "script": "trad",
+  "group": "v23-zh",
+  "input": "iPad一臺Pro",
+  "expect": [
+   "iPad一臺Pro"
+  ],
+  "keep": true
+ },
+ {
+  "id": "v23-zh-034",
+  "lang": "zh",
+  "script": "simp",
+  "group": "v23-zh",
+  "input": "iPad一台Pro",
+  "expect": [
+   "iPad一台Pro"
+  ],
+  "keep": true
+ },
+ {
+  "id": "v23-zh-041",
+  "lang": "zh",
+  "script": "trad",
+  "group": "v23-zh",
+  "input": "Q三Revenue",
+  "expect": [
+   "Q3Revenue"
+  ],
+  "keep": false
+ },
+ {
+  "id": "v23-zh-042",
+  "lang": "zh",
+  "script": "trad",
+  "group": "v23-zh",
+  "input": "FY二五Budget",
+  "expect": [
+   "FY25Budget"
+  ],
+  "keep": false
+ },
+ {
+  "id": "v23-zh-043",
+  "lang": "zh",
+  "script": "trad",
+  "group": "v23-zh",
+  "input": "H一Plan",
+  "expect": [
+   "H1Plan"
+  ],
+  "keep": false
+ },
+ {
+  "id": "v23-zh-044",
+  "lang": "zh",
+  "script": "trad",
+  "group": "v23-zh",
+  "input": "GPT五Turbo",
+  "expect": [
+   "GPT5Turbo"
+  ],
+  "keep": false
+ },
+ {
+  "id": "v23-zh-045",
+  "lang": "zh",
+  "script": "trad",
+  "group": "v23-zh",
+  "input": "iPhone十七Pro",
+  "expect": [
+   "iPhone17Pro"
+  ],
+  "keep": false
+ },
+ {
+  "id": "v23-zh-046",
+  "lang": "zh",
+  "script": "trad",
+  "group": "v23-zh",
+  "input": "iPhone十七Pro Max",
+  "expect": [
+   "iPhone17Pro Max"
+  ],
+  "keep": false
+ },
+ {
+  "id": "v23-zh-047",
+  "lang": "zh",
+  "script": "trad",
+  "group": "v23-zh",
+  "input": "Galaxy S二十五Ultra",
+  "expect": [
+   "Galaxy S25Ultra"
+  ],
+  "keep": false
+ },
+ {
+  "id": "v23-zh-048",
+  "lang": "zh",
+  "script": "trad",
+  "group": "v23-zh",
+  "input": "am四pm",
+  "expect": [
+   "am四pm"
+  ],
+  "keep": true
+ },
+ {
+  "id": "v23-zh-049",
+  "lang": "zh",
+  "script": "trad",
+  "group": "v23-zh",
+  "input": "ABCD五turbo",
+  "expect": [
+   "ABCD5turbo"
+  ],
+  "keep": false
+ },
+ {
+  "id": "v23-zh-050",
+  "lang": "zh",
+  "script": "trad",
+  "group": "v23-zh",
+  "input": "ABCDE五turbo",
+  "expect": [
+   "ABCDE五turbo"
+  ],
+  "keep": true
+ },
+ {
+  "id": "v23-zh-051",
+  "lang": "zh",
+  "script": "trad",
+  "group": "v23-zh",
+  "input": "gpt五turbo",
+  "expect": [
+   "gpt五turbo"
+  ],
+  "keep": true
+ },
+ {
+  "id": "v23-zh-052",
+  "lang": "zh",
+  "script": "trad",
+  "group": "v23-zh",
+  "input": "iPhone十七pro",
+  "expect": [
+   "iPhone十七pro"
+  ],
+  "keep": true
+ },
+ {
+  "id": "v23-zh-053",
+  "lang": "zh",
+  "script": "trad",
+  "group": "v23-zh",
+  "input": "iPhone二五Pro",
+  "expect": [
+   "iPhone25Pro"
+  ],
+  "keep": false
+ },
+ {
+  "id": "v23-zh-054",
+  "lang": "zh",
+  "script": "trad",
+  "group": "v23-zh",
+  "input": "Q零三Revenue",
+  "expect": [
+   "Q03Revenue"
+  ],
+  "keep": false
+ },
+ {
+  "id": "v23-zh-055",
+  "lang": "zh",
+  "script": "trad",
+  "group": "v23-zh",
+  "input": "Q一二三Revenue",
+  "expect": [
+   "Q123Revenue"
+  ],
+  "keep": false
+ },
+ {
+  "id": "v23-zh-056",
+  "lang": "zh",
+  "script": "trad",
+  "group": "v23-zh",
+  "input": "FY二五budget",
+  "expect": [
+   "FY25budget"
+  ],
+  "keep": false
+ },
+ {
+  "id": "v23-zh-057",
+  "lang": "zh",
+  "script": "trad",
+  "group": "v23-zh",
+  "input": "fy二五budget",
+  "expect": [
+   "fy二五budget"
+  ],
+  "keep": true
+ },
+ {
+  "id": "v23-zh-058",
+  "lang": "zh",
+  "script": "trad",
+  "group": "v23-zh",
+  "input": "iPhone三GB",
+  "expect": [
+   "iPhone3GB"
+  ],
+  "keep": false
+ },
+ {
+  "id": "v23-zh-059",
+  "lang": "zh",
+  "script": "trad",
+  "group": "v23-zh",
+  "input": "PM三點Call你",
+  "expect": [
+   "PM三點Call你"
+  ],
+  "keep": true
+ },
+ {
+  "id": "v23-zh-060",
+  "lang": "zh",
+  "script": "simp",
+  "group": "v23-zh",
+  "input": "PM三点Call你",
+  "expect": [
+   "PM三点Call你"
+  ],
+  "keep": true
+ },
+ {
+  "id": "v23-zh-061",
+  "lang": "zh",
+  "script": "trad",
+  "group": "v23-zh",
+  "input": "PM三點半Call你",
+  "expect": [
+   "PM3:30Call你"
+  ],
+  "keep": false
+ },
+ {
+  "id": "v23-zh-062",
+  "lang": "zh",
+  "script": "simp",
+  "group": "v23-zh",
+  "input": "PM三点半Call你",
+  "expect": [
+   "PM3:30Call你"
+  ],
+  "keep": false
+ },
+ {
+  "id": "v23-zh-063",
+  "lang": "zh",
+  "script": "trad",
+  "group": "v23-zh",
+  "input": "PM三點十分Call你",
+  "expect": [
+   "PM3:10Call你"
+  ],
+  "keep": false
+ },
+ {
+  "id": "v23-zh-064",
+  "lang": "zh",
+  "script": "simp",
+  "group": "v23-zh",
+  "input": "PM三点十分Call你",
+  "expect": [
+   "PM3:10Call你"
+  ],
+  "keep": false
+ },
+ {
+  "id": "v23-zh-065",
+  "lang": "zh",
+  "script": "trad",
+  "group": "v23-zh",
+  "input": "下午PM三點Call你",
+  "expect": [
+   "下午PM3點Call你"
+  ],
+  "keep": false
+ },
+ {
+  "id": "v23-zh-066",
+  "lang": "zh",
+  "script": "simp",
+  "group": "v23-zh",
+  "input": "下午PM三点Call你",
+  "expect": [
+   "下午PM3点Call你"
+  ],
+  "keep": false
+ },
+ {
+  "id": "v23-en-001",
+  "lang": "zh",
+  "script": "trad",
+  "group": "v23-en",
+  "input": "這個Deal大概Five Million美金",
+  "expect": [
+   "這個Deal大概5 million美金"
+  ],
+  "keep": false
+ },
+ {
+  "id": "v23-en-002",
+  "lang": "zh",
+  "script": "trad",
+  "group": "v23-en",
+  "input": "我需要Twenty份copies",
+  "expect": [
+   "我需要20份copies"
+  ],
+  "keep": false
+ },
+ {
+  "id": "v23-en-003",
+  "lang": "zh",
+  "script": "trad",
+  "group": "v23-en",
+  "input": "下午Three Thirty的Meeting改到四點半",
+  "expect": [
+   "下午3:30的Meeting改到4:30"
+  ],
+  "keep": false
+ },
+ {
+  "id": "v23-en-004",
+  "lang": "zh",
+  "script": "trad",
+  "group": "live-2026-11-02",
+  "input": "這個Deal大概Five Million美金，我需要Twenty份copies。下午Three thirty的meeting改到四點半。Q三Revenue成長百分之十二。",
+  "expect": [
+   "這個Deal大概5 million美金，我需要Twenty份copies。下午3:30的meeting改到4:30。Q3Revenue成長12%。"
+  ],
+  "keep": false
+ },
+ {
+  "id": "v23-en-005",
+  "lang": "zh",
+  "script": "trad",
+  "group": "v23-en",
+  "input": "我需要Twenty Copies",
+  "expect": [
+   "我需要20 Copies"
+  ],
+  "keep": false
+ },
+ {
+  "id": "v23-en-006",
+  "lang": "zh",
+  "script": "trad",
+  "group": "v23-en",
+  "input": "我很喜歡Twenty One Pilots",
+  "expect": [
+   "我很喜歡Twenty One Pilots"
+  ],
+  "keep": true
+ },
+ {
+  "id": "v23-en-007",
+  "lang": "zh",
+  "script": "trad",
+  "group": "v23-en",
+  "input": "他是Forty Two Club的會員",
+  "expect": [
+   "他是Forty Two Club的會員"
+  ],
+  "keep": true
+ },
+ {
+  "id": "v23-en-008",
+  "lang": "zh",
+  "script": "trad",
+  "group": "v23-en",
+  "input": "這個Deal大概Twenty Copies",
+  "expect": [
+   "這個Deal大概Twenty Copies"
+  ],
+  "keep": true
+ },
+ {
+  "id": "v23-en-009",
+  "lang": "en",
+  "script": "trad",
+  "group": "v23-en",
+  "input": "Twenty One Pilots played last night.",
+  "expect": [
+   "Twenty One Pilots played last night."
+  ],
+  "keep": true
+ },
+ {
+  "id": "v23-en-010",
+  "lang": "en",
+  "script": "trad",
+  "group": "v23-en",
+  "input": "BUY Forty-Five THOUSAND Dollars NOW",
+  "expect": [
+   "BUY Forty-Five THOUSAND Dollars NOW"
+  ],
+  "keep": true
+ },
+ {
+  "id": "v23-en-011",
+  "lang": "en",
+  "script": "trad",
+  "group": "v23-en",
+  "input": "It was a thirty-second clip.",
+  "expect": [
+   "It was a 30-second clip."
+  ],
+  "keep": false
+ },
+ {
+  "id": "v23-en-012",
+  "lang": "en",
+  "script": "trad",
+  "group": "v23-en",
+  "input": "thirty-second clips",
+  "expect": [
+   "30-second clips"
+  ],
+  "keep": false
+ },
+ {
+  "id": "v23-en-013",
+  "lang": "en",
+  "script": "trad",
+  "group": "v23-en",
+  "input": "a sixty-second timer",
+  "expect": [
+   "a 60-second timer"
+  ],
+  "keep": false
+ },
+ {
+  "id": "v23-en-014",
+  "lang": "en",
+  "script": "trad",
+  "group": "v23-en",
+  "input": "a ninety-second ad spot",
+  "expect": [
+   "a 90-second ad spot"
+  ],
+  "keep": false
+ },
+ {
+  "id": "v23-en-015",
+  "lang": "en",
+  "script": "trad",
+  "group": "v23-en",
+  "input": "a forty-five-second delay",
+  "expect": [
+   "a 45-second delay"
+  ],
+  "keep": false
+ },
+ {
+  "id": "v23-en-016",
+  "lang": "en",
+  "script": "trad",
+  "group": "v23-en",
+  "input": "a twenty-second birthday party",
+  "expect": [
+   "a 22nd birthday party"
+  ],
+  "keep": false
+ },
+ {
+  "id": "v23-en-017",
+  "lang": "en",
+  "script": "trad",
+  "group": "v23-en",
+  "input": "a twenty-second anniversary",
+  "expect": [
+   "a 22nd anniversary"
+  ],
+  "keep": false
+ },
+ {
+  "id": "v23-en-018",
+  "lang": "en",
+  "script": "trad",
+  "group": "v23-en",
+  "input": "the twenty-second of May",
+  "expect": [
+   "the 22nd of May"
+  ],
+  "keep": false
+ },
+ {
+  "id": "v23-en-019",
+  "lang": "en",
+  "script": "trad",
+  "group": "v23-en",
+  "input": "She came in thirty-second.",
+  "expect": [
+   "She came in 32nd."
+  ],
+  "keep": false
+ },
+ {
+  "id": "v23-en-020",
+  "lang": "en",
+  "script": "trad",
+  "group": "v23-en",
+  "input": "the thirty-second floor",
+  "expect": [
+   "the 32nd floor"
+  ],
+  "keep": false
+ },
+ {
+  "id": "v23-en-021",
+  "lang": "en",
+  "script": "trad",
+  "group": "v23-en",
+  "input": "the thirty-second president",
+  "expect": [
+   "the 32nd president"
+  ],
+  "keep": false
+ },
+ {
+  "id": "live-A",
+  "lang": "zh",
+  "script": "trad",
+  "group": "live-2026-11-02",
+  "input": "我等一下再打給你，你千萬不要忘記帶鑰匙。他一個人住，週末一起看電影，這是一個獨一無二的機會，真的是九死一生。我有十足的把握，這件事一五一十跟你說。萬一下雨就改天，三心二意不好。路易十六是法國國王，五月天今天開演唱會。我只要一點點糖，下禮拜三再說。這件事十萬火急，大家十分重視。他欺負別人還不負責任。",
+  "expect": [
+   "我等一下再打給你，你千萬不要忘記帶鑰匙。他一個人住，週末一起看電影，這是一個獨一無二的機會，真的是九死一生。我有十足的把握，這件事一五一十跟你說。萬一下雨就改天，三心二意不好。路易十六是法國國王，五月天今天開演唱會。我只要一點點糖，下禮拜三再說。這件事十萬火急，大家十分重視。他欺負別人還不負責任。"
+  ],
+  "keep": true
+ },
+ {
+  "id": "live-B",
+  "lang": "zh",
+  "script": "trad",
+  "group": "live-2026-11-02",
+  "input": "我買了兩杯咖啡和一塊蛋糕。會議室裡有三個人，桌上放了五本書。我們需要兩到三個禮拜。他排第三名，我是第一次來。",
+  "expect": [
+   "我買了兩杯咖啡和一塊蛋糕。會議室裡有三個人，桌上放了五本書。我們需要兩到三個禮拜。他排第三名，我是第一次來。"
+  ],
+  "keep": true
+ },
+ {
+  "id": "live-C",
+  "lang": "zh",
+  "script": "trad",
+  "group": "live-2026-11-02",
+  "input": "我等一下要訂十二個便當。報名人數已經超過兩千三百人。一年有三百六十五天，我們在八十九樓開會。",
+  "expect": [
+   "我等一下要訂12個便當。報名人數已經超過2300人。一年有365天，我們在89樓開會。"
+  ],
+  "keep": false
+ },
+ {
+  "id": "live-D",
+  "lang": "zh",
+  "script": "trad",
+  "group": "live-2026-11-02",
+  "input": "這杯咖啡五十五塊，便當一百二十元，房租三萬一個月，押金兩個月，三十塊一杯，五百塊一個。這個三塊八，那個五塊五毛，一塊美金大概三十塊臺幣，預算大概三萬五到四萬之間。",
+  "expect": [
+   "這杯咖啡55塊，便當120元，房租3萬一個月，押金兩個月，30塊一杯，500塊一個。這個3.8塊，那個5.5塊，1塊美金大概30塊臺幣，預算大概3.5萬到4萬之間。"
+  ],
+  "keep": false
+ },
+ {
+  "id": "live-E",
+  "lang": "zh",
+  "script": "trad",
+  "group": "live-2026-11-02",
+  "input": "這台筆電四萬五千塊，這件案子大概三千萬，明年目標一億兩千萬。他年薪十二萬三千，獎金十五萬。老闆說三千萬不夠，至少要五千萬。這間公司營收十億，賬上多了一萬零五塊，大概幾十萬吧，差不多五六百萬。",
+  "expect": [
+   "這台筆電4.5萬塊，這件案子大概3000萬，明年目標1.2億。他年薪12.3萬，獎金15萬。老闆說3000萬不夠，至少要5000萬。這間公司營收10億，賬上多了10005塊，大概幾十萬吧，差不多五六百萬。"
+  ],
+  "keep": false
+ },
+ {
+  "id": "live-F",
+  "lang": "zh",
+  "script": "trad",
+  "group": "live-2026-11-02",
+  "input": "毛利率是百分之四十三點二，年增率負百分之三點五。這個bug影響了大概百分之五的users。我有百分之百的把握，明天體感負五度。",
+  "expect": [
+   "毛利率是43.2%，年增率-3.5%。這個bug影響了大概5%的users。我有百分之百的把握，明天體感-5度。"
+  ],
+  "keep": false
+ },
+ {
+  "id": "live-G",
+  "lang": "zh",
+  "script": "trad",
+  "group": "live-2026-11-02",
+  "input": "他跑了四十二點一九五公里，差了零點三秒。這臺手機六點七寸，外面三十二度，體溫三十八度五。我瘦了三公斤，等了十五分鐘。圓周率大概三點一四。",
+  "expect": [
+   "他跑了42.195公里，差了0.3秒。這臺手機6.7寸，外面32度，體溫38.5度。我瘦了3公斤，等了15分鐘。圓周率大概3.14。"
+  ],
+  "keep": false
+ },
+ {
+  "id": "live-H",
+  "lang": "zh",
+  "script": "trad",
+  "group": "live-2026-11-02",
+  "input": "下禮拜三下午三點半開會。明天早上九點十五分要交。我七點五十分到，你七點半到。下午兩點零五出發。我們三點一刻見。營業時間是七點到九點。三點不對，四點半開會。",
+  "expect": [
+   "下禮拜三下午3:30開會。明天早上9:15要交。我7:50到，你7:30到。下午2:05出發。我們3:15見。營業時間是7點到9點。三點不對，4:30開會。"
+  ],
+  "keep": false
+ },
+ {
+  "id": "live-I",
+  "lang": "zh",
+  "script": "trad",
+  "group": "live-2026-11-02",
+  "input": "統一發票十月二十五號開獎，演唱會在十二月三十一日號。我是一九九零年出生，今年三十六歲。二零二六年是二十一世紀。九二一地震已經過了二十七年。",
+  "expect": [
+   "統一發票10月25號開獎，演唱會在12月31日號。我是1990年出生，今年36歲。2026年是21世紀。921地震已經過了27年。"
+  ],
+  "keep": false
+ },
+ {
+  "id": "live-L",
+  "lang": "zh",
+  "script": "trad",
+  "group": "live-2026-11-02",
+  "input": "新版本是零點五點十六。iPhone十七跟Pixel十哪個好？臺積電N二製成的兩率比N三好？Sprint二十三要在十一月五號前結束。我買了iPad一臺。",
+  "expect": [
+   "新版本是0.5.16。iPhone17跟Pixel10哪個好？臺積電N2製成的兩率比N3好？Sprint23要在11月5號前結束。我買了iPad一臺。"
+  ],
+  "keep": false
+ },
+ {
+  "id": "live-O",
+  "lang": "en",
+  "script": "trad",
+  "group": "live-2026-11-02",
+  "input": "I need free coffee's, and this is a one of fix. One of the two options is fine. Give me a second. I'm on cloud nine. She finished third. Twenty-one pilots played last night. He was their thirty-second clip.",
+  "expect": [
+   "I need free coffee's, and this is a one of fix. One of the two options is fine. Give me a second. I'm on cloud nine. She finished third. 21 pilots played last night. He was their 30-second clip."
+  ],
+  "keep": false
+ },
+ {
+  "id": "live-P",
+  "lang": "en",
+  "script": "trad",
+  "group": "live-2026-11-02",
+  "input": "I need twelve folders. About thirty or forty people came. We sold two point three million units. Re pages ten and twelve.",
+  "expect": [
+   "I need 12 folders. About 30 or 40 people came. We sold 2.3 million units. Re pages 10 and 12."
+  ],
+  "keep": false
+ },
+ {
+  "id": "live-Q",
+  "lang": "en",
+  "script": "trad",
+  "group": "live-2026-11-02",
+  "input": "It costs about forty-five thousand dollars. Lunch was five dollars and fifty cents. Tickets are five to ten dollars. Revenue grew twelve point five percent.",
+  "expect": [
+   "It costs about $45,000. Lunch was $5.50. Tickets are $5 to $10. Revenue grew 12.5%."
+  ],
+  "keep": false
+ },
+ {
+  "id": "live-S",
+  "lang": "en",
+  "script": "trad",
+  "group": "live-2026-11-02",
+  "input": "My number is zero nine one two three four five six seven eight version zero point five point sixteen is out. The room number is four zero one.",
+  "expect": [
+   "My number is 0912345678 version 0.5.16 is out. The room number is 401."
+  ],
+  "keep": false
  }
 ]
