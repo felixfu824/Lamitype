@@ -1666,11 +1666,11 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     }
 
     private func unloadModel() async {
-        LocalModelSwitcher.shared.cancel()
         guard state == .idle else {
             print("[Lamitype] Cannot unload - state is \(state)")
             return
         }
+        LocalModelSwitcher.shared.cancel()
         // Block dictation while a local-caption backend drains. The status
         // row stays unchanged until the final unloaded/idle transition.
         state = .loading
