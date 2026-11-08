@@ -2547,6 +2547,10 @@ extension AppDelegate {
         liveRecoveryWindow.onRetry = { [weak self] in
             guard let self else { return }
             guard self.state == .idle || self.state == .unloaded else { return }
+            guard !LocalModelSwitcher.shared.refusesLocalRequests else {
+                self.showModelSwitchNotice()
+                return
+            }
             if self.liveDictation?.retry() == true { self.liveRecoveryWindow.working = true }
         }
         liveRecoveryWindow.onSave = { [weak self] in self?.saveLiveRecoveryAudio() }
