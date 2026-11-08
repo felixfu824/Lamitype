@@ -58,7 +58,10 @@ final class LiveQwenRecognizer {
     static func loadTokenizer(modelID: String) throws -> Qwen3Tokenizer {
         let root = FileManager.default.urls(for: .cachesDirectory, in: .userDomainMask)[0]
             .appendingPathComponent("qwen3-speech")
-        let candidates = [root.appendingPathComponent("models").appendingPathComponent(modelID),
+        // A local model folder (Optimized before its public download) holds its own vocab.json.
+        let localFolder = modelID.hasPrefix("/") || modelID.hasPrefix("~")
+            ? [URL(fileURLWithPath: (modelID as NSString).expandingTildeInPath, isDirectory: true)] : []
+        let candidates = localFolder + [root.appendingPathComponent("models").appendingPathComponent(modelID),
                           root.appendingPathComponent(Qwen3ASRModel.sanitizedCacheKey(for: modelID))]
         guard let directory = candidates.first(where: {
             FileManager.default.fileExists(atPath: $0.appendingPathComponent("vocab.json").path)

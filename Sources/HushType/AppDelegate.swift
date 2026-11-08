@@ -238,6 +238,12 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         MLX.Memory.cacheLimit = 1024 * 1024 * 1024  // 1 GB
 
         localEngine = Qwen3TranscriptionEngine()
+        LocalModelSwitcher.shared.engine = localEngine
+        LocalModelSwitcher.shared.isBusy = { [weak self] in
+            guard let self else { return true }
+            let quiet = self.state == .idle || self.state == .unloaded
+            return !quiet || LocalLiveOwnership.isBusy || self.liveCaptionManager?.isActive == true
+        }
         statusBar = StatusBarController(localEngine: localEngine)
         hotkeyManager = HotkeyManager()
         #if DEBUG
@@ -407,6 +413,13 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         // flow BEFORE we ever call CGEvent.tapCreate. If onboarding is needed,
         // it blocks via NSAlert and either quits or relaunches the app - in
         // either case the rest of startup never runs.
+        #if DEBUG
+        // Explicit model-switch QA launch: needs no hotkey or Accessibility.
+        if CommandLine.arguments.contains("--qa-model-switch") {
+            runModelSwitchQA()
+            return
+        }
+        #endif
         if OnboardingManager.runIfNeeded() {
             return
         }
@@ -2392,7 +2405,7 @@ extension AppDelegate {
         let initialEval = EvalCapturePolicy.decide(enabled: AppConfig.shared.evalModeEnabled,
             secureInput: SecureInputProbe.isActive(), targetBundleID: target.application?.bundleIdentifier,
             excludedBundleIDs: AppConfig.shared.autoPolishExcludedBundleIDs) == .capture
-        let tokenizer = LiveSessionTokenizer(modelID: AppConfig.shared.modelId)
+        let tokenizer = LiveSessionTokenizer(modelID: localEngine.loadedModelID ?? AppConfig.shared.modelId)
         let session = LocalLiveDictationSession(capture: audioCapture) { [weak engine = localEngine] samples in
             guard let model = engine?.loadedModel else { throw LiveRecognitionError.unavailable }
             return try LiveQwenRecognizer(model: model, tokenizer: try tokenizer.load()).transcribe(audio: samples, language: language, maxTokens: 1024)
@@ -2592,6 +2605,85 @@ extension AppDelegate {
 
 #if DEBUG
 extension AppDelegate {
+    /// `--qa-model-switch --qa-output <file.json> --qa-audio <wav>`: loads the
+    /// saved local model, switches Fast → Optimized → Fast through
+    /// LocalModelSwitcher, transcribes the clip after each step and during a
+    /// switch, checks the busy refusal and the menu items, writes the
+    /// results and quits. Release builds do not contain it.
+    func runModelSwitchQA() {
+        let args = CommandLine.arguments
+        guard let outIndex = args.firstIndex(of: "--qa-output"), args.indices.contains(outIndex + 1),
+              let audioIndex = args.firstIndex(of: "--qa-audio"), args.indices.contains(audioIndex + 1) else {
+            NSApp.terminate(nil); return
+        }
+        let output = URL(fileURLWithPath: args[outIndex + 1])
+        let audioURL = URL(fileURLWithPath: args[audioIndex + 1])
+        let switcher = LocalModelSwitcher.shared
+        Task { @MainActor [self] in
+            var steps: [[String: Any]] = []
+            @MainActor func record(_ name: String, _ extra: [String: Any] = [:]) {
+                var row: [String: Any] = ["step": name, "loadedModelID": localEngine.loadedModelID ?? NSNull(),
+                    "savedChoice": AppConfig.shared.localModel.rawValue, "active": switcher.active.rawValue,
+                    "phase": String(describing: switcher.phase), "memoryMB": MemoryUtils.physFootprintMB(),
+                    "menu": statusBar.localModelMenuSnapshotForQA()]
+                row.merge(extra) { $1 }
+                steps.append(row)
+            }
+            @MainActor func transcribe() async -> [String: Any] {
+                let start = CFAbsoluteTimeGetCurrent()
+                let text = (try? await localEngine.transcribe(audio: Self.qaSamples(audioURL), language: AppConfig.shared.language)) ?? "<error>"
+                return ["text": text, "seconds": CFAbsoluteTimeGetCurrent() - start]
+            }
+            @MainActor func waitForSwitch() async -> [String] {
+                var seen: [String] = []
+                for _ in 0..<1200 {
+                    if let status = switcher.statusText, seen.last != status { seen.append(status) }
+                    if !switcher.isSwitching { break }
+                    try? await Task.sleep(nanoseconds: 50_000_000)
+                }
+                return seen
+            }
+            do {
+                state = .loading
+                let loadStart = CFAbsoluteTimeGetCurrent()
+                try await localEngine.load()
+                state = .idle
+                statusBar.setState(.idle)
+                record("launch", ["loadSeconds": CFAbsoluteTimeGetCurrent() - loadStart, "transcript": await transcribe()])
+
+                state = .recording
+                record("busy-refusal", ["selectReturned": switcher.select(.optimized)])
+                state = .idle
+
+                let start = CFAbsoluteTimeGetCurrent()
+                let started = switcher.select(.optimized)
+                let during = await transcribe()
+                record("during-switch-to-optimized", ["selectReturned": started, "transcript": during])
+                let statuses = await waitForSwitch()
+                record("after-switch-to-optimized", ["switchSeconds": CFAbsoluteTimeGetCurrent() - start,
+                    "statusLines": statuses, "transcript": await transcribe()])
+
+                let backStart = CFAbsoluteTimeGetCurrent()
+                record("switch-back-started", ["selectReturned": switcher.select(.fast)])
+                let backStatuses = await waitForSwitch()
+                record("after-switch-to-fast", ["switchSeconds": CFAbsoluteTimeGetCurrent() - backStart,
+                    "statusLines": backStatuses, "transcript": await transcribe()])
+            } catch {
+                record("error", ["error": String(describing: error)])
+            }
+            let data = try? JSONSerialization.data(withJSONObject: ["steps": steps], options: [.prettyPrinted, .sortedKeys])
+            try? data?.write(to: output, options: .atomic)
+            NSApp.terminate(nil)
+        }
+    }
+
+    private static func qaSamples(_ url: URL) -> [Float] {
+        guard let file = try? AVAudioFile(forReading: url),
+              let buffer = AVAudioPCMBuffer(pcmFormat: file.processingFormat, frameCapacity: AVAudioFrameCount(file.length)),
+              (try? file.read(into: buffer)) != nil, let channel = buffer.floatChannelData?[0] else { return [] }
+        return Array(UnsafeBufferPointer(start: channel, count: Int(buffer.frameLength)))
+    }
+
     /// Explicit native-test launch is absent from release; ordinary launches never run it.
     func runNativeE2EWhenReady() {
         if CommandLine.arguments.contains("--native-cap-reminder-e2e") {

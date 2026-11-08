@@ -179,6 +179,11 @@ struct DictationPane: View {
             }
             .padding(.bottom, 8)
 
+            SettingsRow(L10n.string("settings.dictation.local_model", fallback: "Local model:")) {
+                LocalModelPicker(switcher: LocalModelSwitcher.shared, enabled: model.engine == .local)
+            }
+            .padding(.bottom, 8)
+
             SettingsRow {
                 VStack(alignment: .leading, spacing: 4) {
                     Toggle(L10n.string("live.toggle", fallback: "Live preview (Experimental)"), isOn: Binding(

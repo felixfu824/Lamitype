@@ -39,6 +39,9 @@ final class Qwen3TranscriptionEngine: TranscriptionEngine {
     private var loadGeneration: UInt = 0
     private var progressHandlers: [UUID: (Double, String) -> Void] = [:]
     private var latestProgress: (Double, String)?
+    private var currentModelID: String?
+    private var inFlightModelID: String?
+    private var switching = false
 
     private struct PreparedLoad {
         let task: Task<Qwen3ASRModel, Error>
@@ -59,6 +62,64 @@ final class Qwen3TranscriptionEngine: TranscriptionEngine {
         loadLock.lock()
         defer { loadLock.unlock() }
         return model
+    }
+
+    /// Model ID or local folder of the loaded model; nil while unloaded.
+    var loadedModelID: String? {
+        loadLock.lock()
+        defer { loadLock.unlock() }
+        return model == nil ? nil : currentModelID
+    }
+
+    enum SwitchError: Error, Equatable {
+        case notLoaded
+        case busy
+    }
+
+    /// Loads `modelID` beside the current model and swaps it in only after
+    /// the load succeeds, so dictation keeps the current model meanwhile and
+    /// a failed or cancelled load leaves it in place. Unloading during the
+    /// switch cancels it.
+    func switchModel(
+        to modelID: String,
+        progressHandler: ((Double, String) -> Void)? = nil
+    ) async throws {
+        let generation = try beginSwitch()
+        defer { endSwitch() }
+        log.info("Switching model to: \(modelID)")
+        let newModel = try await Qwen3ASRModel.fromPretrained(
+            modelId: modelID,
+            progressHandler: progressHandler
+        )
+        try Task.checkCancellation()
+        guard commitSwitch(newModel, modelID: modelID, generation: generation) else {
+            throw CancellationError()
+        }
+        log.info("Model switched")
+    }
+
+    private func beginSwitch() throws -> UInt {
+        loadLock.lock()
+        defer { loadLock.unlock() }
+        guard model != nil else { throw SwitchError.notLoaded }
+        guard inFlightLoad == nil, !switching else { throw SwitchError.busy }
+        switching = true
+        return loadGeneration
+    }
+
+    private func endSwitch() {
+        loadLock.lock()
+        switching = false
+        loadLock.unlock()
+    }
+
+    private func commitSwitch(_ newModel: Qwen3ASRModel, modelID: String, generation: UInt) -> Bool {
+        loadLock.lock()
+        defer { loadLock.unlock() }
+        guard generation == loadGeneration, model != nil else { return false }
+        model = newModel
+        currentModelID = modelID
+        return true
     }
 
     func load(progressHandler: ((Double, String) -> Void)? = nil) async throws {
@@ -115,6 +176,7 @@ final class Qwen3TranscriptionEngine: TranscriptionEngine {
         let modelId = AppConfig.shared.modelId
         let generation = loadGeneration
         inFlightGeneration = generation
+        inFlightModelID = modelId
         log.info("Loading model: \(modelId)")
         let task = Task { [weak self] in
             try await Qwen3ASRModel.fromPretrained(
@@ -144,6 +206,7 @@ final class Qwen3TranscriptionEngine: TranscriptionEngine {
             return false
         }
         model = loadedModel
+        currentModelID = inFlightModelID
         if inFlightLoad != nil && inFlightGeneration == generation {
             inFlightLoad = nil
             progressHandlers.removeAll()

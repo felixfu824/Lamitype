@@ -11,6 +11,8 @@ final class AppConfig {
     private enum Keys {
         static let language = "hushtype.language"
         static let modelId = "hushtype.modelId"
+        static let localModel = "hushtype.localModel"
+        static let optimizedModelPath = "hushtype.optimizedModelPath"
         static let chineseConversionEnabled = "hushtype.chineseConversionEnabled"
         static let floatingOverlayEnabled = "hushtype.floatingOverlayEnabled"
         static let onboardingCompleted = "hushtype.onboardingCompleted"
@@ -124,9 +126,51 @@ final class AppConfig {
         }
     }
 
-    /// HuggingFace model ID for Qwen3-ASR.
+    /// Local Qwen3-ASR weights. Both are the 0.6B model at the same weight
+    /// size; Optimized uses per-module 6/8-bit precision instead of 4-bit.
+    enum LocalModel: String, CaseIterable, Equatable, Sendable {
+        case fast
+        case optimized
+
+        /// The Optimized repository is not public yet; until it is, set
+        /// `hushtype.optimizedModelPath` to a local folder to test it.
+        var huggingFaceID: String {
+            switch self {
+            case .fast: return "aufklarer/Qwen3-ASR-0.6B-MLX-4bit"
+            case .optimized: return "felixfu824/Qwen3-ASR-0.6B-MLX-mixed-6-8bit"
+            }
+        }
+
+        var downloadMB: Int {
+            switch self {
+            case .fast: return 708
+            case .optimized: return 706
+            }
+        }
+    }
+
+    /// The local model in use. Changed only after the new model has loaded.
+    var localModel: LocalModel {
+        get { defaults.string(forKey: Keys.localModel).flatMap(LocalModel.init(rawValue:)) ?? .fast }
+        set {
+            defaults.set(newValue.rawValue, forKey: Keys.localModel)
+            log.info("Local model set to: \(newValue.rawValue, privacy: .public)")
+        }
+    }
+
+    /// Hugging Face ID or local folder that loads for `model`.
+    func modelSource(for model: LocalModel) -> String {
+        if model == .optimized,
+           let path = defaults.string(forKey: Keys.optimizedModelPath), !path.isEmpty {
+            return path
+        }
+        return model.huggingFaceID
+    }
+
+    /// Model ID or local folder for Qwen3-ASR. An explicit `hushtype.modelId`
+    /// (developer and test override) wins over the Local model choice.
     var modelId: String {
-        get { defaults.string(forKey: Keys.modelId) ?? "aufklarer/Qwen3-ASR-0.6B-MLX-4bit" }
+        get { defaults.string(forKey: Keys.modelId) ?? modelSource(for: localModel) }
         set { defaults.set(newValue, forKey: Keys.modelId) }
     }
 
