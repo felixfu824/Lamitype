@@ -193,18 +193,17 @@ final class LocalModelSwitchTests: XCTestCase {
 
     func testImmediateReselectAfterCancelWaitsForOldTask() async throws {
         let switcher = fakeSwitcher()
-        var enteredDownload = false
-        switcher.download = { _, _ in
-            enteredDownload = true
-            try await Task.sleep(nanoseconds: 5_000_000_000)
-        }
+        let probe = BlockingSwapProbe()
+        switcher.loadAndSwap = { _, _ in try await probe.run() }
         XCTAssertTrue(switcher.select(.optimized))
-        try await waitFor { enteredDownload }
+        try await waitFor { probe.firstStarted }
         switcher.cancel()
-        switcher.download = { _, _ in }
-        switcher.loadAndSwap = { _, _ in }
         XCTAssertTrue(switcher.select(.optimized))
+        try await Task.sleep(nanoseconds: 20_000_000)
+        XCTAssertEqual(probe.attempts, 1, "The new switch must await the old loader")
+        probe.releaseFirst()
         try await waitFor { switcher.phase == .idle }
+        XCTAssertEqual(probe.attempts, 2)
         XCTAssertEqual(config.localModel, .optimized)
     }
 
@@ -244,4 +243,27 @@ final class LocalModelSwitchTests: XCTestCase {
         XCTAssertEqual(config.localModel, .fast)
     }
 
+}
+
+@MainActor
+private final class BlockingSwapProbe {
+    private var release: CheckedContinuation<Void, Never>?
+    private var running = false
+    private(set) var attempts = 0
+    var firstStarted: Bool { release != nil }
+
+    func run() async throws {
+        attempts += 1
+        if running { throw Qwen3TranscriptionEngine.SwitchError.busy }
+        running = true
+        if attempts == 1 {
+            await withCheckedContinuation { release = $0 }
+        }
+        running = false
+    }
+
+    func releaseFirst() {
+        release?.resume()
+        release = nil
+    }
 }

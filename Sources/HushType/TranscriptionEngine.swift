@@ -31,19 +31,39 @@ enum TranscriptionError: Error, Equatable, Sendable {
 
 // MARK: - Qwen3 Implementation
 
-final class Qwen3TranscriptionEngine: TranscriptionEngine {
-    static func canCommitSharedLoad<Model: AnyObject>(
-        waiterGeneration: UInt, currentGeneration: UInt,
-        installedModel: Model?, loadedModel: Model
-    ) -> Bool {
-        waiterGeneration == currentGeneration &&
-            (installedModel == nil || installedModel === loadedModel)
+/// Model pointer and generation, accessed only while the engine load lock is held.
+/// Kept generic so shared-load races can be tested without model weights.
+final class SharedModelCommitState<Model: AnyObject> {
+    private(set) var model: Model?
+    private(set) var generation: UInt = 0
+
+    func acceptLoad(_ loaded: Model, generation: UInt) -> Bool {
+        guard generation == self.generation,
+              model == nil || model === loaded else { return false }
+        model = loaded
+        return true
     }
+
+    func swap(_ loaded: Model, generation: UInt) -> Bool {
+        guard generation == self.generation, model != nil else { return false }
+        model = loaded
+        self.generation &+= 1
+        return true
+    }
+
+    func unload() {
+        model = nil
+        generation &+= 1
+    }
+}
+
+final class Qwen3TranscriptionEngine: TranscriptionEngine {
     private let loadLock = NSLock()
-    private var model: Qwen3ASRModel?
+    private let commits = SharedModelCommitState<Qwen3ASRModel>()
+    private var model: Qwen3ASRModel? { commits.model }
+    private var loadGeneration: UInt { commits.generation }
     private var inFlightLoad: Task<Qwen3ASRModel, Error>?
     private var inFlightGeneration: UInt = 0
-    private var loadGeneration: UInt = 0
     private var progressHandlers: [UUID: (Double, String) -> Void] = [:]
     private var latestProgress: (Double, String)?
     private var currentModelID: String?
@@ -129,10 +149,8 @@ final class Qwen3TranscriptionEngine: TranscriptionEngine {
     private func commitSwitch(_ newModel: Qwen3ASRModel, modelID: String, generation: UInt) -> Bool {
         loadLock.lock()
         defer { loadLock.unlock() }
-        guard generation == loadGeneration, model != nil else { return false }
-        model = newModel
+        guard commits.swap(newModel, generation: generation) else { return false }
         currentModelID = modelID
-        loadGeneration &+= 1
         return true
     }
 
@@ -242,16 +260,10 @@ final class Qwen3TranscriptionEngine: TranscriptionEngine {
     ) -> Bool {
         loadLock.lock()
         defer { loadLock.unlock() }
-        guard Self.canCommitSharedLoad(
-            waiterGeneration: generation,
-            currentGeneration: loadGeneration,
-            installedModel: model,
-            loadedModel: loadedModel
-        ) else {
+        guard commits.acceptLoad(loadedModel, generation: generation) else {
             if let handlerID { progressHandlers.removeValue(forKey: handlerID) }
             return false
         }
-        model = loadedModel
         currentModelID = inFlightModelID
         if inFlightLoad != nil && inFlightGeneration == generation {
             inFlightLoad = nil
@@ -333,12 +345,11 @@ final class Qwen3TranscriptionEngine: TranscriptionEngine {
 
     func unload() {
         loadLock.lock()
-        loadGeneration &+= 1
+        commits.unload()
         inFlightLoad?.cancel()
         inFlightLoad = nil
         progressHandlers.removeAll()
         latestProgress = nil
-        model = nil
         loadLock.unlock()
         log.info("Model unloaded")
     }
