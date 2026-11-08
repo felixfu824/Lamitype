@@ -1835,6 +1835,7 @@
 "menu.local_model.download_size" = "Download %1$ld MB";
 "status.model.downloading" = "Downloading model… %1$ld%%";
 "status.model.switching" = "Switching model…";
+"status.model.switching.heading" = "Please wait";
 "status.model.download_failed" = "Couldn’t download model";
 "status.model.load_failed" = "Couldn’t load model";
 "status.model.waiting" = "Waiting for dictation to finish…";

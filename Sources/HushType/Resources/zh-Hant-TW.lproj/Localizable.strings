@@ -1835,6 +1835,7 @@
 "menu.local_model.download_size" = "下載 %1$ld MB";
 "status.model.downloading" = "正在下載模型… %1$ld%%";
 "status.model.switching" = "正在切換模型…";
+"status.model.switching.heading" = "請稍候";
 "status.model.download_failed" = "無法下載模型";
 "status.model.load_failed" = "無法載入模型";
 "status.model.waiting" = "等待聽寫完成…";

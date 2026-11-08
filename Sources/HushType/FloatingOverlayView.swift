@@ -13,7 +13,7 @@ enum OverlayState: Equatable {
     case recording(level: Float, provider: String?)  // 0.0–1.0 RMS
     case transcribing(provider: String?)
     case polishing
-    /// Brief non-modal failure notice. The payload is already-localized plain
+    /// Brief non-modal notice. The payload is already-localized plain
     /// text, never a localization key and never Markdown.
     case notice(message: String, style: OverlayNoticeStyle = .failure)
 }
@@ -262,7 +262,7 @@ struct FloatingOverlayView: View {
         }
     }
 
-    /// Failure notice. Deliberately has no activity slot: no bars, ellipsis or
+    /// Transient notice. Deliberately has no activity slot: no bars, ellipsis or
     /// spinner, because nothing is being captured.
     private func noticeContent(message: String) -> some View {
         HStack(alignment: .top, spacing: 12) {
@@ -284,7 +284,7 @@ struct FloatingOverlayView: View {
             }
             .frame(maxWidth: .infinity, alignment: .leading)
         }
-        // Colour is never the only signal: the heading names the failure.
+        // Colour is never the only signal: the heading names the notice.
         .accessibilityElement(children: .combine)
         .accessibilityLabel("\(noticeHeading). \(message)")
     }

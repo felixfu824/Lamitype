@@ -11,6 +11,14 @@ private let autoPolishLog = Logger(subsystem: "com.felix.hushtype", category: "a
 /// Right Option is a tap below this threshold and a hold at or above it.
 private let dictationTapThreshold: TimeInterval = 0.3
 
+enum LocalModelGateNotice {
+    static func presentation() -> (message: String, style: OverlayNoticeStyle) {
+        let message = L10n.string("status.model.switching", fallback: "Switching model…")
+        let heading = L10n.string("status.model.switching.heading", fallback: "Please wait")
+        return (message, .information(heading: heading))
+    }
+}
+
 /// Pure tap-vs-hold decision for one Right Option press. A press whose capture
 /// failed is never a tap, however briefly it was held, so a failed press can
 /// never translate. Exactly 0.3 s is a HOLD.
@@ -548,12 +556,12 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         overlayState.liveNotice = nil
     }
 
-    // MARK: - Capture failure notice
+    // MARK: - Transient overlay notice
 
-    /// Show a non-modal failure notice in the floating HUD for 4 s.
+    /// Show a non-modal notice in the floating HUD for 4 s.
     ///
     /// Shown regardless of `floatingOverlayEnabled`: that preference governs
-    /// the routine Listening / Transcribing indicator, and a failure the user
+    /// the routine Listening / Transcribing indicator, and a notice the user
     /// cannot see is worse than an indicator they switched off.
     private func showOverlayNotice(message: String, style: OverlayNoticeStyle = .failure) {
         captureNoticeHideWork?.cancel()
@@ -1576,6 +1584,10 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
                 if mode == .local && LocalModelSwitcher.shared.refusesLocalRequests { self.showModelSwitchNotice(); return }
                 try await manager.start(source: source)
             } catch {
+                if mode == .local && LocalModelSwitcher.shared.refusesLocalRequests {
+                    self.showModelSwitchNotice()
+                    return
+                }
                 log.error("LiveCaption start failed: \(error.localizedDescription, privacy: .public)")
             }
         }
@@ -2404,7 +2416,8 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
 // MARK: - Experimental local live dictation
 extension AppDelegate {
     private func showModelSwitchNotice() {
-        showOverlayNotice(message: L10n.string("status.model.switching", fallback: "Switching model…"))
+        let notice = LocalModelGateNotice.presentation()
+        showOverlayNotice(message: notice.message, style: notice.style)
     }
     private func showLiveCaptionConflict() {
         overlayState.liveNotice = L10n.string("live.caption.blocked", fallback: "Finish or cancel live dictation before starting or switching captions.")

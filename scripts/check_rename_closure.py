@@ -42,7 +42,7 @@ RULES = [
     Rule("stable test bundle identifiers", "Tests/HushTypeTests/*.swift", r"com\.felix\.hushtype(?:\.fixture)?", 2),
     Rule("module script references", "scripts/*", r"Sources/HushType", 6),
     Rule("bundle identifier", "Resources/Info.plist", r"com\.felix\.hushtype", 1),
-    Rule("catalog module paths", "Resources/LOCALIZATION_MANIFEST_zh-Hant-TW.json", r"Sources/HushType", 636),
+    Rule("catalog module paths", "Resources/LOCALIZATION_MANIFEST_zh-Hant-TW.json", r"Sources/HushType", 637),
     Rule("source logger subsystems", "Sources/HushType/*.swift", r'com\.felix\.hushtype', 58),
     Rule("stable defaults", "Sources/HushType/AppConfig.swift", r"hushtype\.[A-Za-z0-9.]+", 39),
     Rule("localization default comment", "Sources/HushType/Localization.swift", r"hushtype\.interfaceLanguage", 1),
