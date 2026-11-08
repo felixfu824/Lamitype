@@ -1836,6 +1836,10 @@
 "status.model.downloading" = "Downloading model… %1$ld%%";
 "status.model.switching" = "Switching model…";
 "status.model.download_failed" = "Couldn’t download model";
+"status.model.load_failed" = "Couldn’t load model";
+"status.model.waiting" = "Waiting for dictation to finish…";
+"settings.local_model.waiting" = "Waiting for dictation to finish…";
+"settings.local_model.load_failed" = "Couldn’t load the %1$@ model. Try again. Lamitype is still using %2$@.";
 "settings.dictation.local_model" = "Local model:";
 "settings.local_model.busy" = "Finish the current dictation before switching models.";
 "settings.local_model.fast.detail" = "Default · fastest";

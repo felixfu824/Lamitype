@@ -703,6 +703,8 @@ final class StatusBarController: NSObject, NSMenuDelegate, NSMenuItemValidation 
             return L10n.string("menu.local_model.switching", fallback: "Switching…")
         case .failed(let target) where target == model:
             return L10n.string("menu.local_model.failed", fallback: "Couldn’t download")
+        case .loadFailed(let target) where target == model:
+            return L10n.string("status.model.load_failed", fallback: "Couldn’t load model")
         default:
             guard model != switcher.active, !switcher.isOnDisk(model) else { return nil }
             return L10n.format("menu.local_model.download_size", "Download %1$ld MB", arguments: [model.downloadMB])

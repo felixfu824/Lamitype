@@ -119,6 +119,7 @@ final class Qwen3TranscriptionEngine: TranscriptionEngine {
         guard generation == loadGeneration, model != nil else { return false }
         model = newModel
         currentModelID = modelID
+        loadGeneration &+= 1
         return true
     }
 
@@ -228,7 +229,7 @@ final class Qwen3TranscriptionEngine: TranscriptionEngine {
     ) -> Bool {
         loadLock.lock()
         defer { loadLock.unlock() }
-        guard generation == loadGeneration else {
+        guard generation == loadGeneration, model == nil else {
             if let handlerID { progressHandlers.removeValue(forKey: handlerID) }
             return false
         }

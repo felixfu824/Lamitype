@@ -591,6 +591,11 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
 
     private func handleHotkeyPress() {
         livePhysicalKeyDown = true
+        if AppConfig.shared.dictationEngine == .local && LocalModelSwitcher.shared.refusesLocalRequests {
+            showModelSwitchNotice()
+            liveReminderIgnoredPress = true
+            return
+        }
         if LocalLivePreviewController.shared.isRequestPending {
             liveReminderIgnoredPress = true
             return
@@ -1530,6 +1535,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     /// For .translated mode we gate on the cloud-disclosure modal first.
     @MainActor
     private func startCaptionMode(_ mode: AppConfig.CaptionMode, source: AudioSourceKind) {
+        if mode == .local && LocalModelSwitcher.shared.refusesLocalRequests { showModelSwitchNotice(); return }
         guard !LocalLiveOwnership.isBusy else { showLiveCaptionConflict(); return }
         guard let manager = self.liveCaptionManager else {
             NSSound.beep()
@@ -1566,6 +1572,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
                 }
                 guard !LocalLiveOwnership.isBusy else { self.showLiveCaptionConflict(); return }
                 AppConfig.shared.liveCaptionEngine = targetEngine
+                if mode == .local && LocalModelSwitcher.shared.refusesLocalRequests { self.showModelSwitchNotice(); return }
                 try await manager.start(source: source)
             } catch {
                 log.error("LiveCaption start failed: \(error.localizedDescription, privacy: .public)")
@@ -1611,6 +1618,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     /// `SystemAudioPermissionFlow` first.
     @MainActor
     private func startCaptionModeOnSystemAudio(_ mode: AppConfig.CaptionMode, forcePicker: Bool) {
+        if mode == .local && LocalModelSwitcher.shared.refusesLocalRequests { showModelSwitchNotice(); return }
         guard !LocalLiveOwnership.isBusy else { showLiveCaptionConflict(); return }
         guard self.liveCaptionManager != nil else {
             NSSound.beep()
@@ -1657,6 +1665,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     }
 
     private func unloadModel() async {
+        LocalModelSwitcher.shared.cancel()
         guard state == .idle else {
             print("[Lamitype] Cannot unload - state is \(state)")
             return
@@ -1961,6 +1970,11 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         language: String?,
         insertionFocus: NSRunningApplication?
     ) async {
+        guard !LocalModelSwitcher.shared.refusesLocalRequests else {
+            showModelSwitchNotice()
+            await finishWithoutInsertion(restoreFocus: insertionFocus)
+            return
+        }
         do {
             if !localEngine.isLoaded {
                 state = .loading
@@ -2388,11 +2402,15 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
 
 // MARK: - Experimental local live dictation
 extension AppDelegate {
+    private func showModelSwitchNotice() {
+        showOverlayNotice(message: L10n.string("status.model.switching", fallback: "Switching model…"))
+    }
     private func showLiveCaptionConflict() {
         overlayState.liveNotice = L10n.string("live.caption.blocked", fallback: "Finish or cancel live dictation before starting or switching captions.")
     }
 
     private func beginLiveDictation() {
+        guard !LocalModelSwitcher.shared.refusesLocalRequests else { showModelSwitchNotice(); return }
         guard !SecureInputProbe.isActive(),
               !LocalLivePreviewController.shared.needsDefaultConfirmation,
               !LocalLivePreviewController.shared.isRequestPending else { return }

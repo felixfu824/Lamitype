@@ -92,7 +92,7 @@ final class LocalModelSwitchTests: XCTestCase {
         switcher.noteLoadFallback(failed: .optimized, using: .fast)
         XCTAssertEqual(switcher.active, .fast)
         XCTAssertEqual(switcher.shownSelection, .fast)
-        XCTAssertEqual(switcher.phase, .failed(.optimized))
+        XCTAssertEqual(switcher.phase, .loadFailed(.optimized))
         XCTAssertNotNil(switcher.statusText)
         XCTAssertEqual(config.localModel, .optimized, "The next launch tries the saved model again")
     }
@@ -126,4 +126,93 @@ final class LocalModelSwitchTests: XCTestCase {
             }
         }
     }
+
+    private func fakeSwitcher() -> LocalModelSwitcher {
+        let switcher = LocalModelSwitcher(config: config)
+        switcher.engine = Qwen3TranscriptionEngine()
+        switcher.hasLoadedModel = { _ in true }
+        switcher.download = { _, _ in }
+        return switcher
+    }
+
+    private func waitFor(_ condition: @escaping @MainActor () -> Bool) async throws {
+        for _ in 0..<100 {
+            if condition() { return }
+            try await Task.sleep(nanoseconds: 10_000_000)
+        }
+        XCTFail("Timed out waiting for switch state")
+    }
+
+    func testSwapWaitsForSessionThenClosesGate() async throws {
+        let switcher = fakeSwitcher()
+        var busy = false
+        switcher.isBusy = { busy }
+        switcher.loadAndSwap = { _, _ in
+            try await Task.sleep(nanoseconds: 100_000_000)
+        }
+        XCTAssertTrue(switcher.select(.optimized))
+        busy = true
+        try await waitFor { switcher.waitingForIdle }
+        XCTAssertEqual(switcher.active, .fast)
+        XCTAssertFalse(switcher.refusesLocalRequests)
+        busy = false
+        try await waitFor { switcher.refusesLocalRequests }
+        XCTAssertTrue(switcher.refusesLocalRequests)
+        try await waitFor { switcher.phase == .idle }
+        XCTAssertFalse(switcher.refusesLocalRequests)
+        XCTAssertEqual(config.localModel, .optimized)
+    }
+
+    func testCancelDuringDownloadKeepsChoice() async throws {
+        let switcher = fakeSwitcher()
+        var enteredDownload = false
+        switcher.download = { _, _ in
+            enteredDownload = true
+            try await Task.sleep(nanoseconds: 5_000_000_000)
+        }
+        XCTAssertTrue(switcher.select(.optimized))
+        try await waitFor { enteredDownload }
+        switcher.cancel()
+        try await Task.sleep(nanoseconds: 20_000_000)
+        XCTAssertEqual(switcher.active, .fast)
+        XCTAssertEqual(config.localModel, .fast)
+        XCTAssertFalse(switcher.refusesLocalRequests)
+    }
+
+    func testImmediateReselectAfterCancelWaitsForOldTask() async throws {
+        let switcher = fakeSwitcher()
+        var enteredDownload = false
+        switcher.download = { _, _ in
+            enteredDownload = true
+            try await Task.sleep(nanoseconds: 5_000_000_000)
+        }
+        XCTAssertTrue(switcher.select(.optimized))
+        try await waitFor { enteredDownload }
+        switcher.cancel()
+        switcher.download = { _, _ in }
+        switcher.loadAndSwap = { _, _ in }
+        XCTAssertTrue(switcher.select(.optimized))
+        try await waitFor { switcher.phase == .idle }
+        XCTAssertEqual(config.localModel, .optimized)
+    }
+
+    func testLoadFailureReopensGate() async throws {
+        let switcher = fakeSwitcher()
+        switcher.loadAndSwap = { _, _ in throw NSError(domain: "test", code: 1) }
+        XCTAssertTrue(switcher.select(.optimized))
+        try await waitFor { switcher.phase == .loadFailed(.optimized) }
+        XCTAssertFalse(switcher.refusesLocalRequests)
+        XCTAssertEqual(config.localModel, .fast)
+    }
+
+    func testGateTimeoutReopens() async throws {
+        let switcher = fakeSwitcher()
+        switcher.gateTimeoutNanoseconds = 20_000_000
+        switcher.loadAndSwap = { _, _ in try await Task.sleep(nanoseconds: 5_000_000_000) }
+        XCTAssertTrue(switcher.select(.optimized))
+        try await waitFor { switcher.phase == .loadFailed(.optimized) }
+        XCTAssertFalse(switcher.refusesLocalRequests)
+        XCTAssertEqual(config.localModel, .fast)
+    }
+
 }

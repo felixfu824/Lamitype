@@ -25,7 +25,9 @@ struct LocalModelPicker: View {
             case .switching(let target, _, let progress):
                 progressRow(target: target, progress: progress)
             case .failed(let target):
-                failureRow(target: target)
+                failureRow(target: target, loadFailure: false)
+            case .loadFailed(let target):
+                failureRow(target: target, loadFailure: true)
             case .idle:
                 EmptyView()
             }
@@ -89,7 +91,9 @@ struct LocalModelPicker: View {
                     .fixedSize()
                 } else {
                     ProgressView().controlSize(.small)
-                    Text(L10n.string("settings.local_model.loading", fallback: "Loading model…"))
+                    Text(switcher.waitingForIdle
+                         ? L10n.string("settings.local_model.waiting", fallback: "Waiting for dictation to finish…")
+                         : L10n.string("settings.local_model.loading", fallback: "Loading model…"))
                         .font(.caption)
                         .fixedSize()
                 }
@@ -108,14 +112,16 @@ struct LocalModelPicker: View {
         .padding(.leading, 20)
     }
 
-    private func failureRow(target: AppConfig.LocalModel) -> some View {
+    private func failureRow(target: AppConfig.LocalModel, loadFailure: Bool) -> some View {
         HStack(alignment: .top, spacing: 8) {
             Image(systemName: "exclamationmark.triangle")
                 .foregroundStyle(.orange)
                 .accessibilityHidden(true)
             Text(L10n.format(
-                "settings.local_model.failed",
-                "Couldn’t download the %1$@ model. Check your connection, then try again. Lamitype is still using %2$@.",
+                loadFailure ? "settings.local_model.load_failed" : "settings.local_model.failed",
+                loadFailure
+                    ? "Couldn’t load the %1$@ model. Try again. Lamitype is still using %2$@."
+                    : "Couldn’t download the %1$@ model. Check your connection, then try again. Lamitype is still using %2$@.",
                 arguments: [target.shortName, switcher.active.shortName]
             ))
             .font(.caption)

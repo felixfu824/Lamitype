@@ -1836,6 +1836,10 @@
 "status.model.downloading" = "正在下載模型… %1$ld%%";
 "status.model.switching" = "正在切換模型…";
 "status.model.download_failed" = "無法下載模型";
+"status.model.load_failed" = "無法載入模型";
+"status.model.waiting" = "等待聽寫完成…";
+"settings.local_model.waiting" = "等待聽寫完成…";
+"settings.local_model.load_failed" = "無法載入「%1$@」模型。請再試一次。Lamitype 仍在使用「%2$@」模型。";
 "settings.dictation.local_model" = "本機模型：";
 "settings.local_model.busy" = "請先完成目前的聽寫，再切換模型。";
 "settings.local_model.fast.detail" = "預設 · 最快";

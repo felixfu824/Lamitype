@@ -24,6 +24,7 @@ final class LocalModelSwitcher: ObservableObject {
         case idle
         case switching(to: AppConfig.LocalModel, downloading: Bool, progress: Double)
         case failed(AppConfig.LocalModel)
+        case loadFailed(AppConfig.LocalModel)
     }
 
     @Published private(set) var active: AppConfig.LocalModel
@@ -33,12 +34,26 @@ final class LocalModelSwitcher: ObservableObject {
 
     /// Wired by AppDelegate at launch.
     var engine: Qwen3TranscriptionEngine?
+    var hasLoadedModel: ((Qwen3TranscriptionEngine) -> Bool)?
     /// True while recording, transcribing, Live preview or Live Caption runs.
     var isBusy: () -> Bool = { false }
 
     private let config: AppConfig
     private var task: Task<Void, Never>?
+    private var previousTask: Task<Void, Never>?
+    private var downloadCompleted = false
     private var switchID = 0
+    private(set) var gateClosed = false
+    var download: (String, @escaping (Double) -> Void) async throws -> Void = { source, progress in
+        guard !source.hasPrefix("/") && !source.hasPrefix("~") else { return }
+        let cache = try HuggingFaceDownloader.getCacheDirectory(for: source)
+        try await HuggingFaceDownloader.downloadWeights(
+            modelId: source, to: cache,
+            additionalFiles: ["vocab.json", "merges.txt", "tokenizer_config.json"],
+            progressHandler: { fraction in progress(fraction) })
+    }
+    var loadAndSwap: ((Qwen3TranscriptionEngine, String) async throws -> Void)?
+    var gateTimeoutNanoseconds: UInt64 = 60_000_000_000
 
     init(config: AppConfig = .shared) {
         self.config = config
@@ -49,6 +64,8 @@ final class LocalModelSwitcher: ObservableObject {
         if case .switching = phase { return true }
         return false
     }
+
+    var refusesLocalRequests: Bool { gateClosed }
 
     /// The model the picker shows as chosen: the switch target while one runs.
     var shownSelection: AppConfig.LocalModel {
@@ -67,13 +84,14 @@ final class LocalModelSwitcher: ObservableObject {
         guard !isSwitching else { return false }
         if model == active {
             if case .failed = phase { phase = .idle }
+            if case .loadFailed = phase { phase = .idle }
             // After a launch fallback the saved choice can differ from the
             // model in use; choosing the model in use saves it.
             if config.localModel != model { commit(model) }
             return true
         }
         guard !isBusy() else { return false }
-        guard let engine, engine.isLoaded else {
+        guard let engine, hasLoadedModel?(engine) ?? engine.isLoaded else {
             // Nothing is loaded (unloaded, or a cloud engine): the next load uses the choice.
             commit(model)
             phase = .idle
@@ -83,24 +101,60 @@ final class LocalModelSwitcher: ObservableObject {
         switchID += 1
         let id = switchID
         let source = config.modelSource(for: model)
+        let priorTask = previousTask
+        downloadCompleted = false
         phase = .switching(to: model, downloading: !isOnDisk(model), progress: 0)
         task = Task { [weak self] in
+            guard let self else { return }
             do {
-                try await engine.switchModel(to: source) { progress, _ in
-                    Task { @MainActor in self?.updateProgress(progress, id: id) }
+                if let priorTask { await priorTask.value }
+                try Task.checkCancellation()
+                try await self.download(source) { progress in
+                    Task { @MainActor in self.updateProgress(progress * 0.8, id: id) }
                 }
-                self?.finish(model, id: id)
+                try Task.checkCancellation()
+                self.downloadCompleted = true
+                self.phase = .switching(to: model, downloading: false, progress: 0.8)
+                while self.isBusy() {
+                    if !self.waitingForIdle {
+                        self.waitingForIdle = true
+                        self.phase = .switching(to: model, downloading: false, progress: 0.8)
+                    }
+                    try await Task.sleep(nanoseconds: 50_000_000)
+                }
+                // MainActor owns both the idle test and gate close. No entry
+                // point can start a local session between these statements.
+                try Task.checkCancellation()
+                self.gateClosed = true
+                self.waitingForIdle = false
+                let timeout = Task { @MainActor [weak self] in
+                    do { try await Task.sleep(nanoseconds: self?.gateTimeoutNanoseconds ?? 60_000_000_000) }
+                    catch { return }
+                    guard let self, id == self.switchID, self.gateClosed else { return }
+                    self.cancelForTimeout(model, id: id)
+                }
+                defer { timeout.cancel(); self.gateClosed = false }
+                if let loadAndSwap = self.loadAndSwap {
+                    try await loadAndSwap(engine, source)
+                } else {
+                    try await engine.switchModel(to: source)
+                }
+                try Task.checkCancellation()
+                self.finish(model, id: id)
             } catch Qwen3TranscriptionEngine.SwitchError.notLoaded {
-                guard let self, id == self.switchID else { return }
+                guard id == self.switchID else { return }
                 self.commit(model)
                 self.phase = .idle
             } catch is CancellationError {
-                guard let self, id == self.switchID else { return }
+                guard id == self.switchID else { return }
+                self.phase = .idle
+            } catch Qwen3TranscriptionEngine.SwitchError.busy {
+                guard id == self.switchID else { return }
                 self.phase = .idle
             } catch {
                 log.error("Model switch failed: \(error.localizedDescription, privacy: .public)")
-                guard let self, id == self.switchID else { return }
-                self.phase = .failed(model)
+                guard id == self.switchID else { return }
+                self.phase = self.downloadCompleted ? .loadFailed(model) : .failed(model)
             }
         }
         return true
@@ -109,9 +163,24 @@ final class LocalModelSwitcher: ObservableObject {
     func cancel() {
         guard isSwitching else { return }
         switchID += 1
+        previousTask = task
         task?.cancel()
         task = nil
+        gateClosed = false
+        waitingForIdle = false
         phase = .idle
+    }
+
+    @Published private(set) var waitingForIdle = false
+
+    private func cancelForTimeout(_ model: AppConfig.LocalModel, id: Int) {
+        guard id == switchID else { return }
+        switchID += 1
+        task?.cancel()
+        task = nil
+        gateClosed = false
+        waitingForIdle = false
+        phase = .loadFailed(model)
     }
 
     /// Percentage of the download, or nil once loading has started.
@@ -127,12 +196,17 @@ final class LocalModelSwitcher: ObservableObject {
         case .idle:
             return nil
         case .switching:
+            if waitingForIdle {
+                return L10n.string("status.model.waiting", fallback: "Waiting for dictation to finish…")
+            }
             if let percent = downloadPercent {
                 return L10n.format("status.model.downloading", "Downloading model… %1$ld%%", arguments: [percent])
             }
             return L10n.string("status.model.switching", fallback: "Switching model…")
         case .failed:
             return L10n.string("status.model.download_failed", fallback: "Couldn’t download model")
+        case .loadFailed:
+            return L10n.string("status.model.load_failed", fallback: "Couldn’t load model")
         }
     }
 
@@ -142,7 +216,7 @@ final class LocalModelSwitcher: ObservableObject {
     func noteLoadFallback(failed: AppConfig.LocalModel, using fallback: AppConfig.LocalModel) {
         guard !isSwitching else { return }
         active = fallback
-        phase = .failed(failed)
+        phase = .loadFailed(failed)
     }
 
     #if DEBUG

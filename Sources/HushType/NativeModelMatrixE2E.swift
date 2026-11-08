@@ -492,7 +492,7 @@ extension NativeLocalLiveE2E {
         case "fallback":
             record("fallback_launch", ["state": modelState()])
             check("fallback.fastLoaded", inspect()["loadedModelID"] as? String == source(.fast))
-            check("fallback.failedShown", LocalModelSwitcher.shared.phase == .failed(.optimized) && LocalModelSwitcher.shared.active == .fast)
+            check("fallback.failedShown", LocalModelSwitcher.shared.phase == .loadFailed(.optimized) && LocalModelSwitcher.shared.active == .fast)
             check("fallback.savedChoiceKept", AppConfig.shared.localModel == .optimized)
             await openSettingsDictation()
             snapshotSettings("fallback_launch")
