@@ -56,7 +56,8 @@ final class LocalModelSwitcher: ObservableObject {
             additionalFiles: ["vocab.json", "merges.txt", "tokenizer_config.json"],
             progressHandler: { fraction in progress(fraction) })
     }
-    var cacheDirectories: (String) -> [URL] = { LocalModelSwitcher.remoteCacheDirectories(for: $0) }
+    var cacheRoot: () -> URL = { LocalModelSwitcher.configuredCacheRoot() }
+    var cacheDirectories: (String, URL) -> [URL] = { LocalModelSwitcher.remoteCacheDirectories(for: $0, root: $1) }
     var cacheIsValid: @Sendable (URL) -> Bool = { LocalModelSwitcher.validCachedWeights(in: $0) }
     var loadAndSwap: ((Qwen3TranscriptionEngine, String) async throws -> Void)?
     var gateTimeoutNanoseconds: UInt64 = 60_000_000_000
@@ -109,7 +110,6 @@ final class LocalModelSwitcher: ObservableObject {
         let id = switchID
         let source = config.modelSource(for: model)
         let priorTask = previousTask
-        let retryingLoadFailure = phase == .loadFailed(model)
         downloadCompleted = false
         phase = .switching(to: model, downloading: !isOnDisk(model), progress: 0)
         task = Task { [weak self] in
@@ -119,11 +119,23 @@ final class LocalModelSwitcher: ObservableObject {
                 try Task.checkCancellation()
                 if !source.hasPrefix("/") && !source.hasPrefix("~"),
                    engine.loadedModelID != source {
-                    let paths = self.cacheDirectories(source)
+                    let root = self.cacheRoot()
+                    let paths = self.cacheDirectories(source, root)
                     let validate = self.cacheIsValid
-                    try await Task.detached(priority: .utility) {
-                        try Self.removeInvalidTargetCaches(paths, force: retryingLoadFailure, validate: validate)
+                    let invalid = await Task.detached(priority: .utility) {
+                        paths.filter { FileManager.default.fileExists(atPath: $0.path) && !validate($0) }
                     }.value
+                    try Task.checkCancellation()
+                    for path in invalid {
+                        try Task.checkCancellation()
+                        guard id == self.switchID, self.readEngineModelID() != source else {
+                            throw CancellationError()
+                        }
+                        guard Self.isSafeTargetCache(path, source: source, root: root) else {
+                            throw CacheRepairError.unsafeCachePath
+                        }
+                        try FileManager.default.removeItem(at: path)
+                    }
                 }
                 try Task.checkCancellation()
                 try await self.download(source) { progress in
@@ -131,7 +143,7 @@ final class LocalModelSwitcher: ObservableObject {
                 }
                 try Task.checkCancellation()
                 if !source.hasPrefix("/") && !source.hasPrefix("~") {
-                    let paths = self.cacheDirectories(source)
+                    let paths = self.cacheDirectories(source, self.cacheRoot())
                     let validate = self.cacheIsValid
                     let valid = await Task.detached(priority: .utility) {
                         let existing = paths.filter { FileManager.default.fileExists(atPath: $0.path) }
@@ -257,6 +269,7 @@ final class LocalModelSwitcher: ObservableObject {
     #if DEBUG
     /// Test hook for rendering each state.
     func setPhaseForTesting(_ phase: Phase) { self.phase = phase }
+    func awaitPreviousTaskForTesting() async { await previousTask?.value }
     #endif
 
     private func updateProgress(_ progress: Double, id: Int) {
@@ -302,31 +315,27 @@ final class LocalModelSwitcher: ObservableObject {
         active = model
     }
 
-    private enum CacheRepairError: Error { case invalidAfterDownload }
+    private enum CacheRepairError: Error { case invalidAfterDownload, unsafeCachePath }
 
-    nonisolated private static func removeInvalidTargetCaches(
-        _ paths: [URL], force: Bool, validate: @Sendable (URL) -> Bool
-    ) throws {
-        let existing = paths.filter { FileManager.default.fileExists(atPath: $0.path) }
-        guard force || existing.contains(where: { !validate($0) }) else { return }
-        for path in existing { try FileManager.default.removeItem(at: path) }
+    nonisolated private static func configuredCacheRoot() -> URL {
+        let environment = ProcessInfo.processInfo.environment
+        if let override = environment["QWEN3_CACHE_DIR"],
+           !override.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
+            return URL(fileURLWithPath: override, isDirectory: true)
+        }
+        if let override = environment["QWEN3_ASR_CACHE_DIR"],
+           !override.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
+            return URL(fileURLWithPath: override, isDirectory: true)
+        }
+        return FileManager.default.urls(for: .cachesDirectory, in: .userDomainMask).first!
     }
 
-    nonisolated private static func remoteCacheDirectories(for source: String) -> [URL] {
+    nonisolated static func remoteCacheDirectories(for source: String, root: URL) -> [URL] {
         let parts = source.split(separator: "/").map(String.init)
         let allowed = CharacterSet(charactersIn: "abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789._-")
         guard parts.count == 2,
               parts.allSatisfy({ !$0.isEmpty && $0 != "." && $0 != ".." &&
                   $0.unicodeScalars.allSatisfy(allowed.contains) }) else { return [] }
-        let environment = ProcessInfo.processInfo.environment
-        let root: URL
-        if let override = environment["QWEN3_CACHE_DIR"], !override.isEmpty {
-            root = URL(fileURLWithPath: override, isDirectory: true)
-        } else if let override = environment["QWEN3_ASR_CACHE_DIR"], !override.isEmpty {
-            root = URL(fileURLWithPath: override, isDirectory: true)
-        } else {
-            root = FileManager.default.urls(for: .cachesDirectory, in: .userDomainMask).first!
-        }
         let base = root.appendingPathComponent("qwen3-speech", isDirectory: true)
         return [
             base.appendingPathComponent(Qwen3ASRModel.sanitizedCacheKey(for: source), isDirectory: true),
@@ -334,6 +343,26 @@ final class LocalModelSwitcher: ObservableObject {
                 .appendingPathComponent(parts[0], isDirectory: true)
                 .appendingPathComponent(parts[1], isDirectory: true)
         ]
+    }
+
+    nonisolated private static func isSafeTargetCache(_ path: URL, source: String, root: URL) -> Bool {
+        let expected = remoteCacheDirectories(for: source, root: root)
+        guard expected.contains(where: { $0.standardizedFileURL.path == path.standardizedFileURL.path }) else {
+            return false
+        }
+        let canonicalRoot = root.resolvingSymlinksInPath().standardizedFileURL
+        let canonicalExpected = remoteCacheDirectories(for: source, root: canonicalRoot)
+        guard canonicalExpected.contains(where: { $0.standardizedFileURL.path ==
+            path.resolvingSymlinksInPath().standardizedFileURL.path }) else { return false }
+
+        let relativePath = String(path.standardizedFileURL.path.dropFirst(root.standardizedFileURL.path.count + 1))
+        var cursor = canonicalRoot
+        for component in relativePath.split(separator: "/") {
+            cursor.appendPathComponent(String(component), isDirectory: true)
+            guard let values = try? cursor.resourceValues(forKeys: [.isSymbolicLinkKey]),
+                  values.isSymbolicLink != true else { return false }
+        }
+        return true
     }
 
     nonisolated private static func validCachedWeights(in directory: URL) -> Bool {
@@ -344,18 +373,18 @@ final class LocalModelSwitcher: ObservableObject {
               let files = try? fm.contentsOfDirectory(at: directory, includingPropertiesForKeys: nil) else { return false }
         let weights = files.filter { $0.pathExtension == "safetensors" }
         guard !weights.isEmpty else { return false }
-        let isHubLayout = directory.deletingLastPathComponent().deletingLastPathComponent().lastPathComponent == "models"
         for weight in weights {
+            // Both picker models have hundreds of MB of weights. A file this
+            // small is necessarily incomplete for either supported model.
             guard let size = try? weight.resourceValues(forKeys: [.fileSizeKey]).fileSize,
                   size >= 10_000_000 else { return false }
             let metadata = directory.appendingPathComponent(".cache/huggingface/download")
                 .appendingPathComponent(weight.lastPathComponent + ".metadata")
-            guard let content = try? String(contentsOf: metadata, encoding: .utf8) else {
-                if isHubLayout { return false }
-                continue // Legacy flat caches may not have Hub metadata.
-            }
+            // Missing metadata cannot prove corruption. Keep a plausible
+            // offline cache rather than deleting valid weights on suspicion.
+            guard let content = try? String(contentsOf: metadata, encoding: .utf8) else { continue }
             let lines = content.split(whereSeparator: \.isNewline)
-            guard lines.count >= 2 else { return false }
+            guard lines.count >= 2 else { continue }
             let etag = String(lines[1]).lowercased()
             let hexDigits = CharacterSet(charactersIn: "0123456789abcdef")
             if etag.count == 64 && etag.unicodeScalars.allSatisfy(hexDigits.contains) {
