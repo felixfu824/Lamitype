@@ -33,7 +33,7 @@ RULES = [
     Rule("transition clean", "Makefile", r"HushType\.(?:app|dmg)", 4),
     Rule("transition status copy", "Makefile", r"Uninstalled HushType and Lamitype", 1),
     Rule("stable signing identifiers", "Makefile", r"com\.felix\.hushtype(?:\.[A-Za-z0-9.$$()\"-]+)?", 6),
-    Rule("module imports", "Tests/HushTypeTests/*.swift", r"@testable import HushType", 59),
+    Rule("module imports", "Tests/HushTypeTests/*.swift", r"@testable import HushType", 60),
     Rule("module source references", "Tests/HushTypeTests/*.swift", r"Sources/HushType", 6),
     Rule("migration fixture old root", "Tests/HushTypeTests/AppSupportMigrationTests.swift", r'appendingPathComponent\("HushType"', 1),
     Rule("coexistence fixture old app", "Tests/HushTypeTests/CoexistenceGuardTests.swift", r"/Applications/HushType\.app", 1),
