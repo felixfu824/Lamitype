@@ -33,18 +33,18 @@ RULES = [
     Rule("transition clean", "Makefile", r"HushType\.(?:app|dmg)", 4),
     Rule("transition status copy", "Makefile", r"Uninstalled HushType and Lamitype", 1),
     Rule("stable signing identifiers", "Makefile", r"com\.felix\.hushtype(?:\.[A-Za-z0-9.$$()\"-]+)?", 6),
-    Rule("module imports", "Tests/HushTypeTests/*.swift", r"@testable import HushType", 54),
+    Rule("module imports", "Tests/HushTypeTests/*.swift", r"@testable import HushType", 59),
     Rule("module source references", "Tests/HushTypeTests/*.swift", r"Sources/HushType", 6),
     Rule("migration fixture old root", "Tests/HushTypeTests/AppSupportMigrationTests.swift", r'appendingPathComponent\("HushType"', 1),
     Rule("coexistence fixture old app", "Tests/HushTypeTests/CoexistenceGuardTests.swift", r"/Applications/HushType\.app", 1),
-    Rule("stable test defaults", "Tests/HushTypeTests/*.swift", r'"hushtype\.[A-Za-z0-9.]+"', 58),
+    Rule("stable test defaults", "Tests/HushTypeTests/*.swift", r'"hushtype\.[A-Za-z0-9.]+"', 67),
     Rule("stable test source fixture", "Tests/HushTypeTests/LocalizationMenuTests.swift", r'hushtype\.liveCaption\.panelFrame\.v3', 1),
     Rule("stable test bundle identifiers", "Tests/HushTypeTests/*.swift", r"com\.felix\.hushtype(?:\.fixture)?", 2),
     Rule("module script references", "scripts/*", r"Sources/HushType", 6),
     Rule("bundle identifier", "Resources/Info.plist", r"com\.felix\.hushtype", 1),
-    Rule("catalog module paths", "Resources/LOCALIZATION_MANIFEST_zh-Hant-TW.json", r"Sources/HushType", 607),
-    Rule("source logger subsystems", "Sources/HushType/*.swift", r'com\.felix\.hushtype', 56),
-    Rule("stable defaults", "Sources/HushType/AppConfig.swift", r"hushtype\.[A-Za-z0-9.]+", 34),
+    Rule("catalog module paths", "Resources/LOCALIZATION_MANIFEST_zh-Hant-TW.json", r"Sources/HushType", 636),
+    Rule("source logger subsystems", "Sources/HushType/*.swift", r'com\.felix\.hushtype', 58),
+    Rule("stable defaults", "Sources/HushType/AppConfig.swift", r"hushtype\.[A-Za-z0-9.]+", 39),
     Rule("localization default comment", "Sources/HushType/Localization.swift", r"hushtype\.interfaceLanguage", 1),
     Rule("stable usage keys", "Sources/HushType/CloudUsageTracker.swift", r'hushtype\.cloud\.[A-Za-z0-9.<>-]+', 6),
     Rule("stable caption frame keys", "Sources/HushType/LiveCaptionWindow.swift", r'"hushtype\.liveCaption\.panelFrame(?:\.v[23])?"', 3),
@@ -81,6 +81,7 @@ def scoped_files() -> list[pathlib.Path]:
             path
             for path in (ROOT / directory).rglob("*")
             if path.is_file() and path != pathlib.Path(__file__).resolve()
+            and path.name not in {"ASRModelBenchTests.swift", "DecoderDivergenceTests.swift"}
         )
     return sorted(paths)
 

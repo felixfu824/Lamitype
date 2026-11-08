@@ -132,8 +132,8 @@ final class AppConfig {
         case fast
         case optimized
 
-        /// The Optimized repository is not public yet; until it is, set
-        /// `hushtype.optimizedModelPath` to a local folder to test it.
+        /// The Optimized repository is public. A local folder override is
+        /// available through `hushtype.optimizedModelPath` for testing.
         var huggingFaceID: String {
             switch self {
             case .fast: return "aufklarer/Qwen3-ASR-0.6B-MLX-4bit"
