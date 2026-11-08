@@ -242,7 +242,8 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         LocalModelSwitcher.shared.isBusy = { [weak self] in
             guard let self else { return true }
             let quiet = self.state == .idle || self.state == .unloaded
-            return !quiet || LocalLiveOwnership.isBusy || self.liveCaptionManager?.isActive == true
+            return !quiet || LocalLiveOwnership.isBusy || LocalLiveOwnership.captionTransitions > 0
+                || self.liveCaptionManager?.isActive == true
         }
         statusBar = StatusBarController(localEngine: localEngine)
         hotkeyManager = HotkeyManager()

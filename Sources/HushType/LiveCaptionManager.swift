@@ -280,6 +280,7 @@ final class LiveCaptionManager {
         let newBackend: any TranscriptionBackend
         switch engine {
         case .local:
+            asrModel = localEngine.loadedModel
             guard let asrModel, let vadModel else {
                 throw NSError(domain: "LiveCaption", code: 20,
                               userInfo: [NSLocalizedDescriptionKey: L10n.string(

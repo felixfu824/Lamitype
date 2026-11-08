@@ -62,6 +62,12 @@ final class Qwen3TranscriptionEngine: TranscriptionEngine {
         return model != nil
     }
 
+    var hasInFlightLoad: Bool {
+        loadLock.lock()
+        defer { loadLock.unlock() }
+        return inFlightLoad != nil
+    }
+
     /// Read-only handle for the live-caption pipeline. Returns the loaded
     /// model instance so `LiveCaptionManager` can call `transcribe()` directly
     /// without going through the dictation post-processing chain.

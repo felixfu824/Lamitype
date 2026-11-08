@@ -69,6 +69,18 @@ final class LocalModelSwitchTests: XCTestCase {
         XCTAssertEqual(config.localModel, .fast)
     }
 
+    func testSelectRefusedWhileCaptionTransitionOrModelLoadRuns() {
+        let switcher = LocalModelSwitcher(config: config)
+        switcher.engine = Qwen3TranscriptionEngine()
+        switcher.isBusy = { LocalLiveOwnership.captionTransitions > 0 }
+        XCTAssertTrue(LocalLiveOwnership.beginCaptionTransition())
+        XCTAssertFalse(switcher.select(.optimized))
+        LocalLiveOwnership.endCaptionTransition()
+        switcher.loadInFlight = { _ in true }
+        XCTAssertFalse(switcher.select(.optimized))
+        XCTAssertEqual(config.localModel, .fast)
+    }
+
     func testSelectingActiveModelIsNoOp() {
         let switcher = LocalModelSwitcher(config: config)
         switcher.isBusy = { true }

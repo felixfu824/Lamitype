@@ -35,6 +35,7 @@ final class LocalModelSwitcher: ObservableObject {
     /// Wired by AppDelegate at launch.
     var engine: Qwen3TranscriptionEngine?
     var hasLoadedModel: ((Qwen3TranscriptionEngine) -> Bool)?
+    var loadInFlight: ((Qwen3TranscriptionEngine) -> Bool)?
     /// True while recording, transcribing, Live preview or Live Caption runs.
     var isBusy: () -> Bool = { false }
 
@@ -82,6 +83,7 @@ final class LocalModelSwitcher: ObservableObject {
     @discardableResult
     func select(_ model: AppConfig.LocalModel) -> Bool {
         guard !isSwitching else { return false }
+        guard engine.map({ loadInFlight?($0) ?? $0.hasInFlightLoad }) != true else { return false }
         if model == active {
             if case .failed = phase { phase = .idle }
             if case .loadFailed = phase { phase = .idle }
