@@ -143,6 +143,9 @@ final class LocalModelSwitchTests: XCTestCase {
         let switcher = LocalModelSwitcher(config: config)
         switcher.engine = Qwen3TranscriptionEngine()
         switcher.hasLoadedModel = { _ in true }
+        let fastID = config.modelSource(for: .fast)
+        switcher.loadedModelID = { _ in fastID }
+        switcher.fenceEngineSwitch = { _ in fastID }
         switcher.download = { _, _ in }
         return switcher
     }
@@ -158,9 +161,12 @@ final class LocalModelSwitchTests: XCTestCase {
     func testSwapWaitsForSessionThenClosesGate() async throws {
         let switcher = fakeSwitcher()
         var busy = false
+        var installedID = config.modelSource(for: .fast)
+        switcher.loadedModelID = { _ in installedID }
         switcher.isBusy = { busy }
-        switcher.loadAndSwap = { _, _ in
+        switcher.loadAndSwap = { _, target in
             try await Task.sleep(nanoseconds: 100_000_000)
+            installedID = target
         }
         XCTAssertTrue(switcher.select(.optimized))
         busy = true
@@ -194,7 +200,13 @@ final class LocalModelSwitchTests: XCTestCase {
     func testImmediateReselectAfterCancelWaitsForOldTask() async throws {
         let switcher = fakeSwitcher()
         let probe = BlockingSwapProbe()
-        switcher.loadAndSwap = { _, _ in try await probe.run() }
+        var installedID = config.modelSource(for: .fast)
+        switcher.loadedModelID = { _ in installedID }
+        switcher.loadAndSwap = { _, target in
+            try await probe.run()
+            try Task.checkCancellation()
+            installedID = target
+        }
         XCTAssertTrue(switcher.select(.optimized))
         try await waitFor { probe.firstStarted }
         switcher.cancel()
@@ -243,6 +255,42 @@ final class LocalModelSwitchTests: XCTestCase {
         XCTAssertEqual(config.localModel, .fast)
     }
 
+    func testCancelAfterEngineCommitReconcilesChoice() async throws {
+        let switcher = fakeSwitcher()
+        let probe = ControlledCommittedSwitch(fastID: config.modelSource(for: .fast),
+                                              targetID: config.modelSource(for: .optimized))
+        switcher.loadedModelID = { _ in probe.modelID }
+        switcher.fenceEngineSwitch = { _ in probe.fenceAndRead() }
+        switcher.loadAndSwap = { _, _ in await probe.commitThenHold() }
+        XCTAssertTrue(switcher.select(.optimized))
+        try await waitFor { probe.didCommit }
+        switcher.cancel()
+        XCTAssertEqual(probe.modelID, config.modelSource(for: .optimized))
+        XCTAssertEqual(switcher.active, .optimized)
+        XCTAssertEqual(config.localModel, .optimized)
+        XCTAssertEqual(switcher.phase, .idle)
+        XCTAssertFalse(switcher.gateClosed)
+        probe.release()
+    }
+
+    func testWatchdogAfterEngineCommitReconcilesChoice() async throws {
+        let switcher = fakeSwitcher()
+        let probe = ControlledCommittedSwitch(fastID: config.modelSource(for: .fast),
+                                              targetID: config.modelSource(for: .optimized))
+        switcher.loadedModelID = { _ in probe.modelID }
+        switcher.fenceEngineSwitch = { _ in probe.fenceAndRead() }
+        switcher.loadAndSwap = { _, _ in await probe.commitThenHold() }
+        switcher.gateTimeoutNanoseconds = 30_000_000
+        XCTAssertTrue(switcher.select(.optimized))
+        try await waitFor { probe.didCommit }
+        try await waitFor { switcher.phase == .idle }
+        XCTAssertEqual(probe.modelID, config.modelSource(for: .optimized))
+        XCTAssertEqual(switcher.active, .optimized)
+        XCTAssertEqual(config.localModel, .optimized)
+        XCTAssertFalse(switcher.gateClosed)
+        probe.release()
+    }
+
 }
 
 @MainActor
@@ -265,5 +313,43 @@ private final class BlockingSwapProbe {
     func releaseFirst() {
         release?.resume()
         release = nil
+    }
+}
+
+@MainActor
+private final class ControlledCommittedSwitch {
+    private let commits = SharedModelCommitState<NSObject>()
+    private let fast = NSObject()
+    private let optimized = NSObject()
+    private let fastID: String
+    private let targetID: String
+    private var releaseHold: CheckedContinuation<Void, Never>?
+    private(set) var didCommit = false
+
+    init(fastID: String, targetID: String) {
+        self.fastID = fastID
+        self.targetID = targetID
+        _ = commits.acceptLoad(fast, generation: 0)
+    }
+
+    var modelID: String? {
+        if commits.model === optimized { return targetID }
+        if commits.model === fast { return fastID }
+        return nil
+    }
+
+    func commitThenHold() async {
+        didCommit = commits.swap(optimized, generation: 0)
+        await withCheckedContinuation { releaseHold = $0 }
+    }
+
+    func fenceAndRead() -> String? {
+        commits.fencePendingSwitch()
+        return modelID
+    }
+
+    func release() {
+        releaseHold?.resume()
+        releaseHold = nil
     }
 }

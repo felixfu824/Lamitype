@@ -55,6 +55,10 @@ final class SharedModelCommitState<Model: AnyObject> {
         model = nil
         generation &+= 1
     }
+
+    func fencePendingSwitch() {
+        generation &+= 1
+    }
 }
 
 final class Qwen3TranscriptionEngine: TranscriptionEngine {
@@ -152,6 +156,15 @@ final class Qwen3TranscriptionEngine: TranscriptionEngine {
         guard commits.swap(newModel, generation: generation) else { return false }
         currentModelID = modelID
         return true
+    }
+
+    /// Linearizes cancellation with the model commit under the same lock.
+    /// If commit won, return its ID; otherwise the epoch prevents a late commit.
+    func fencePendingSwitchAndGetModelID() -> String? {
+        loadLock.lock()
+        defer { loadLock.unlock() }
+        commits.fencePendingSwitch()
+        return model == nil ? nil : currentModelID
     }
 
     func load(progressHandler: ((Double, String) -> Void)? = nil) async throws {

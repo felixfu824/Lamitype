@@ -36,6 +36,8 @@ final class LocalModelSwitcher: ObservableObject {
     var engine: Qwen3TranscriptionEngine?
     var hasLoadedModel: ((Qwen3TranscriptionEngine) -> Bool)?
     var loadInFlight: ((Qwen3TranscriptionEngine) -> Bool)?
+    var loadedModelID: ((Qwen3TranscriptionEngine) -> String?)?
+    var fenceEngineSwitch: ((Qwen3TranscriptionEngine) -> String?)?
     /// True while recording, transcribing, Live preview or Live Caption runs.
     var isBusy: () -> Bool = { false }
 
@@ -129,6 +131,7 @@ final class LocalModelSwitcher: ObservableObject {
                 try Task.checkCancellation()
                 self.gateClosed = true
                 self.waitingForIdle = false
+                self.phase = .switching(to: model, downloading: false, progress: 0.8)
                 let timeout = Task { @MainActor [weak self] in
                     do { try await Task.sleep(nanoseconds: self?.gateTimeoutNanoseconds ?? 60_000_000_000) }
                     catch { return }
@@ -142,21 +145,24 @@ final class LocalModelSwitcher: ObservableObject {
                     try await engine.switchModel(to: source)
                 }
                 try Task.checkCancellation()
-                self.finish(model, id: id)
+                self.finish(model, id: id, otherwise: .loadFailed(model))
             } catch Qwen3TranscriptionEngine.SwitchError.notLoaded {
                 guard id == self.switchID else { return }
-                self.commit(model)
-                self.phase = .idle
+                if let observed = self.readEngineModelID() {
+                    self.reconcile(model, observedModelID: observed, otherwise: .loadFailed(model))
+                } else {
+                    // An unload completed; save the choice for the next load.
+                    self.commit(model)
+                    self.phase = .idle
+                }
             } catch is CancellationError {
-                guard id == self.switchID else { return }
-                self.phase = .idle
+                self.finish(model, id: id, otherwise: .idle)
             } catch Qwen3TranscriptionEngine.SwitchError.busy {
-                guard id == self.switchID else { return }
-                self.phase = .loadFailed(model)
+                self.finish(model, id: id, otherwise: .loadFailed(model))
             } catch {
                 log.error("Model switch failed: \(error.localizedDescription, privacy: .public)")
-                guard id == self.switchID else { return }
-                self.phase = self.downloadCompleted ? .loadFailed(model) : .failed(model)
+                self.finish(model, id: id,
+                            otherwise: self.downloadCompleted ? .loadFailed(model) : .failed(model))
             }
         }
         return true
@@ -164,26 +170,29 @@ final class LocalModelSwitcher: ObservableObject {
 
     func cancel() {
         guard isSwitching else { return }
+        let target = shownSelection
+        task?.cancel()
+        let observed = gateClosed ? fenceAndReadEngine() : readEngineModelID()
         switchID += 1
         previousTask = task
-        task?.cancel()
         task = nil
+        reconcile(target, observedModelID: observed, otherwise: .idle)
         gateClosed = false
         waitingForIdle = false
-        phase = .idle
     }
 
     @Published private(set) var waitingForIdle = false
 
     private func cancelForTimeout(_ model: AppConfig.LocalModel, id: Int) {
         guard id == switchID else { return }
+        task?.cancel()
+        let observed = fenceAndReadEngine()
         switchID += 1
         previousTask = task
-        task?.cancel()
         task = nil
+        reconcile(model, observedModelID: observed, otherwise: .loadFailed(model))
         gateClosed = false
         waitingForIdle = false
-        phase = .loadFailed(model)
     }
 
     /// Percentage of the download, or nil once loading has started.
@@ -232,12 +241,37 @@ final class LocalModelSwitcher: ObservableObject {
         phase = .switching(to: target, downloading: downloading, progress: progress)
     }
 
-    private func finish(_ model: AppConfig.LocalModel, id: Int) {
+    private func finish(_ model: AppConfig.LocalModel, id: Int, otherwise: Phase) {
         guard id == switchID else { return }
-        commit(model)
-        phase = .idle
-        // Return the previous model's buffers to the OS.
-        MLX.Memory.clearCache()
+        reconcile(model, observedModelID: readEngineModelID(), otherwise: otherwise)
+    }
+
+    private func readEngineModelID() -> String? {
+        guard let engine else { return nil }
+        if let loadedModelID { return loadedModelID(engine) }
+        return engine.loadedModelID
+    }
+
+    private func fenceAndReadEngine() -> String? {
+        guard let engine else { return nil }
+        if let fenceEngineSwitch { return fenceEngineSwitch(engine) }
+        return engine.fencePendingSwitchAndGetModelID()
+    }
+
+    private func reconcile(_ target: AppConfig.LocalModel, observedModelID: String?, otherwise: Phase) {
+        if observedModelID == config.modelSource(for: target) {
+            let changed = active != target
+            commit(target)
+            phase = .idle
+            if changed { MLX.Memory.clearCache() }
+            return
+        }
+        if let observedModelID,
+           let actual = AppConfig.LocalModel.allCases.first(where: { config.modelSource(for: $0) == observedModelID }),
+           actual != active {
+            commit(actual)
+        }
+        phase = otherwise
     }
 
     private func commit(_ model: AppConfig.LocalModel) {

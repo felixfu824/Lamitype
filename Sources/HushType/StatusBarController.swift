@@ -692,6 +692,7 @@ final class StatusBarController: NSObject, NSMenuDelegate, NSMenuItemValidation 
             item.subtitle = localModelSubtitle(model, switcher: switcher)
         }
         cancelModelDownloadItem.isHidden = !switcher.isSwitching
+        cancelModelDownloadItem.isEnabled = !switcher.gateClosed
     }
 
     private func localModelSubtitle(_ model: AppConfig.LocalModel, switcher: LocalModelSwitcher) -> String? {

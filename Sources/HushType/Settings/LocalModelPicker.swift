@@ -100,6 +100,7 @@ struct LocalModelPicker: View {
                 Button(L10n.string("common.button.cancel", fallback: "Cancel")) { switcher.cancel() }
                     .controlSize(.small)
                     .fixedSize()
+                    .disabled(switcher.gateClosed)
             }
             Text(L10n.format(
                 "settings.local_model.keeps_current",
