@@ -181,6 +181,39 @@ final class LocalModelSwitchTests: XCTestCase {
         XCTAssertEqual(config.localModel, .optimized)
     }
 
+    func testCaptionStopRemainsBusyUntilTeardownFinishes() async throws {
+        let manager = LiveCaptionManager(localEngine: Qwen3TranscriptionEngine(),
+                                         captureService: AudioCaptureService())
+        var releaseStop: CheckedContinuation<Void, Never>?
+        manager.stopTeardownBarrierForTesting = {
+            await withCheckedContinuation { releaseStop = $0 }
+        }
+        let switcher = fakeSwitcher()
+        var installedID = config.modelSource(for: .fast)
+        switcher.loadedModelID = { _ in installedID }
+        switcher.isBusy = {
+            manager.isActive || manager.isStopping || LocalLiveOwnership.captionTransitions > 0
+        }
+        switcher.loadAndSwap = { _, target in
+            installedID = target
+            try await Task.sleep(nanoseconds: 100_000_000)
+        }
+        XCTAssertTrue(switcher.select(.optimized))
+        manager.activateForTesting()
+        try await waitFor { switcher.waitingForIdle }
+        manager.stop()
+        XCTAssertFalse(manager.isActive)
+        XCTAssertTrue(manager.isStopping)
+        try await waitFor { releaseStop != nil }
+        try await Task.sleep(nanoseconds: 80_000_000)
+        XCTAssertTrue(switcher.waitingForIdle)
+        XCTAssertFalse(switcher.gateClosed)
+        releaseStop?.resume()
+        try await waitFor { !manager.isStopping }
+        try await waitFor { switcher.phase == .idle }
+        XCTAssertEqual(config.localModel, .optimized)
+    }
+
     func testCancelDuringDownloadKeepsChoice() async throws {
         let switcher = fakeSwitcher()
         var enteredDownload = false

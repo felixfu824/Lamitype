@@ -243,7 +243,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
             guard let self else { return true }
             let quiet = self.state == .idle || self.state == .unloaded
             return !quiet || LocalLiveOwnership.isBusy || LocalLiveOwnership.captionTransitions > 0
-                || self.liveCaptionManager?.isActive == true
+                || self.liveCaptionManager?.isActive == true || self.liveCaptionManager?.isStopping == true
         }
         statusBar = StatusBarController(localEngine: localEngine)
         hotkeyManager = HotkeyManager()

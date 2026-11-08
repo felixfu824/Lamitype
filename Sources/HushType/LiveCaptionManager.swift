@@ -69,6 +69,12 @@ final class LiveCaptionManager {
 
     private var backendEventTask: Task<Void, Never>?
     private var stopTeardownTask: Task<Void, Never>?
+    var isStopping: Bool { stopTeardownTask != nil }
+
+    #if DEBUG
+    var stopTeardownBarrierForTesting: (() async -> Void)?
+    func activateForTesting() { isActive = true }
+    #endif
     private var forceSplitTimer: DispatchSourceTimer?
     private var flashHideWork: DispatchWorkItem?
 
@@ -531,6 +537,9 @@ final class LiveCaptionManager {
         onStateChanged?(nil, nil)
         let task = Task { @MainActor [weak self] in
             guard let self else { return }
+            #if DEBUG
+            await self.stopTeardownBarrierForTesting?()
+            #endif
             await self.teardown(stopAudio: true)
             self.hidePanel()
             self.stopTeardownTask = nil
