@@ -205,6 +205,23 @@ final class LocalModelSwitchTests: XCTestCase {
         XCTAssertEqual(config.localModel, .fast)
     }
 
+    func testDownloadAndLoadFailuresHaveDistinctStates() async throws {
+        let switcher = fakeSwitcher()
+        switcher.download = { _, _ in throw NSError(domain: "download-test", code: 1) }
+        XCTAssertTrue(switcher.select(.optimized))
+        try await waitFor { switcher.phase == .failed(.optimized) }
+        XCTAssertFalse(switcher.refusesLocalRequests)
+        XCTAssertEqual(config.localModel, .fast)
+        let downloadText = switcher.statusText
+
+        switcher.download = { _, _ in }
+        switcher.loadAndSwap = { _, _ in throw NSError(domain: "load-test", code: 2) }
+        XCTAssertTrue(switcher.select(.optimized))
+        try await waitFor { switcher.phase == .loadFailed(.optimized) }
+        XCTAssertNotEqual(switcher.statusText, downloadText)
+        XCTAssertEqual(config.localModel, .fast)
+    }
+
     func testGateTimeoutReopens() async throws {
         let switcher = fakeSwitcher()
         switcher.gateTimeoutNanoseconds = 20_000_000
