@@ -32,8 +32,12 @@ enum TranscriptionError: Error, Equatable, Sendable {
 // MARK: - Qwen3 Implementation
 
 final class Qwen3TranscriptionEngine: TranscriptionEngine {
-    static func canCommitSharedLoad(waiterGeneration: UInt, currentGeneration: UInt, hasModel: Bool) -> Bool {
-        waiterGeneration == currentGeneration && !hasModel
+    static func canCommitSharedLoad<Model: AnyObject>(
+        waiterGeneration: UInt, currentGeneration: UInt,
+        installedModel: Model?, loadedModel: Model
+    ) -> Bool {
+        waiterGeneration == currentGeneration &&
+            (installedModel == nil || installedModel === loadedModel)
     }
     private let loadLock = NSLock()
     private var model: Qwen3ASRModel?
@@ -235,7 +239,8 @@ final class Qwen3TranscriptionEngine: TranscriptionEngine {
         guard Self.canCommitSharedLoad(
             waiterGeneration: generation,
             currentGeneration: loadGeneration,
-            hasModel: model != nil
+            installedModel: model,
+            loadedModel: loadedModel
         ) else {
             if let handlerID { progressHandlers.removeValue(forKey: handlerID) }
             return false
