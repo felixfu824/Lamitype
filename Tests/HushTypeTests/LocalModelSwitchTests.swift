@@ -147,6 +147,7 @@ final class LocalModelSwitchTests: XCTestCase {
         switcher.loadedModelID = { _ in fastID }
         switcher.fenceEngineSwitch = { _ in fastID }
         switcher.download = { _, _ in }
+        switcher.cacheDirectories = { _ in [] }
         return switcher
     }
 
@@ -228,6 +229,93 @@ final class LocalModelSwitchTests: XCTestCase {
         XCTAssertEqual(switcher.active, .fast)
         XCTAssertEqual(config.localModel, .fast)
         XCTAssertFalse(switcher.refusesLocalRequests)
+    }
+
+    func testCorruptRemoteCacheIsRemovedBeforeDownload() async throws {
+        let folder = FileManager.default.temporaryDirectory
+            .appendingPathComponent("lamitype-cache-repair-\(UUID().uuidString)", isDirectory: true)
+        defer { try? FileManager.default.removeItem(at: folder) }
+        let flat = folder.appendingPathComponent("flat", isDirectory: true)
+        let hub = folder.appendingPathComponent("hub", isDirectory: true)
+        let flatWeight = flat.appendingPathComponent("model.safetensors")
+        let hubWeight = hub.appendingPathComponent("model.safetensors")
+        try FileManager.default.createDirectory(at: flat, withIntermediateDirectories: true)
+        try FileManager.default.createDirectory(at: hub, withIntermediateDirectories: true)
+        try Data("corrupt".utf8).write(to: flatWeight)
+        try Data("corrupt".utf8).write(to: hubWeight)
+
+        let switcher = fakeSwitcher()
+        var installedID = config.modelSource(for: .fast)
+        var downloads = 0
+        switcher.loadedModelID = { _ in installedID }
+        switcher.cacheDirectories = { _ in [flat, hub] }
+        switcher.cacheIsValid = { directory in
+            (try? Data(contentsOf: directory.appendingPathComponent("model.safetensors"))) == Data("complete".utf8)
+        }
+        switcher.download = { _, _ in
+            downloads += 1
+            // Reproduce Hub's metadata fast path: an existing destination is
+            // treated as current even if the payload is corrupt.
+            if FileManager.default.fileExists(atPath: hubWeight.path) { return }
+            try FileManager.default.createDirectory(at: hub, withIntermediateDirectories: true)
+            try Data("complete".utf8).write(to: hubWeight)
+        }
+        switcher.loadAndSwap = { _, target in
+            guard (try? Data(contentsOf: hubWeight)) == Data("complete".utf8) else {
+                throw NSError(domain: "corrupt-cache", code: 1)
+            }
+            installedID = target
+        }
+
+        XCTAssertTrue(switcher.select(.optimized))
+        try await waitFor { switcher.phase == .idle && switcher.active == .optimized }
+        XCTAssertEqual(downloads, 1)
+        XCTAssertFalse(FileManager.default.fileExists(atPath: flatWeight.path))
+        XCTAssertEqual(try Data(contentsOf: hubWeight), Data("complete".utf8))
+        XCTAssertEqual(config.localModel, .optimized)
+    }
+
+    func testLoadFailureRetryClearsRemoteCache() async throws {
+        let folder = FileManager.default.temporaryDirectory
+            .appendingPathComponent("lamitype-load-retry-\(UUID().uuidString)", isDirectory: true)
+        defer { try? FileManager.default.removeItem(at: folder) }
+        let weight = folder.appendingPathComponent("model.safetensors")
+        try FileManager.default.createDirectory(at: folder, withIntermediateDirectories: true)
+        try Data("complete".utf8).write(to: weight)
+
+        let switcher = fakeSwitcher()
+        var installedID = config.modelSource(for: .fast)
+        var downloads = 0
+        var loads = 0
+        var freshDownloads = 0
+        switcher.loadedModelID = { _ in installedID }
+        switcher.cacheDirectories = { _ in [folder] }
+        switcher.cacheIsValid = { directory in
+            (try? Data(contentsOf: directory.appendingPathComponent("model.safetensors"))) == Data("complete".utf8)
+        }
+        switcher.download = { _, _ in
+            downloads += 1
+            if !FileManager.default.fileExists(atPath: weight.path) {
+                freshDownloads += 1
+                try FileManager.default.createDirectory(at: folder, withIntermediateDirectories: true)
+                try Data("complete".utf8).write(to: weight)
+            }
+        }
+        switcher.loadAndSwap = { _, target in
+            loads += 1
+            if loads == 1 { throw NSError(domain: "test-load-failure", code: 1) }
+            if freshDownloads == 0 { throw NSError(domain: "stale-cache-retry", code: 2) }
+            installedID = target
+        }
+
+        XCTAssertTrue(switcher.select(.optimized))
+        try await waitFor { switcher.phase == .loadFailed(.optimized) }
+        XCTAssertTrue(switcher.select(.optimized))
+        try await waitFor { switcher.phase == .idle && switcher.active == .optimized }
+        XCTAssertEqual(downloads, 2)
+        XCTAssertEqual(freshDownloads, 1)
+        XCTAssertEqual(loads, 2)
+        XCTAssertEqual(config.localModel, .optimized)
     }
 
     func testImmediateReselectAfterCancelWaitsForOldTask() async throws {
