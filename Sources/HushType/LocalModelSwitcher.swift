@@ -152,7 +152,7 @@ final class LocalModelSwitcher: ObservableObject {
                 self.phase = .idle
             } catch Qwen3TranscriptionEngine.SwitchError.busy {
                 guard id == self.switchID else { return }
-                self.phase = .idle
+                self.phase = .loadFailed(model)
             } catch {
                 log.error("Model switch failed: \(error.localizedDescription, privacy: .public)")
                 guard id == self.switchID else { return }
@@ -178,6 +178,7 @@ final class LocalModelSwitcher: ObservableObject {
     private func cancelForTimeout(_ model: AppConfig.LocalModel, id: Int) {
         guard id == switchID else { return }
         switchID += 1
+        previousTask = task
         task?.cancel()
         task = nil
         gateClosed = false
