@@ -123,8 +123,34 @@ final class Qwen3TranscriptionEngine: TranscriptionEngine {
     }
 
     func load(progressHandler: ((Double, String) -> Void)? = nil) async throws {
+        try await load(modelID: nil, progressHandler: progressHandler)
+    }
+
+    /// Loads the saved model. When it fails and `fallbackModelID` is set,
+    /// loads that model instead. Returns true when the fallback loaded.
+    @discardableResult
+    func load(
+        fallbackModelID: String?,
+        progressHandler: ((Double, String) -> Void)? = nil
+    ) async throws -> Bool {
+        do {
+            try await load(modelID: nil, progressHandler: progressHandler)
+            return false
+        } catch is CancellationError {
+            throw CancellationError()
+        } catch {
+            guard let fallbackModelID else { throw error }
+            log.error("Saved model failed to load (\(error.localizedDescription, privacy: .public)); loading fallback")
+            try await load(modelID: fallbackModelID, progressHandler: progressHandler)
+            return true
+        }
+    }
+
+    /// Loads `modelID`, or the saved model when nil.
+    private func load(modelID: String?, progressHandler: ((Double, String) -> Void)?) async throws {
         let handlerID = progressHandler.map { _ in UUID() }
         guard let prepared = prepareLoad(
+            modelID: modelID,
             handlerID: handlerID,
             progressHandler: progressHandler
         ) else { return }
@@ -153,6 +179,7 @@ final class Qwen3TranscriptionEngine: TranscriptionEngine {
     /// directly holding even a short-lived mutex in an async function because
     /// suspension while locked would deadlock; this helper cannot suspend.
     private func prepareLoad(
+        modelID: String?,
         handlerID: UUID?,
         progressHandler: ((Double, String) -> Void)?
     ) -> PreparedLoad? {
@@ -173,7 +200,7 @@ final class Qwen3TranscriptionEngine: TranscriptionEngine {
             )
         }
 
-        let modelId = AppConfig.shared.modelId
+        let modelId = modelID ?? AppConfig.shared.modelId
         let generation = loadGeneration
         inFlightGeneration = generation
         inFlightModelID = modelId

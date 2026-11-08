@@ -77,6 +77,35 @@ final class LocalModelSwitchTests: XCTestCase {
         XCTAssertNil(switcher.statusText)
     }
 
+    func testFallbackSourceOnlyForOptimizedWithoutOverride() {
+        XCTAssertNil(config.fallbackModelSource)
+        config.localModel = .optimized
+        XCTAssertEqual(config.fallbackModelSource, "aufklarer/Qwen3-ASR-0.6B-MLX-4bit")
+        config.modelId = "custom/model"
+        XCTAssertNil(config.fallbackModelSource)
+    }
+
+    func testLoadFallbackShowsFailureAndKeepsSavedChoice() {
+        config.localModel = .optimized
+        let switcher = LocalModelSwitcher(config: config)
+        XCTAssertEqual(switcher.active, .optimized)
+        switcher.noteLoadFallback(failed: .optimized, using: .fast)
+        XCTAssertEqual(switcher.active, .fast)
+        XCTAssertEqual(switcher.shownSelection, .fast)
+        XCTAssertEqual(switcher.phase, .failed(.optimized))
+        XCTAssertNotNil(switcher.statusText)
+        XCTAssertEqual(config.localModel, .optimized, "The next launch tries the saved model again")
+    }
+
+    func testChoosingModelInUseAfterFallbackSavesIt() {
+        config.localModel = .optimized
+        let switcher = LocalModelSwitcher(config: config)
+        switcher.noteLoadFallback(failed: .optimized, using: .fast)
+        XCTAssertTrue(switcher.select(.fast))
+        XCTAssertEqual(switcher.phase, .idle)
+        XCTAssertEqual(config.localModel, .fast)
+    }
+
     func testEngineSwitchRequiresLoadedModel() async {
         let engine = Qwen3TranscriptionEngine()
         do {

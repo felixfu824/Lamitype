@@ -67,6 +67,9 @@ final class LocalModelSwitcher: ObservableObject {
         guard !isSwitching else { return false }
         if model == active {
             if case .failed = phase { phase = .idle }
+            // After a launch fallback the saved choice can differ from the
+            // model in use; choosing the model in use saves it.
+            if config.localModel != model { commit(model) }
             return true
         }
         guard !isBusy() else { return false }
@@ -131,6 +134,15 @@ final class LocalModelSwitcher: ObservableObject {
         case .failed:
             return L10n.string("status.model.download_failed", fallback: "Couldn’t download model")
         }
+    }
+
+    /// The saved model failed to load and `fallback` loaded instead. Shows
+    /// the failure with Try Again; the saved choice is kept, so the next
+    /// launch tries the saved model again.
+    func noteLoadFallback(failed: AppConfig.LocalModel, using fallback: AppConfig.LocalModel) {
+        guard !isSwitching else { return }
+        active = fallback
+        phase = .failed(failed)
     }
 
     #if DEBUG

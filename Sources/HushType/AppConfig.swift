@@ -174,6 +174,14 @@ final class AppConfig {
         set { defaults.set(newValue, forKey: Keys.modelId) }
     }
 
+    /// Model to load instead when the saved Optimized model cannot load at
+    /// launch or reload, so dictation keeps working. Nil for Fast and when an
+    /// explicit `hushtype.modelId` override is set.
+    var fallbackModelSource: String? {
+        guard localModel == .optimized, defaults.string(forKey: Keys.modelId) == nil else { return nil }
+        return modelSource(for: .fast)
+    }
+
     /// Whether to convert Simplified Chinese output to Traditional Chinese.
     var chineseConversionEnabled: Bool {
         get {

@@ -67,6 +67,39 @@ final class LocalModelSwitchIntegrationTests: XCTestCase {
         XCTAssertNotNil(engine.loadedModel)
     }
 
+    /// Saved Optimized whose folder has no model: the load falls back to Fast.
+    func testLoadFallsBackToFastWhenOptimizedIsMissing() async throws {
+        let env = ProcessInfo.processInfo.environment
+        guard env["LAMITYPE_RUN_ASR_INTEGRATION"] == "1" else {
+            throw XCTSkip("Set LAMITYPE_RUN_ASR_INTEGRATION=1")
+        }
+        let fast = AppConfig.LocalModel.fast.huggingFaceID
+        guard LocalModelSwitcher.weightsOnDisk(source: fast) else { throw XCTSkip("Fast must be on disk; refusing to download") }
+        guard try installMetallib() else { throw XCTSkip("mlx.metallib is unavailable") }
+        setenv("HF_ENDPOINT", "http://127.0.0.1:9", 1)
+
+        let empty = FileManager.default.temporaryDirectory.appendingPathComponent("empty-model-\(UUID().uuidString)")
+        try FileManager.default.createDirectory(at: empty, withIntermediateDirectories: true)
+        let keys = ["hushtype.modelId", "hushtype.localModel", "hushtype.optimizedModelPath"]
+        let saved = keys.map { UserDefaults.standard.object(forKey: $0) }
+        defer {
+            for (key, value) in zip(keys, saved) {
+                if let value { UserDefaults.standard.set(value, forKey: key) } else { UserDefaults.standard.removeObject(forKey: key) }
+            }
+            try? FileManager.default.removeItem(at: empty)
+        }
+        UserDefaults.standard.removeObject(forKey: "hushtype.modelId")
+        AppConfig.shared.localModel = .optimized
+        UserDefaults.standard.set(empty.path, forKey: "hushtype.optimizedModelPath")
+
+        let engine = Qwen3TranscriptionEngine()
+        defer { engine.unload() }
+        let usedFallback = try await engine.load(fallbackModelID: AppConfig.shared.fallbackModelSource)
+        XCTAssertTrue(usedFallback)
+        XCTAssertEqual(engine.loadedModelID, fast)
+        XCTAssertEqual(AppConfig.shared.localModel, .optimized)
+    }
+
     private func installMetallib() throws -> Bool {
         let fm = FileManager.default
         guard let dir = Bundle(for: Self.self).executableURL?.deletingLastPathComponent() else { return false }

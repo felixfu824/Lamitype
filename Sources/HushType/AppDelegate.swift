@@ -440,15 +440,17 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
 
         // Load local model async.
         statusBar.setState(.loading(0))
+        let fallbackModel = AppConfig.shared.fallbackModelSource
         Task.detached { [weak self] in
             do {
-                try await self?.localEngine.load { progress, description in
+                let usedFallback = try await self?.localEngine.load(fallbackModelID: fallbackModel) { progress, description in
                     DispatchQueue.main.async {
                         self?.statusBar.setState(.loading(progress))
                     }
-                }
+                } ?? false
                 await MainActor.run {
                     guard let self else { return }
+                    if usedFallback { LocalModelSwitcher.shared.noteLoadFallback(failed: .optimized, using: .fast) }
                     self.state = .idle
                     self.statusBar.setState(.idle)
                     log.info("Lamitype ready")
@@ -1756,15 +1758,17 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         statusBar.setState(.loading(0))
         statusBar.setModelLoaded()
 
+        let fallbackModel = AppConfig.shared.fallbackModelSource
         Task.detached { [weak self] in
             do {
-                try await self?.localEngine.load { progress, description in
+                let usedFallback = try await self?.localEngine.load(fallbackModelID: fallbackModel) { progress, description in
                     DispatchQueue.main.async {
                         self?.statusBar.setState(.loading(progress))
                     }
-                }
+                } ?? false
                 await MainActor.run {
                     guard let self else { return }
+                    if usedFallback { LocalModelSwitcher.shared.noteLoadFallback(failed: .optimized, using: .fast) }
                     self.state = .idle
                     self.statusBar.setState(.idle)
                     log.info("Model reloaded")
@@ -1961,11 +1965,12 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
             if !localEngine.isLoaded {
                 state = .loading
                 statusBar.setState(.loading(0))
-                try await localEngine.load { [weak self] progress, _ in
+                let usedFallback = try await localEngine.load(fallbackModelID: AppConfig.shared.fallbackModelSource) { [weak self] progress, _ in
                     DispatchQueue.main.async {
                         self?.statusBar.setState(.loading(progress))
                     }
                 }
+                if usedFallback { LocalModelSwitcher.shared.noteLoadFallback(failed: .optimized, using: .fast) }
             }
             state = .transcribing
             statusBar.setState(.transcribing)
@@ -2796,7 +2801,11 @@ extension AppDelegate {
                      "pasteDispatchCount": NativeLocalLiveCounters.pasteDispatches,
                      "failedAudioFrames": liveDictation?.audio.count ?? 0,
                      "cacheLease": LocalLiveOwnership.isBusy,
-                     "modelLoaded": localEngine.isLoaded]
+                     "modelLoaded": localEngine.isLoaded,
+                     "loadedModelID": localEngine.loadedModelID ?? "",
+                     "savedLocalModel": AppConfig.shared.localModel.rawValue,
+                     "activeLocalModel": LocalModelSwitcher.shared.active.rawValue,
+                     "switchPhase": String(describing: LocalModelSwitcher.shared.phase)]
                 }, snapshot: { [self] event in
                     guard overlayWindow.isVisible, let view = overlayWindow.contentView,
                           let rep = view.bitmapImageRepForCachingDisplay(in: view.bounds) else { return }
@@ -2825,8 +2834,11 @@ extension AppDelegate {
                     else { liveRecoveryWindow.window?.orderOut(nil) }
                 }, interruptHotkey: { [self] in hotkeyManager.nativeInterruptAndResume() },
                 staleHotkey: { [self] in hotkeyManager.nativeDeliverStaleDisable() })
+            driver.performProviderMenuAction = { [self] in statusBar.nativePerformMenuAction($0, provider: $1) }
+            driver.modelMenuSnapshot = { [self] in statusBar.localModelMenuSnapshotForQA() }
             await driver.run()
             switchDictationEngine(to: originalEngine)
+            if CommandLine.arguments.contains("--native-quit-when-done") { NSApp.terminate(nil); return }
             if !originalModelLoaded, originalEngine != .local, state == .idle { await unloadModel() }
         }
     }
