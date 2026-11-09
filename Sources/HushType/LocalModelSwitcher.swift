@@ -46,6 +46,8 @@ final class LocalModelSwitcher: ObservableObject {
     var isBusy: () -> Bool = { false }
     /// Reloads the saved model after a load left nothing loaded. Wired by AppDelegate.
     var retryLoad: (() -> Void)?
+    /// A retry loads the local model, so it runs only while Local dictation is selected.
+    var canRetryLoad: () -> Bool = { true }
 
     private let config: AppConfig
     private var task: Task<Void, Never>?
@@ -97,7 +99,7 @@ final class LocalModelSwitcher: ObservableObject {
         guard engine.map({ loadInFlight?($0) ?? $0.hasInFlightLoad }) != true else { return false }
         if model == active {
             if case .notLoaded = phase {
-                guard !isBusy() else { return false }
+                guard !isBusy(), canRetryLoad() else { return false }
                 phase = .idle
                 if config.localModel != model { commit(model) }
                 retryLoad?()
@@ -115,7 +117,7 @@ final class LocalModelSwitcher: ObservableObject {
             // Nothing is loaded (unloaded, or a cloud engine): the next load uses the choice.
             // After a failed load, load the new choice now.
             let retryAfterFailure: Bool
-            if case .notLoaded = phase { retryAfterFailure = true } else { retryAfterFailure = false }
+            if case .notLoaded = phase { retryAfterFailure = canRetryLoad() } else { retryAfterFailure = false }
             commit(model)
             phase = .idle
             if retryAfterFailure { retryLoad?() }

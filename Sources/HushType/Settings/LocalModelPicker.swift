@@ -143,6 +143,8 @@ struct LocalModelPicker: View {
                 busyNotice = !switcher.select(target)
             }
             .controlSize(.small)
+            // Retrying loads the local model: not while cloud dictation is selected.
+            .disabled(nothingLoaded && !enabled)
         }
         .padding(8)
         .background(RoundedRectangle(cornerRadius: 6).fill(Color.orange.opacity(0.12)))

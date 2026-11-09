@@ -71,4 +71,20 @@ final class LocalModelNothingLoadedTests: XCTestCase {
         switcher.noteModelLoaded()
         XCTAssertEqual(switcher.phase, .idle)
     }
+
+    func testNoRetryWhileCloudDictationIsSelected() {
+        config.localModel = .optimized
+        let switcher = LocalModelSwitcher(config: config)
+        switcher.engine = Qwen3TranscriptionEngine()
+        var retries = 0
+        switcher.retryLoad = { retries += 1 }
+        switcher.canRetryLoad = { false }
+        switcher.noteLoadFailedWithNothingLoaded(.optimized)
+        XCTAssertFalse(switcher.select(.optimized))
+        XCTAssertEqual(switcher.phase, .notLoaded(.optimized))
+        // Choosing the other model saves it for the next local load only.
+        XCTAssertTrue(switcher.select(.fast))
+        XCTAssertEqual(config.localModel, .fast)
+        XCTAssertEqual(retries, 0)
+    }
 }

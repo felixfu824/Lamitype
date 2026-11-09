@@ -147,6 +147,10 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         case unloaded
     }
 
+    /// Bumped when a launch/reload model load starts or is abandoned, so a
+    /// stale completion cannot overwrite the state of a later operation.
+    private var modelLoadGeneration = 0
+
     private var state: AppState = .loading {
         didSet {
             log.info("State: \(String(describing: self.state))")
@@ -254,6 +258,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         localEngine = Qwen3TranscriptionEngine()
         LocalModelSwitcher.shared.engine = localEngine
         LocalModelSwitcher.shared.retryLoad = { [weak self] in self?.reloadModel() }
+        LocalModelSwitcher.shared.canRetryLoad = { AppConfig.shared.dictationEngine == .local }
         LocalModelSwitcher.shared.isBusy = { [weak self] in
             guard let self else { return true }
             let quiet = self.state == .idle || self.state == .unloaded
@@ -457,6 +462,8 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         // Load local model async.
         statusBar.setState(.loading(0))
         let fallbackModel = AppConfig.shared.fallbackModelSource
+        modelLoadGeneration += 1
+        let generation = modelLoadGeneration
         Task.detached { [weak self] in
             do {
                 let usedFallback = try await self?.localEngine.load(fallbackModelID: fallbackModel) { progress, description in
@@ -465,7 +472,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
                     }
                 } ?? false
                 await MainActor.run {
-                    guard let self else { return }
+                    guard let self, self.modelLoadGeneration == generation else { return }
                     LocalModelSwitcher.shared.noteModelLoaded()
                     if usedFallback { LocalModelSwitcher.shared.noteLoadFallback(failed: .optimized, using: .fast) }
                     self.state = .idle
@@ -476,9 +483,10 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
             } catch {
                 log.error("Failed to load model: \(error.localizedDescription, privacy: .public)")
                 await MainActor.run {
-                    self?.state = .idle
+                    guard let self, self.modelLoadGeneration == generation else { return }
+                    self.state = .idle
                     LocalModelSwitcher.shared.noteLoadFailedWithNothingLoaded(AppConfig.shared.localModel)
-                    self?.statusBar.setState(.error(L10n.string(
+                    self.statusBar.setState(.error(L10n.string(
                         "status.model_load_failed",
                         fallback: "Model load failed"
                     )))
@@ -1680,6 +1688,9 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
                 reloadModel()
             }
         } else if state == .unloaded || state == .loading {
+            // Abandon any launch/reload in flight: its completion must not
+            // overwrite the cloud engine's ready state.
+            modelLoadGeneration += 1
             localEngine.unload()
             state = .idle
             statusBar.setState(.idle)
@@ -1784,12 +1795,18 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
             print("[Lamitype] Model already loaded")
             return
         }
+        guard state != .loading else {
+            print("[Lamitype] Model load already in progress")
+            return
+        }
 
         state = .loading
         statusBar.setState(.loading(0))
         statusBar.setModelLoaded()
 
         let fallbackModel = AppConfig.shared.fallbackModelSource
+        modelLoadGeneration += 1
+        let generation = modelLoadGeneration
         Task.detached { [weak self] in
             do {
                 let usedFallback = try await self?.localEngine.load(fallbackModelID: fallbackModel) { progress, description in
@@ -1798,7 +1815,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
                     }
                 } ?? false
                 await MainActor.run {
-                    guard let self else { return }
+                    guard let self, self.modelLoadGeneration == generation else { return }
                     LocalModelSwitcher.shared.noteModelLoaded()
                     if usedFallback { LocalModelSwitcher.shared.noteLoadFallback(failed: .optimized, using: .fast) }
                     self.state = .idle
@@ -1809,9 +1826,10 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
             } catch {
                 log.error("Failed to reload model: \(error.localizedDescription, privacy: .public)")
                 await MainActor.run {
-                    self?.state = .unloaded
+                    guard let self, self.modelLoadGeneration == generation else { return }
+                    self.state = .unloaded
                     LocalModelSwitcher.shared.noteLoadFailedWithNothingLoaded(AppConfig.shared.localModel)
-                    self?.statusBar.setState(.error(L10n.string(
+                    self.statusBar.setState(.error(L10n.string(
                         "status.model_reload_failed",
                         fallback: "Reload failed"
                     )))

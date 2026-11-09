@@ -255,6 +255,8 @@ final class LiveCaptionManager {
                         noteFallback: { LocalModelSwitcher.shared.noteLoadFallback(failed: .optimized, using: .fast) }
                     )
                     asrModel = localEngine.loadedModel
+                    // A lazy load fixes an earlier launch/reload failure.
+                    if asrModel != nil { LocalModelSwitcher.shared.noteModelLoaded() }
                 } catch is CancellationError {
                     asrModel = nil
                     vm.headerState = .live
