@@ -1,5 +1,5 @@
 {
-  "originHash" : "c4c82e8c7ea22fc18f7951f93606494a10dae7f9db52b1edaf13633b14b56e42",
+  "originHash" : "7de86edfbf79321e140d2ab3dfc1454cb2b0000bdacd88572229e58e655290f5",
   "pins" : [
     {
       "identity" : "async-http-client",
@@ -69,7 +69,7 @@
       "kind" : "remoteSourceControl",
       "location" : "https://github.com/felixfu824/speech-swift.git",
       "state" : {
-        "revision" : "93f6da949c3baabd04972e402181c5afb1d66a8c"
+        "revision" : "a442079f7f6feba852983479c9b8bffda123513c"
       }
     },
     {
