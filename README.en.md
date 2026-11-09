@@ -24,29 +24,31 @@
   Official website: <a href="https://lamitype.com/en/">lamitype.com/en</a>
 </p>
 
-> **Lamitype** is a free, open-source, privacy-first speech-to-text app for macOS. By default it runs the **4-bit MLX quant** of Qwen3-ASR 0.6B fully locally on Apple Silicon, transcribing English, Chinese, Japanese, and mixed-language sentences, with consistent Traditional Chinese (繁體中文) output via OpenCC. **Cloud dictation (OpenAI / Gemini)** is an opt-in choice: your own key over HTTPS straight to the provider, with no relay server in between. Unlike dictation tools that force your audio through a third-party relay, Lamitype keeps the choice, and the privacy, in your hands. It also stays light enough to coexist with everything else you need running at once.
+> **Lamitype** is a free, open-source, privacy-first speech-to-text app for macOS. It runs Qwen3-ASR 0.6B with MLX quantization (**Optimized (6/8-bit)** or **Fast (4-bit)**) fully locally on Apple Silicon, transcribing English, Chinese, Japanese, and mixed-language sentences, with consistent Traditional Chinese (繁體中文) output via OpenCC. **Cloud dictation (OpenAI / Gemini)** is an opt-in choice: your own key over HTTPS straight to the provider, with no relay server in between. Unlike dictation tools that force your audio through a third-party relay, Lamitype keeps the choice, and the privacy, in your hands. It also stays light enough to coexist with everything else you need running at once.
 
 > 🌐 **Lamitype** 是一款免費、開源、隱私優先的 macOS 語音轉文字 App，預設使用 Qwen3-ASR 在 Apple Silicon（MLX）上完全本地執行，透過 OpenCC 提供道地的繁體中文輸出；也可選擇用你自己的金鑰直連 OpenAI / Gemini 雲端聽寫，中間沒有任何轉送伺服器。<br>→ 完整中文版 README：[README.md](README.md)
 
 > **Name continuity:** Lamitype was formerly HushType. v0.5.12 renames the Mac app only; existing settings and Application Support data migrate automatically, while the iOS app and keyboard keep the HushType name in this release.
 
 <p align="center">
-  <img src="Resources/lamitype-memory-en.svg" alt="Model weight file sizes: Lamitype local about 708 MB, optional cloud mode about 0 MB in local weights, Whisper large-v3-turbo FP16 1,618 MB, and Parakeet TDT 0.6B FP32 2,472 MB" width="100%">
+  <img src="Resources/lamitype-memory-en.svg" alt="Model weight file sizes: Lamitype Optimized about 706 MB, Lamitype Fast about 708 MB, optional cloud mode about 0 MB in local weights, Whisper large-v3-turbo FP16 1,618 MB, and Parakeet TDT 0.6B FP32 2,472 MB" width="100%">
 </p>
 
-<sub>Bars compare primary model weight files at the precisions shown, measured in decimal MB; they do not compare running RAM or accuracy. Lamitype Local keeps speech on-device and uses ≈708 MB of model weights. Optional cloud dictation uses your API key and provider connection, leaving the local model unloaded (~0 MB in local weights). A smaller [4-bit MLX Whisper-turbo weight file](https://huggingface.co/mlx-community/whisper-large-v3-turbo-4bit/tree/main) is ≈463 MB, so this is not a smallest-model claim.</sub>
+<sub>Bars compare primary model weight files at the precisions shown, measured in decimal MB; they do not compare running RAM or accuracy. Lamitype Local keeps speech on-device and uses about 706 MB of model weights for Optimized or 708 MB for Fast. Optional cloud dictation uses your API key and provider connection, leaving the local model unloaded (~0 MB in local weights). A smaller [4-bit MLX Whisper-turbo weight file](https://huggingface.co/mlx-community/whisper-large-v3-turbo-4bit/tree/main) is ≈463 MB, so this is not a smallest-model claim.</sub>
 
 ---
 
-## What's new in v0.5.16
+## What's new in v0.5.17
 
-Spoken amounts, percentages and times now arrive in the number formats you would type in documents and spreadsheets.
+Local dictation adds Optimized (6/8-bit), with about 706 MB of weights, roughly the same size as the existing Fast (4-bit) model.
 
-**More complete number conversion.** Works in Mandarin (Traditional and Simplified), English and mixed Chinese-English, covering amounts, percentages, decimals with units, times, dates, phone numbers, versions and model codes: "forty-five thousand dollars" → "$45,000", "twelve point five percent" → "12.5%", "three thirty pm" → "3:30 pm", 「三點半開會」→「3:30開會」.
+**Switch between two models.** Choose under Local model in the menu bar or Settings → Dictation. In evaluations using Lamitype’s speech-swift engine, Optimized has lower error rates than Fast: 1.08 percentage points on Common Voice 19 zh-TW and 0.56 on mixed Chinese-English (ASCEND) ([evaluation details](https://huggingface.co/felixfu824/Qwen3-ASR-0.6B-MLX-mixed-6-8bit)).
 
-**Everyday wording stays as words.** Idioms, small everyday counts and names such as "Twenty One Pilots" are left alone. Conversion runs on your Mac.
+**New-install defaults.** Optimized and Standard dictation, with Live preview and Auto Polish Dictation off. Existing installs keep their settings.
 
-**Live preview pastes into spreadsheets.** Google Sheets and similar grids that used to show "Automatic paste skipped" now receive the final text (detected app, window or tab changes, and password fields, still block automatic paste).
+**Interrupted downloads recover.** The next app launch or model selection downloads the missing files. If loading fails, click Try Again in Settings.
+
+**Known issue.** Fast occasionally repeats text in long mixed Chinese-English speech. Optimized did not in our tests.
 
 ---
 
@@ -192,7 +194,7 @@ Updating means **replacing the `.app` bundle**. Preferences, the ASR model, and 
 
 **v0.5.12 rename transition:** the new Developer ID signing identity makes macOS reconfirm Accessibility, Microphone, and Screen & System Audio Recording independently once. The setup window shows their current state. If the old HushType Accessibility entry causes duplicates or a broken switch, use **Reset Old HushType Entry**, then add or enable Lamitype.
 
-**Full uninstall:** Trash `/Applications/Lamitype.app`, then optionally run `defaults delete com.felix.hushtype` and remove `~/Library/Caches/qwen3-speech/models/aufklarer/Qwen3-ASR-0.6B-MLX-4bit/` to clear the macOS app's model cache. The iOS server uses a separate Python / Hugging Face cache.
+**Full uninstall:** Trash `/Applications/Lamitype.app`, then optionally run `defaults delete com.felix.hushtype` and remove `~/Library/Caches/qwen3-speech/` to clear the macOS app's local model caches, including Optimized and Fast. The iOS server uses a separate Python / Hugging Face cache.
 
 ---
 
@@ -471,9 +473,11 @@ defaults read com.felix.hushtype
 # Language: nil=auto, "english", "chinese", "japanese"
 defaults write com.felix.hushtype hushtype.language -string "chinese"
 
-# Model: macOS default "aufklarer/Qwen3-ASR-0.6B-MLX-4bit" (0.6B, 4-bit MLX quant);
-# alternative "mlx-community/Qwen3-ASR-1.7B-8bit" for better quality.
+# Local model: switch under Local model in the menu or Settings → Dictation.
+# Advanced: hushtype.modelId overrides the UI selection (the menu still shows the original choice); this example uses a 1.7B model.
 defaults write com.felix.hushtype hushtype.modelId -string "mlx-community/Qwen3-ASR-1.7B-8bit"
+# Return to the model selected in the UI:
+defaults delete com.felix.hushtype hushtype.modelId
 
 # Dictation engine: "local" (default) / "openai" / "gemini"; persists across restarts
 defaults write com.felix.hushtype hushtype.dictationEngine -string "local"
