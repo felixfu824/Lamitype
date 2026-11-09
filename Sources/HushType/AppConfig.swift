@@ -50,22 +50,24 @@ final class AppConfig {
         defaults.integer(forKey: Keys.defaultsProfile) >= Self.freshInstallDefaultsProfile
     }
 
-    /// Stamps a first launch with the current defaults profile. A store that
-    /// already holds any Lamitype setting is an upgrade and is left untouched,
-    /// so upgrading users keep Fast and Live preview unless they chose otherwise.
-    /// Must run before anything at launch writes a `hushtype.` setting.
+    /// Stamps a first launch with the current defaults profile. Anything that
+    /// shows Lamitype ran before makes this an upgrade, which is left
+    /// untouched so upgrading users keep Fast and Live preview unless they
+    /// chose otherwise:
+    /// - any stored key in the app's preferences domain (older releases could
+    ///   run with no `hushtype.` key, but AppKit and the app write other keys);
+    /// - `priorInstallOnDisk`: app-support data or a Fast weight cache.
+    /// Must run before anything at launch writes a setting or app-support file.
     @discardableResult
-    func stampFreshInstallDefaultsIfNeeded() -> Bool {
-        // Only this app's stored settings count: not the argument or global
-        // domains, and not registered defaults.
-        let storedKeys: [String]
+    func stampFreshInstallDefaultsIfNeeded(priorInstallOnDisk: () -> Bool) -> Bool {
+        let hasPriorSettings: Bool
         if let domainName {
-            storedKeys = Array((defaults.persistentDomain(forName: domainName) ?? [:]).keys)
+            hasPriorSettings = !(defaults.persistentDomain(forName: domainName) ?? [:]).isEmpty
         } else {
-            storedKeys = Array(defaults.dictionaryRepresentation().keys)
+            // Unbundled runs only: this view includes the global domain.
+            hasPriorSettings = defaults.dictionaryRepresentation().keys.contains { $0.hasPrefix("hushtype.") }
         }
-        let hasPriorSettings = storedKeys.contains { $0.hasPrefix("hushtype.") }
-        guard !hasPriorSettings else { return false }
+        guard !hasPriorSettings, !priorInstallOnDisk() else { return false }
         defaults.set(Self.freshInstallDefaultsProfile, forKey: Keys.defaultsProfile)
         log.info("First launch: using fresh-install defaults (Optimized, Live preview off)")
         return true
@@ -214,9 +216,14 @@ final class AppConfig {
     /// Model to load instead when the saved Optimized model cannot load at
     /// launch or reload, so dictation keeps working. Nil for Fast and when an
     /// explicit `hushtype.modelId` override is set.
+    /// On a fresh install the fallback is used only when Fast is already on
+    /// disk: otherwise a failed first Optimized load would silently start a
+    /// second full download, and the user sees the load failure instead.
     var fallbackModelSource: String? {
         guard localModel == .optimized, defaults.string(forKey: Keys.modelId) == nil else { return nil }
-        return modelSource(for: .fast)
+        let fast = modelSource(for: .fast)
+        if usesFreshInstallDefaults, !weightsOnDisk(fast) { return nil }
+        return fast
     }
 
     /// Whether to convert Simplified Chinese output to Traditional Chinese.
@@ -533,14 +540,24 @@ final class AppConfig {
 
     /// Persistent domain that holds this app's stored settings.
     private let domainName: String?
+    /// Whether a model source's weights are fully on disk.
+    private let weightsOnDisk: (String) -> Bool
 
-    private init(defaults: UserDefaults = .standard, domainName: String? = Bundle.main.bundleIdentifier) {
+    private init(
+        defaults: UserDefaults = .standard,
+        domainName: String? = Bundle.main.bundleIdentifier,
+        weightsOnDisk: @escaping (String) -> Bool = { LocalModelSwitcher.weightsOnDisk(source: $0) }
+    ) {
         self.defaults = defaults
         self.domainName = domainName
+        self.weightsOnDisk = weightsOnDisk
     }
     #if DEBUG
-    static func forUpgradeTesting(defaults: UserDefaults, domainName: String? = nil) -> AppConfig {
-        AppConfig(defaults: defaults, domainName: domainName)
+    static func forUpgradeTesting(
+        defaults: UserDefaults, domainName: String? = nil,
+        weightsOnDisk: @escaping (String) -> Bool = { _ in true }
+    ) -> AppConfig {
+        AppConfig(defaults: defaults, domainName: domainName, weightsOnDisk: weightsOnDisk)
     }
     #endif
 }

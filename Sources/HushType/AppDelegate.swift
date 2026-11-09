@@ -212,14 +212,18 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
             NSApp.terminate(nil)
             return
         }
-        // Before any launch step writes a setting: decide fresh install vs upgrade.
-        AppConfig.shared.stampFreshInstallDefaultsIfNeeded()
-
         let appSupport = appSupportDirectoryOverride ?? FileManager.default.urls(
             for: .applicationSupportDirectory,
             in: .userDomainMask
         )[0]
         let roots = AppSupportMigrator.productionRoots(in: appSupport)
+        // Before any launch step writes a setting or app-support file: decide
+        // fresh install vs upgrade.
+        AppConfig.shared.stampFreshInstallDefaultsIfNeeded(priorInstallOnDisk: {
+            let files = FileManager.default
+            return files.fileExists(atPath: roots.old.path) || files.fileExists(atPath: roots.new.path)
+                || LocalModelSwitcher.weightsOnDisk(source: AppConfig.LocalModel.fast.huggingFaceID)
+        })
         let oldRoot = roots.old
         let newRoot = roots.new
         switch AppSupportMigrator.migrate(oldRoot: oldRoot, newRoot: newRoot) {
