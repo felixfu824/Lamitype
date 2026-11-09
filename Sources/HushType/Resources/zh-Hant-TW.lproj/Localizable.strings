@@ -1843,8 +1843,8 @@
 "settings.local_model.load_failed" = "無法載入「%1$@」模型。請再試一次。Lamitype 仍在使用「%2$@」模型。";
 "settings.dictation.local_model" = "本機模型：";
 "settings.local_model.busy" = "請先完成目前的聽寫，再切換模型。";
-"settings.local_model.fast.detail" = "預設 · 最快";
-"settings.local_model.optimized.detail" = "經過最佳化，權重大小與快速相同";
+"settings.local_model.fast.detail" = "最快";
+"settings.local_model.optimized.detail" = "建議 · 權重大小與快速相同";
 "settings.local_model.size" = "%1$ld MB";
 "settings.local_model.in_use_until_ready" = "新模型就緒前繼續使用";
 "settings.local_model.not_downloaded" = "尚未下載";

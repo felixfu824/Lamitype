@@ -36,6 +36,39 @@ final class AppConfig {
         static let cloudDictationModelGemini = "hushtype.cloudDictationModelGemini"
         static let interfaceLanguage = "hushtype.interfaceLanguage"
         static let evalModeIntroShown = "hushtype.evalModeIntroShown"
+        static let defaultsProfile = "hushtype.defaultsProfile"
+    }
+
+    /// Settings defaults that apply to installs first launched on or after the
+    /// release that made Optimized the default. Profile 1 (no stored value) is
+    /// every earlier install and keeps its old defaults: Fast, Live preview on.
+    static let freshInstallDefaultsProfile = 2
+
+    /// True for installs stamped at first launch with the current defaults
+    /// profile: Optimized and standard (non-live) local dictation by default.
+    var usesFreshInstallDefaults: Bool {
+        defaults.integer(forKey: Keys.defaultsProfile) >= Self.freshInstallDefaultsProfile
+    }
+
+    /// Stamps a first launch with the current defaults profile. A store that
+    /// already holds any Lamitype setting is an upgrade and is left untouched,
+    /// so upgrading users keep Fast and Live preview unless they chose otherwise.
+    /// Must run before anything at launch writes a `hushtype.` setting.
+    @discardableResult
+    func stampFreshInstallDefaultsIfNeeded() -> Bool {
+        // Only this app's stored settings count: not the argument or global
+        // domains, and not registered defaults.
+        let storedKeys: [String]
+        if let domainName {
+            storedKeys = Array((defaults.persistentDomain(forName: domainName) ?? [:]).keys)
+        } else {
+            storedKeys = Array(defaults.dictionaryRepresentation().keys)
+        }
+        let hasPriorSettings = storedKeys.contains { $0.hasPrefix("hushtype.") }
+        guard !hasPriorSettings else { return false }
+        defaults.set(Self.freshInstallDefaultsProfile, forKey: Keys.defaultsProfile)
+        log.info("First launch: using fresh-install defaults (Optimized, Live preview off)")
+        return true
     }
 
     /// Dictation deliberately persists its engine choice across launches so
@@ -49,7 +82,7 @@ final class AppConfig {
 
     var localLivePreviewEnabled: Bool {
         get {
-            guard defaults.object(forKey: "hushtype.localLivePreviewEnabled") != nil else { return true }
+            guard defaults.object(forKey: "hushtype.localLivePreviewEnabled") != nil else { return !usesFreshInstallDefaults }
             return defaults.bool(forKey: "hushtype.localLivePreviewEnabled")
         }
         set { defaults.set(newValue, forKey: "hushtype.localLivePreviewEnabled") }
@@ -150,8 +183,12 @@ final class AppConfig {
     }
 
     /// The local model in use. Changed only after the new model has loaded.
+    /// With no saved choice: Optimized for fresh installs, Fast for upgrades.
     var localModel: LocalModel {
-        get { defaults.string(forKey: Keys.localModel).flatMap(LocalModel.init(rawValue:)) ?? .fast }
+        get {
+            defaults.string(forKey: Keys.localModel).flatMap(LocalModel.init(rawValue:))
+                ?? (usesFreshInstallDefaults ? .optimized : .fast)
+        }
         set {
             defaults.set(newValue.rawValue, forKey: Keys.localModel)
             log.info("Local model set to: \(newValue.rawValue, privacy: .public)")
@@ -494,9 +531,17 @@ final class AppConfig {
         AppSupportPaths.openAIKeyFileURL
     }
 
-    private init(defaults: UserDefaults = .standard) { self.defaults = defaults }
+    /// Persistent domain that holds this app's stored settings.
+    private let domainName: String?
+
+    private init(defaults: UserDefaults = .standard, domainName: String? = Bundle.main.bundleIdentifier) {
+        self.defaults = defaults
+        self.domainName = domainName
+    }
     #if DEBUG
-    static func forUpgradeTesting(defaults: UserDefaults) -> AppConfig { AppConfig(defaults: defaults) }
+    static func forUpgradeTesting(defaults: UserDefaults, domainName: String? = nil) -> AppConfig {
+        AppConfig(defaults: defaults, domainName: domainName)
+    }
     #endif
 }
 

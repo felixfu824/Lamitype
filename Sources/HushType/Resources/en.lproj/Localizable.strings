@@ -1843,8 +1843,8 @@
 "settings.local_model.load_failed" = "Couldn’t load the %1$@ model. Try again. Lamitype is still using %2$@.";
 "settings.dictation.local_model" = "Local model:";
 "settings.local_model.busy" = "Finish the current dictation before switching models.";
-"settings.local_model.fast.detail" = "Default · fastest";
-"settings.local_model.optimized.detail" = "Optimized, with the same weight size as Fast";
+"settings.local_model.fast.detail" = "Fastest";
+"settings.local_model.optimized.detail" = "Recommended · same weight size as Fast";
 "settings.local_model.size" = "%1$ld MB";
 "settings.local_model.in_use_until_ready" = "in use until the new model is ready";
 "settings.local_model.not_downloaded" = "Not downloaded";

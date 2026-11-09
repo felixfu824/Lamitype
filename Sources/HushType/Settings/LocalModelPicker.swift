@@ -58,11 +58,11 @@ struct LocalModelPicker: View {
         var parts: [String]
         switch model {
         case .fast:
-            parts = [L10n.string("settings.local_model.fast.detail", fallback: "Default · fastest")]
+            parts = [L10n.string("settings.local_model.fast.detail", fallback: "Fastest")]
         case .optimized:
             parts = [L10n.string(
                 "settings.local_model.optimized.detail",
-                fallback: "Optimized, with the same weight size as Fast"
+                fallback: "Recommended · same weight size as Fast"
             )]
         }
         parts.append(L10n.format("settings.local_model.size", "%1$ld MB", arguments: [model.downloadMB]))

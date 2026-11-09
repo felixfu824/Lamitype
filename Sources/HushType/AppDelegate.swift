@@ -212,6 +212,8 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
             NSApp.terminate(nil)
             return
         }
+        // Before any launch step writes a setting: decide fresh install vs upgrade.
+        AppConfig.shared.stampFreshInstallDefaultsIfNeeded()
 
         let appSupport = appSupportDirectoryOverride ?? FileManager.default.urls(
             for: .applicationSupportDirectory,
