@@ -467,8 +467,9 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         Task.detached { [weak self] in
             do {
                 let usedFallback = try await self?.localEngine.load(fallbackModelID: fallbackModel) { progress, description in
-                    DispatchQueue.main.async {
-                        self?.statusBar.setState(.loading(progress))
+                    DispatchQueue.main.async { [weak self] in
+                        guard let self, self.modelLoadGeneration == generation else { return }
+                        self.statusBar.setState(.loading(progress))
                     }
                 } ?? false
                 await MainActor.run {
@@ -1706,6 +1707,9 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         // Block dictation while a local-caption backend drains. The status
         // row stays unchanged until the final unloaded/idle transition.
         state = .loading
+        // An engine switch or reload during the drain supersedes this unload.
+        modelLoadGeneration += 1
+        let unloadGeneration = modelLoadGeneration
 
         // Snapshot the physical footprint at each step so a user reporting
         // "memory didn't release" can post the numbers and we can see exactly
@@ -1724,6 +1728,11 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         // backend has no Qwen reference and must survive this operation.
         let wasLocalCaptionActive = await liveCaptionManager?.releaseLocalModel() ?? false
         snapshot("1_manager_release")
+        guard modelLoadGeneration == unloadGeneration else {
+            // Must not unload (and cancel) a load the user requested since.
+            log.info("Unload superseded by a later engine switch or reload")
+            return
+        }
 
         localEngine.unload()
         snapshot("2_engine_unload")
@@ -1810,8 +1819,9 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         Task.detached { [weak self] in
             do {
                 let usedFallback = try await self?.localEngine.load(fallbackModelID: fallbackModel) { progress, description in
-                    DispatchQueue.main.async {
-                        self?.statusBar.setState(.loading(progress))
+                    DispatchQueue.main.async { [weak self] in
+                        guard let self, self.modelLoadGeneration == generation else { return }
+                        self.statusBar.setState(.loading(progress))
                     }
                 } ?? false
                 await MainActor.run {
