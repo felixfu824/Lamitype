@@ -421,7 +421,12 @@ final class LocalModelSwitcher: ObservableObject {
                 .appendingPathComponent(parts[0], isDirectory: true)
                 .appendingPathComponent(parts[1], isDirectory: true))
         }
-        return candidates.contains { HuggingFaceDownloader.weightsExist(in: $0) }
+        // A cache whose Hub download was interrupted may be missing files; it
+        // is not "on disk" until the download finishes (speech-swift marker).
+        return candidates.contains {
+            HuggingFaceDownloader.weightsExist(in: $0)
+                && !HuggingFaceDownloader.hasIncompleteDownloadMarker(in: $0)
+        }
     }
 }
 
