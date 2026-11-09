@@ -1824,9 +1824,9 @@
 
 /* Local model switch (Fast / Optimized) */
 "local_model.fast" = "快速（4-bit）";
-"local_model.optimized" = "平衡（6/8-bit）";
+"local_model.optimized" = "精準（6/8-bit）";
 "local_model.fast.short" = "快速";
-"local_model.optimized.short" = "平衡";
+"local_model.optimized.short" = "精準";
 "menu.local_model" = "本機模型";
 "menu.local_model.cancel_download" = "取消下載";
 "menu.local_model.downloading" = "下載中… %1$ld%%";
