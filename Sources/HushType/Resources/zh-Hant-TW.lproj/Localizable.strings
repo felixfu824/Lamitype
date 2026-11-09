@@ -1852,4 +1852,5 @@
 "settings.local_model.loading" = "正在載入模型…";
 "settings.local_model.keeps_current" = "新模型就緒前，聽寫會繼續使用「%1$@」模型。";
 "settings.local_model.failed" = "無法下載「%1$@」模型。請檢查網路連線後再試一次。Lamitype 仍在使用「%2$@」模型。";
+"settings.local_model.nothing_loaded" = "無法載入「%1$@」模型。請檢查網路連線後再試一次。";
 "settings.local_model.try_again" = "再試一次";

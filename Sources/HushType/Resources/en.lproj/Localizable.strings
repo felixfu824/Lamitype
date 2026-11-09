@@ -1852,4 +1852,5 @@
 "settings.local_model.loading" = "Loading model…";
 "settings.local_model.keeps_current" = "Dictation keeps using %1$@ until the new model is ready.";
 "settings.local_model.failed" = "Couldn’t download the %1$@ model. Check your connection, then try again. Lamitype is still using %2$@.";
+"settings.local_model.nothing_loaded" = "Couldn’t load the %1$@ model. Check your connection, then try again.";
 "settings.local_model.try_again" = "Try Again";

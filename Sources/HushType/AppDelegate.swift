@@ -253,6 +253,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
 
         localEngine = Qwen3TranscriptionEngine()
         LocalModelSwitcher.shared.engine = localEngine
+        LocalModelSwitcher.shared.retryLoad = { [weak self] in self?.reloadModel() }
         LocalModelSwitcher.shared.isBusy = { [weak self] in
             guard let self else { return true }
             let quiet = self.state == .idle || self.state == .unloaded
@@ -465,6 +466,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
                 } ?? false
                 await MainActor.run {
                     guard let self else { return }
+                    LocalModelSwitcher.shared.noteModelLoaded()
                     if usedFallback { LocalModelSwitcher.shared.noteLoadFallback(failed: .optimized, using: .fast) }
                     self.state = .idle
                     self.statusBar.setState(.idle)
@@ -475,6 +477,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
                 log.error("Failed to load model: \(error.localizedDescription, privacy: .public)")
                 await MainActor.run {
                     self?.state = .idle
+                    LocalModelSwitcher.shared.noteLoadFailedWithNothingLoaded(AppConfig.shared.localModel)
                     self?.statusBar.setState(.error(L10n.string(
                         "status.model_load_failed",
                         fallback: "Model load failed"
@@ -1796,6 +1799,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
                 } ?? false
                 await MainActor.run {
                     guard let self else { return }
+                    LocalModelSwitcher.shared.noteModelLoaded()
                     if usedFallback { LocalModelSwitcher.shared.noteLoadFallback(failed: .optimized, using: .fast) }
                     self.state = .idle
                     self.statusBar.setState(.idle)
@@ -1806,6 +1810,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
                 log.error("Failed to reload model: \(error.localizedDescription, privacy: .public)")
                 await MainActor.run {
                     self?.state = .unloaded
+                    LocalModelSwitcher.shared.noteLoadFailedWithNothingLoaded(AppConfig.shared.localModel)
                     self?.statusBar.setState(.error(L10n.string(
                         "status.model_reload_failed",
                         fallback: "Reload failed"

@@ -28,6 +28,8 @@ struct LocalModelPicker: View {
                 failureRow(target: target, loadFailure: false)
             case .loadFailed(let target):
                 failureRow(target: target, loadFailure: true)
+            case .notLoaded(let target):
+                failureRow(target: target, loadFailure: true, nothingLoaded: true)
             case .idle:
                 EmptyView()
             }
@@ -113,18 +115,28 @@ struct LocalModelPicker: View {
         .padding(.leading, 20)
     }
 
-    private func failureRow(target: AppConfig.LocalModel, loadFailure: Bool) -> some View {
+    private func failureRow(target: AppConfig.LocalModel, loadFailure: Bool, nothingLoaded: Bool = false) -> some View {
         HStack(alignment: .top, spacing: 8) {
             Image(systemName: "exclamationmark.triangle")
                 .foregroundStyle(.orange)
                 .accessibilityHidden(true)
-            Text(L10n.format(
-                loadFailure ? "settings.local_model.load_failed" : "settings.local_model.failed",
-                loadFailure
-                    ? "Couldn’t load the %1$@ model. Try again. Lamitype is still using %2$@."
-                    : "Couldn’t download the %1$@ model. Check your connection, then try again. Lamitype is still using %2$@.",
-                arguments: [target.shortName, switcher.active.shortName]
-            ))
+            Group {
+                if nothingLoaded {
+                    Text(L10n.format(
+                        "settings.local_model.nothing_loaded",
+                        "Couldn’t load the %1$@ model. Check your connection, then try again.",
+                        arguments: [target.shortName]
+                    ))
+                } else {
+                    Text(L10n.format(
+                        loadFailure ? "settings.local_model.load_failed" : "settings.local_model.failed",
+                        loadFailure
+                            ? "Couldn’t load the %1$@ model. Try again. Lamitype is still using %2$@."
+                            : "Couldn’t download the %1$@ model. Check your connection, then try again. Lamitype is still using %2$@.",
+                        arguments: [target.shortName, switcher.active.shortName]
+                    ))
+                }
+            }
             .font(.caption)
             .fixedSize(horizontal: false, vertical: true)
             Button(L10n.string("settings.local_model.try_again", fallback: "Try Again")) {

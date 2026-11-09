@@ -26,6 +26,9 @@ final class LocalModelSwitcher: ObservableObject {
         case switching(to: AppConfig.LocalModel, downloading: Bool, progress: Double)
         case failed(AppConfig.LocalModel)
         case loadFailed(AppConfig.LocalModel)
+        /// The saved model failed to load at launch or reload and no model
+        /// is loaded (no fallback was used).
+        case notLoaded(AppConfig.LocalModel)
     }
 
     @Published private(set) var active: AppConfig.LocalModel
@@ -41,6 +44,8 @@ final class LocalModelSwitcher: ObservableObject {
     var fenceEngineSwitch: ((Qwen3TranscriptionEngine) -> String?)?
     /// True while recording, transcribing, Live preview or Live Caption runs.
     var isBusy: () -> Bool = { false }
+    /// Reloads the saved model after a load left nothing loaded. Wired by AppDelegate.
+    var retryLoad: (() -> Void)?
 
     private let config: AppConfig
     private var task: Task<Void, Never>?
@@ -91,6 +96,13 @@ final class LocalModelSwitcher: ObservableObject {
         guard !isSwitching else { return false }
         guard engine.map({ loadInFlight?($0) ?? $0.hasInFlightLoad }) != true else { return false }
         if model == active {
+            if case .notLoaded = phase {
+                guard !isBusy() else { return false }
+                phase = .idle
+                if config.localModel != model { commit(model) }
+                retryLoad?()
+                return true
+            }
             if case .failed = phase { phase = .idle }
             if case .loadFailed = phase { phase = .idle }
             // After a launch fallback the saved choice can differ from the
@@ -101,8 +113,12 @@ final class LocalModelSwitcher: ObservableObject {
         guard !isBusy() else { return false }
         guard let engine, hasLoadedModel?(engine) ?? engine.isLoaded else {
             // Nothing is loaded (unloaded, or a cloud engine): the next load uses the choice.
+            // After a failed load, load the new choice now.
+            let retryAfterFailure: Bool
+            if case .notLoaded = phase { retryAfterFailure = true } else { retryAfterFailure = false }
             commit(model)
             phase = .idle
+            if retryAfterFailure { retryLoad?() }
             return true
         }
 
@@ -252,7 +268,7 @@ final class LocalModelSwitcher: ObservableObject {
             return L10n.string("status.model.switching", fallback: "Switching model…")
         case .failed:
             return L10n.string("status.model.download_failed", fallback: "Couldn’t download model")
-        case .loadFailed:
+        case .loadFailed, .notLoaded:
             return L10n.string("status.model.load_failed", fallback: "Couldn’t load model")
         }
     }
@@ -264,6 +280,19 @@ final class LocalModelSwitcher: ObservableObject {
         guard !isSwitching else { return }
         active = fallback
         phase = .loadFailed(failed)
+    }
+
+    /// The saved model failed to load and nothing loaded instead. Settings
+    /// shows the failure with Try Again, which reloads the saved model.
+    func noteLoadFailedWithNothingLoaded(_ model: AppConfig.LocalModel) {
+        guard !isSwitching else { return }
+        active = model
+        phase = .notLoaded(model)
+    }
+
+    /// A launch or reload load succeeded: clear a nothing-loaded failure.
+    func noteModelLoaded() {
+        if case .notLoaded = phase { phase = .idle }
     }
 
     #if DEBUG
