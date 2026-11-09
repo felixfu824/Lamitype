@@ -24,29 +24,31 @@
   官方網站：<a href="https://lamitype.com/">lamitype.com</a>
 </p>
 
-> **Lamitype** 是一款免費、開源、隱私優先的 macOS 語音轉文字 App。預設使用 Qwen3-ASR 0.6B 的 **4-bit MLX 量化版**在 Apple Silicon 上完全本地執行，支援英文、中文、日文的語音輸入，支援混用多語的句子，並透過 OpenCC 提供穩定的繁體中文輸出；也可**選擇雲端聽寫（OpenAI / Gemini）**：用你提供的金鑰經 HTTPS 直連供應商，中間沒有任何轉送伺服器。相對強迫你把音訊交給第三方的聽寫工具，Lamitype 把選擇權和隱私主導權留在你手上，並專注保持輕量，與你需要同時跑的所有 App 共存。
+> **Lamitype** 是一款免費、開源、隱私優先的 macOS 語音轉文字 App。使用 Qwen3-ASR 0.6B 的 MLX 量化模型，可選 **精準（6/8-bit）** 或 **快速（4-bit）**，在 Apple Silicon 上完全本地執行，支援英文、中文、日文的語音輸入，支援混用多語的句子，並透過 OpenCC 提供穩定的繁體中文輸出；也可**選擇雲端聽寫（OpenAI / Gemini）**：用你提供的金鑰經 HTTPS 直連供應商，中間沒有任何轉送伺服器。相對強迫你把音訊交給第三方的聽寫工具，Lamitype 把選擇權和隱私主導權留在你手上，並專注保持輕量，與你需要同時跑的所有 App 共存。
 
-> 🌐 **Lamitype** is a free, local-first dictation app for Apple Silicon Macs. It runs Qwen3-ASR (4-bit) locally via MLX for English, Chinese, Japanese, and others, and supports mixed-language sentences with genuinely native Traditional Chinese output (via OpenCC). Cloud dictation (OpenAI / Gemini) is an opt-in choice: your own key, a direct connection, and no middleman; privacy choices stay in your hands either way.<br>→ Read the full English README: [README.en.md](README.en.md)
+> 🌐 **Lamitype** is a free, local-first dictation app for Apple Silicon Macs. It runs Qwen3-ASR (6/8-bit or 4-bit) locally via MLX for English, Chinese, Japanese, and others, and supports mixed-language sentences with genuinely native Traditional Chinese output (via OpenCC). Cloud dictation (OpenAI / Gemini) is an opt-in choice: your own key, a direct connection, and no middleman; privacy choices stay in your hands either way.<br>→ Read the full English README: [README.en.md](README.en.md)
 
 > **名稱延續：** Lamitype formerly HushType。v0.5.12 只更名 Mac App；現有設定與 Application Support 資料會自動搬移，iOS App 尚未調整。
 
 <p align="center">
-  <img src="Resources/lamitype-memory-zh.svg" alt="模型權重檔案大小：Lamitype 本機約 708 MB（道地繁中）、Lamitype 雲端引擎約 0 MB，對比 Whisper large-v3-turbo 1,618 MB 與 Parakeet 2,472 MB（不支援中文）" width="100%">
+  <img src="Resources/lamitype-memory-zh.svg" alt="模型權重檔案大小：Lamitype 精準約 706 MB、快速約 708 MB（道地繁中）、Lamitype 雲端引擎約 0 MB，對比 Whisper large-v3-turbo 1,618 MB 與 Parakeet 2,472 MB（不支援中文）" width="100%">
 </p>
 
-<sub>數字為各工具預設精度的模型權重檔案大小；Lamitype 的約 708 MB 是 Qwen3-ASR 0.6B 的 4-bit MLX 量化版。選用雲端引擎（OpenAI / Gemini）時，**以雲端引擎啟動時不載入本機模型**（從本機切換時可能仍保留模型，須手動卸載），品質同級或更好，代價是每句多幾秒的網路延遲，依時長計費或使用 Gemini 免費（Free tier）API Key。另有 [4-bit Whisper-turbo](https://huggingface.co/mlx-community/whisper-large-v3-turbo-4bit/tree/main)（約 463 MB），但中文輸出仍偏簡體、品質平庸，所以我們的定位是「能做出道地繁中的輕量 ASR」，而非「最小的模型」。</sub>
+<sub>數字為各工具預設精度的模型權重檔案大小；Lamitype 的 Qwen3-ASR 0.6B MLX 模型權重約 706 MB（精準）或 708 MB（快速）。選用雲端引擎（OpenAI / Gemini）時，**以雲端引擎啟動時不載入本機模型**（從本機切換時可能仍保留模型，須手動卸載），品質同級或更好，代價是每句多幾秒的網路延遲，依時長計費或使用 Gemini 免費（Free tier）API Key。另有 [4-bit Whisper-turbo](https://huggingface.co/mlx-community/whisper-large-v3-turbo-4bit/tree/main)（約 463 MB），但中文輸出仍偏簡體、品質平庸，所以我們的定位是「能做出道地繁中的輕量 ASR」，而非「最小的模型」。</sub>
 
 ---
 
-## v0.5.16 有什麼新功能
+## v0.5.17 有什麼新功能
 
-說出口的金額、比例與時間，直接以文件和試算表慣用的數字格式輸入。
+本機聽寫新增「精準（6/8-bit）」模型，權重約 706 MB，與原有的「快速（4-bit）」大小相近。
 
-**數字轉換更完整。** 中文（繁體／簡體）、英文與中英混用都適用，涵蓋金額、百分比、帶單位的小數、時間、日期、電話、版本與型號。例如「四萬五千塊」→「4.5萬塊」、「一億兩千萬」→「1.2億」、「三點半開會」→「3:30開會」、「iPhone十七Pro」→「iPhone17Pro」。
+**兩種模型可切換。** 在選單列「本機模型」或「設定 → 語音輸入」選擇。使用 Lamitype 的 speech-swift 引擎評測，精準比快速的錯誤率低：Common Voice 19 繁中低 1.08 個百分點，中英混用（ASCEND）低 0.56 個百分點（[評測細節](https://huggingface.co/felixfu824/Qwen3-ASR-0.6B-MLX-mixed-6-8bit)）。
 
-**日常說法維持原樣。** 「千萬不要」、「一個人」、「兩杯咖啡」不會被改成數字。轉換在本地完成。
+**新安裝預設值。** 使用精準模型與標準聽寫，即時預覽及「自動校對聽寫文字」皆關閉。既有使用者的設定不變。
 
-**即時預覽可直接貼進試算表。** Google Sheets 等試算表軟體原本顯示「已略過自動貼上」的情境，現在會貼上最終文字（偵測到切換 App、視窗或分頁，或游標在密碼欄位時，仍不會自動貼上）。
+**下載中斷可恢復。** 下次開啟 App 或選擇模型時會補齊檔案。載入失敗時，可在設定中按「再試一次」。
+
+**已知問題。** 快速模型在較長的中英混用語音中偶爾會重複文字。精準模型在我們的測試中未出現此問題。
 
 ---
 
@@ -193,7 +195,7 @@ DMG 為完全獨立版本，OpenCC 及所有相依套件皆已內含。不需要
 
 **v0.5.12 更名轉換：** 新的 Developer ID 簽章身份會讓 macOS 對輔助使用、麥克風、螢幕與系統音訊錄製分別重新確認一次。設定視窗會顯示目前狀態。若舊 HushType 的輔助使用項目造成重複或失效，請使用 **Reset Old HushType Entry**，再加入或啟用 Lamitype。
 
-**完全解除安裝：** 把 `/Applications/Lamitype.app` 拖到垃圾桶，必要時執行 `defaults delete com.felix.hushtype`，並刪除 `~/Library/Caches/qwen3-speech/models/aufklarer/Qwen3-ASR-0.6B-MLX-4bit/` 以清除 macOS App 的模型快取。iOS 伺服器使用另一個 Python / Hugging Face 快取，兩者互不相同。
+**完全解除安裝：** 把 `/Applications/Lamitype.app` 拖到垃圾桶，必要時執行 `defaults delete com.felix.hushtype`，並刪除 `~/Library/Caches/qwen3-speech/` 以清除 macOS App 的本機模型快取（含精準與快速）。iOS 伺服器使用另一個 Python / Hugging Face 快取，兩者互不相同。
 
 ---
 
@@ -472,9 +474,11 @@ defaults read com.felix.hushtype
 # 語言:nil=自動, "english", "chinese", "japanese"
 defaults write com.felix.hushtype hushtype.language -string "chinese"
 
-# 模型:macOS 預設 "aufklarer/Qwen3-ASR-0.6B-MLX-4bit"（0.6B、4-bit MLX 量化）;
-# 可選 "mlx-community/Qwen3-ASR-1.7B-8bit" 以獲得更好品質。
+# 本機模型：從「本機模型」選單或「設定 → 語音輸入」切換。
+# 進階：hushtype.modelId 會覆蓋介面中的模型選擇（選單仍顯示原選項），以下以 1.7B 模型為例。
 defaults write com.felix.hushtype hushtype.modelId -string "mlx-community/Qwen3-ASR-1.7B-8bit"
+# 恢復使用介面選擇的模型：
+defaults delete com.felix.hushtype hushtype.modelId
 
 # 語音輸入引擎:"local"（預設）/ "openai" / "gemini"，跨重啟保留
 defaults write com.felix.hushtype hushtype.dictationEngine -string "local"

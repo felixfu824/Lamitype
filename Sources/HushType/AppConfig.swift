@@ -11,6 +11,8 @@ final class AppConfig {
     private enum Keys {
         static let language = "hushtype.language"
         static let modelId = "hushtype.modelId"
+        static let localModel = "hushtype.localModel"
+        static let optimizedModelPath = "hushtype.optimizedModelPath"
         static let chineseConversionEnabled = "hushtype.chineseConversionEnabled"
         static let floatingOverlayEnabled = "hushtype.floatingOverlayEnabled"
         static let onboardingCompleted = "hushtype.onboardingCompleted"
@@ -34,6 +36,41 @@ final class AppConfig {
         static let cloudDictationModelGemini = "hushtype.cloudDictationModelGemini"
         static let interfaceLanguage = "hushtype.interfaceLanguage"
         static let evalModeIntroShown = "hushtype.evalModeIntroShown"
+        static let defaultsProfile = "hushtype.defaultsProfile"
+    }
+
+    /// Settings defaults that apply to installs first launched on or after the
+    /// release that made Optimized the default. Profile 1 (no stored value) is
+    /// every earlier install and keeps its old defaults: Fast, Live preview on.
+    static let freshInstallDefaultsProfile = 2
+
+    /// True for installs stamped at first launch with the current defaults
+    /// profile: Optimized and standard (non-live) local dictation by default.
+    var usesFreshInstallDefaults: Bool {
+        defaults.integer(forKey: Keys.defaultsProfile) >= Self.freshInstallDefaultsProfile
+    }
+
+    /// Stamps a first launch with the current defaults profile. Anything that
+    /// shows Lamitype ran before makes this an upgrade, which is left
+    /// untouched so upgrading users keep Fast and Live preview unless they
+    /// chose otherwise:
+    /// - any stored key in the app's preferences domain (older releases could
+    ///   run with no `hushtype.` key, but AppKit and the app write other keys);
+    /// - `priorInstallOnDisk`: app-support data or a Fast weight cache.
+    /// Must run before anything at launch writes a setting or app-support file.
+    @discardableResult
+    func stampFreshInstallDefaultsIfNeeded(priorInstallOnDisk: () -> Bool) -> Bool {
+        let hasPriorSettings: Bool
+        if let domainName {
+            hasPriorSettings = !(defaults.persistentDomain(forName: domainName) ?? [:]).isEmpty
+        } else {
+            // Unbundled runs only: this view includes the global domain.
+            hasPriorSettings = defaults.dictionaryRepresentation().keys.contains { $0.hasPrefix("hushtype.") }
+        }
+        guard !hasPriorSettings, !priorInstallOnDisk() else { return false }
+        defaults.set(Self.freshInstallDefaultsProfile, forKey: Keys.defaultsProfile)
+        log.info("First launch: using fresh-install defaults (Optimized, Live preview off)")
+        return true
     }
 
     /// Dictation deliberately persists its engine choice across launches so
@@ -47,7 +84,7 @@ final class AppConfig {
 
     var localLivePreviewEnabled: Bool {
         get {
-            guard defaults.object(forKey: "hushtype.localLivePreviewEnabled") != nil else { return true }
+            guard defaults.object(forKey: "hushtype.localLivePreviewEnabled") != nil else { return !usesFreshInstallDefaults }
             return defaults.bool(forKey: "hushtype.localLivePreviewEnabled")
         }
         set { defaults.set(newValue, forKey: "hushtype.localLivePreviewEnabled") }
@@ -124,10 +161,69 @@ final class AppConfig {
         }
     }
 
-    /// HuggingFace model ID for Qwen3-ASR.
+    /// Local Qwen3-ASR weights. Both are the 0.6B model at the same weight
+    /// size; Optimized uses per-module 6/8-bit precision instead of 4-bit.
+    enum LocalModel: String, CaseIterable, Equatable, Sendable {
+        case fast
+        case optimized
+
+        /// The Optimized repository is public. A local folder override is
+        /// available through `hushtype.optimizedModelPath` for testing.
+        var huggingFaceID: String {
+            switch self {
+            case .fast: return "aufklarer/Qwen3-ASR-0.6B-MLX-4bit"
+            case .optimized: return "felixfu824/Qwen3-ASR-0.6B-MLX-mixed-6-8bit"
+            }
+        }
+
+        var downloadMB: Int {
+            switch self {
+            case .fast: return 708
+            case .optimized: return 706
+            }
+        }
+    }
+
+    /// The local model in use. Changed only after the new model has loaded.
+    /// With no saved choice: Optimized for fresh installs, Fast for upgrades.
+    var localModel: LocalModel {
+        get {
+            defaults.string(forKey: Keys.localModel).flatMap(LocalModel.init(rawValue:))
+                ?? (usesFreshInstallDefaults ? .optimized : .fast)
+        }
+        set {
+            defaults.set(newValue.rawValue, forKey: Keys.localModel)
+            log.info("Local model set to: \(newValue.rawValue, privacy: .public)")
+        }
+    }
+
+    /// Hugging Face ID or local folder that loads for `model`.
+    func modelSource(for model: LocalModel) -> String {
+        if model == .optimized,
+           let path = defaults.string(forKey: Keys.optimizedModelPath), !path.isEmpty {
+            return path
+        }
+        return model.huggingFaceID
+    }
+
+    /// Model ID or local folder for Qwen3-ASR. An explicit `hushtype.modelId`
+    /// (developer and test override) wins over the Local model choice.
     var modelId: String {
-        get { defaults.string(forKey: Keys.modelId) ?? "aufklarer/Qwen3-ASR-0.6B-MLX-4bit" }
+        get { defaults.string(forKey: Keys.modelId) ?? modelSource(for: localModel) }
         set { defaults.set(newValue, forKey: Keys.modelId) }
+    }
+
+    /// Model to load instead when the saved Optimized model cannot load at
+    /// launch or reload, so dictation keeps working. Nil for Fast and when an
+    /// explicit `hushtype.modelId` override is set.
+    /// On a fresh install the fallback is used only when Fast is already on
+    /// disk: otherwise a failed first Optimized load would silently start a
+    /// second full download, and the user sees the load failure instead.
+    var fallbackModelSource: String? {
+        guard localModel == .optimized, defaults.string(forKey: Keys.modelId) == nil else { return nil }
+        let fast = modelSource(for: .fast)
+        if usesFreshInstallDefaults, !weightsOnDisk(fast) { return nil }
+        return fast
     }
 
     /// Whether to convert Simplified Chinese output to Traditional Chinese.
@@ -442,9 +538,27 @@ final class AppConfig {
         AppSupportPaths.openAIKeyFileURL
     }
 
-    private init(defaults: UserDefaults = .standard) { self.defaults = defaults }
+    /// Persistent domain that holds this app's stored settings.
+    private let domainName: String?
+    /// Whether a model source's weights are fully on disk.
+    private let weightsOnDisk: (String) -> Bool
+
+    private init(
+        defaults: UserDefaults = .standard,
+        domainName: String? = Bundle.main.bundleIdentifier,
+        weightsOnDisk: @escaping (String) -> Bool = { LocalModelSwitcher.weightsOnDisk(source: $0) }
+    ) {
+        self.defaults = defaults
+        self.domainName = domainName
+        self.weightsOnDisk = weightsOnDisk
+    }
     #if DEBUG
-    static func forUpgradeTesting(defaults: UserDefaults) -> AppConfig { AppConfig(defaults: defaults) }
+    static func forUpgradeTesting(
+        defaults: UserDefaults, domainName: String? = nil,
+        weightsOnDisk: @escaping (String) -> Bool = { _ in true }
+    ) -> AppConfig {
+        AppConfig(defaults: defaults, domainName: domainName, weightsOnDisk: weightsOnDisk)
+    }
     #endif
 }
 

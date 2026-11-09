@@ -29,15 +29,17 @@ final class NativeLocalLiveE2E {
     let openLastResult: () -> Bool
     let readMemory: () -> [String: Any]
     let performMenuAction: (String) -> Bool
+    var performProviderMenuAction: ((String, String) -> Bool)?
+    var modelMenuSnapshot: (() -> [String: Any])?
     let clearPrivateState: () -> Void
     let interruptHotkey: (() -> Void)?
     let staleHotkey: (() -> Void)?
     let output: URL
     let audio: URL
     let capAudio: URL
-    private var window: NSWindow!
-    private let first = NSTextView(), second = NSTextView()
-    private var rows: [[String: Any]] = []
+    var window: NSWindow!
+    let first = NSTextView(), second = NSTextView()
+    var rows: [[String: Any]] = []
     private var player: Process?
 
     init(output: URL, audio: URL, capAudio: URL, inspect: @escaping () -> [String: Any], snapshot: @escaping (String) -> Void, openLastResult: @escaping () -> Bool, readMemory: @escaping () -> [String: Any], performMenuAction: @escaping (String) -> Bool, clearPrivateState: @escaping () -> Void, setPreview: @escaping (Bool) -> Void, setEngine: @escaping (AppConfig.DictationEngine) -> Void, dismissResult: @escaping () -> Void, interruptHotkey: (() -> Void)? = nil, staleHotkey: (() -> Void)? = nil) {
@@ -45,7 +47,7 @@ final class NativeLocalLiveE2E {
         self.output = output; self.audio = audio; self.capAudio = capAudio
         self.inspect = inspect; self.snapshot = snapshot; self.openLastResult = openLastResult; self.readMemory = readMemory; self.performMenuAction = performMenuAction; self.clearPrivateState = clearPrivateState; self.setPreview = setPreview; self.setEngine = setEngine; self.dismissResult = dismissResult
     }
-    private func record(_ event: String, _ extra: [String: Any] = [:]) {
+    func record(_ event: String, _ extra: [String: Any] = [:]) {
         var row = inspect()
         row["event"] = event; row["time"] = ISO8601DateFormatter().string(from: Date())
         row["inputMode"] = NativeFixtureAudioInput.isEnabled ? "paced WAV through CaptureDriver at 48kHz" : "physical microphone"
@@ -57,13 +59,13 @@ final class NativeLocalLiveE2E {
         try? FileManager.default.createDirectory(at: output.deletingLastPathComponent(), withIntermediateDirectories: true)
         if let data = try? JSONSerialization.data(withJSONObject: rows, options: [.sortedKeys, .prettyPrinted]) { try? data.write(to: output, options: .atomic) }
     }
-    private func wait(_ seconds: Double) async { try? await Task.sleep(nanoseconds: UInt64(seconds * 1_000_000_000)) }
-    private func key(_ down: Bool) {
+    func wait(_ seconds: Double) async { try? await Task.sleep(nanoseconds: UInt64(seconds * 1_000_000_000)) }
+    func key(_ down: Bool) {
         let event = CGEvent(keyboardEventSource: CGEventSource(stateID: .hidSystemState), virtualKey: 61, keyDown: down)!
         event.type = .flagsChanged; event.flags = down ? CGEventFlags(rawValue: CGEventFlags.maskAlternate.rawValue | 0x40) : []
         event.post(tap: .cghidEventTap)
     }
-    private func focusAndClear() {
+    func focusAndClear() {
         dismissResult(); NSApp.activate(ignoringOtherApps: true)
         window.makeKeyAndOrderFront(nil); window.makeFirstResponder(first)
         first.string = ""; second.string = ""
@@ -74,10 +76,10 @@ final class NativeLocalLiveE2E {
         do { try process.run(); player = process }
         catch { record("playback_error", ["error": error.localizedDescription]) }
     }
-    private func stopPlayback() {
+    func stopPlayback() {
         if player?.isRunning == true { player?.terminate() }; player = nil
     }
-    private func beginAudio(_ url: URL) async -> Bool {
+    func beginAudio(_ url: URL) async -> Bool {
         if NativeFixtureAudioInput.isEnabled { NativeFixtureAudioInput.nextURL = url }
         key(true)
         guard await admitRecording() else { return false }
@@ -91,7 +93,7 @@ final class NativeLocalLiveE2E {
         }
         record("recording_admission_failed"); key(false); return false
     }
-    private func terminal() async -> Bool {
+    func terminal() async -> Bool {
         for _ in 0..<300 {
             if (inspect()["livePhase"] as? String) == "none" || (inspect()["livePhase"] as? String) == "recovery" { return true }
             await wait(0.1)
@@ -132,6 +134,10 @@ final class NativeLocalLiveE2E {
         record("start", ["accessibility": AXIsProcessTrusted(), "audio": audio.lastPathComponent])
         if CommandLine.arguments.contains("--native-memory-pattern") {
             await memoryPatternChecks()
+            return
+        }
+        if CommandLine.arguments.contains("--native-model-matrix") {
+            await modelMatrixChecks()
             return
         }
         if CommandLine.arguments.contains("--native-e2e-clips-only") {

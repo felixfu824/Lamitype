@@ -6,7 +6,7 @@ Do not reset permissions or change bundle identity to bypass a failed upgrade. D
 
 ## Prepare the exact source
 
-1. Use the reviewed local commit and check `git status --short`. Keep version/build in `Resources/Info.plist`; v0.5.16 uses build 55. If runtime source changes, increment the build and rerun the affected checks.
+1. Use the reviewed local commit and check `git status --short`. Keep version/build in `Resources/Info.plist`; v0.5.17 uses build 56. If runtime source changes, increment the build and rerun the affected checks.
 2. Run the regression and source checks below. Optional model/audio/permission tests require their documented opt-in environment and separate evidence; skips do not certify those paths.
 
 ```sh
@@ -35,14 +35,14 @@ xcrun stapler validate Lamitype.app
 spctl --assess --type execute --verbose=4 Lamitype.app
 
 make create-dmg
-codesign --force --sign 'Developer ID Application: Kuang Cheng Fu (8Z5RQYC6M5)' --timestamp Lamitype-v0.5.16.dmg
-codesign --verify --verbose=2 Lamitype-v0.5.16.dmg
-xcrun notarytool submit Lamitype-v0.5.16.dmg --keychain-profile "${NOTARY_PROFILE:?Set the authorized notarytool profile name}" --wait
-xcrun stapler staple Lamitype-v0.5.16.dmg
-xcrun stapler validate Lamitype-v0.5.16.dmg
-spctl --assess --type open --context context:primary-signature --verbose=4 Lamitype-v0.5.16.dmg
-hdiutil verify Lamitype-v0.5.16.dmg
-shasum -a 256 Lamitype-v0.5.16.dmg
+codesign --force --sign 'Developer ID Application: Kuang Cheng Fu (8Z5RQYC6M5)' --timestamp Lamitype-v0.5.17.dmg
+codesign --verify --verbose=2 Lamitype-v0.5.17.dmg
+xcrun notarytool submit Lamitype-v0.5.17.dmg --keychain-profile "${NOTARY_PROFILE:?Set the authorized notarytool profile name}" --wait
+xcrun stapler staple Lamitype-v0.5.17.dmg
+xcrun stapler validate Lamitype-v0.5.17.dmg
+spctl --assess --type open --context context:primary-signature --verbose=4 Lamitype-v0.5.17.dmg
+hdiutil verify Lamitype-v0.5.17.dmg
+shasum -a 256 Lamitype-v0.5.17.dmg
 ```
 
 Stop if any command fails or either notarization is not Accepted. Read that submission's notarization log rather than continuing. Confirm the app reports the pinned Developer ID authority, Team ID `8Z5RQYC6M5`, hardened runtime and a secure timestamp. Verify the app extracted from the final DMG again with deep-strict codesign, staple validation, Gatekeeper assessment and bundled localization checks. Nothing may mutate signed executable/resources after signing; stapling tickets is expected.
@@ -73,4 +73,4 @@ Publication/tagging/pushing requires user instruction. Once authorized:
 5. Download the public DMG independently, compare its SHA-256 and attach it read-only. Verify the mounted app's deep-strict signature, staple, Gatekeeper acceptance and bundle version. Quit the installed app, retain its exact bundle in a temporary rollback location, install the mounted app with `ditto`, and require mounted/installed executable hashes and signatures to match. Launch the installed public app and record the rollback disposition.
 6. Mark the local release draft SHIPPED; update Build Status, Product and GTM indexes, the architecture guide's Recently Shipped entry, and the site's canonical GTM/deployment records. Close the originating build-machine handoff so an older unsigned/development candidate cannot be mistaken for the public installer. Preserve dated evidence and explicitly carry forward incomplete manual coverage.
 
-The bilingual [v0.5.16 notes](releases/v0.5.16.md) are published release documentation. Machine-specific execution evidence and coverage exceptions belong in the local release record.
+The bilingual [v0.5.17 notes](releases/v0.5.17.md) are published release documentation. Machine-specific execution evidence and coverage exceptions belong in the local release record.

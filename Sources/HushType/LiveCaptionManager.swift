@@ -32,6 +32,13 @@ enum AudioSourceKind: Equatable, Sendable {
 /// `onStateChanged`.
 @MainActor
 final class LiveCaptionManager {
+    static func loadCaptionModel(
+        fallbackModelID: String?,
+        loader: (String?) async throws -> Bool,
+        noteFallback: () -> Void
+    ) async throws {
+        if try await loader(fallbackModelID) { noteFallback() }
+    }
 
     // MARK: - Wiring
 
@@ -62,6 +69,12 @@ final class LiveCaptionManager {
 
     private var backendEventTask: Task<Void, Never>?
     private var stopTeardownTask: Task<Void, Never>?
+    var isStopping: Bool { stopTeardownTask != nil }
+
+    #if DEBUG
+    var stopTeardownBarrierForTesting: (() async -> Void)?
+    func activateForTesting() { isActive = true }
+    #endif
     private var forceSplitTimer: DispatchSourceTimer?
     private var flashHideWork: DispatchWorkItem?
 
@@ -118,6 +131,9 @@ final class LiveCaptionManager {
     /// Turn live caption on with the requested audio source. Idempotent.
     /// Throws if permission is denied or the source fails to start.
     func start(source requestedSource: AudioSourceKind) async throws {
+        if AppConfig.shared.liveCaptionEngine == .local && LocalModelSwitcher.shared.refusesLocalRequests {
+            throw LiveRecognitionError.unavailable
+        }
         guard LocalLiveOwnership.beginCaptionTransition() else { throw LiveRecognitionError.unavailable }
         defer { LocalLiveOwnership.endCaptionTransition() }
         guard !isActive else { return }
@@ -224,7 +240,9 @@ final class LiveCaptionManager {
             if asrModel == nil {
                 vm.headerState = .loadingModel(0)
                 do {
-                    try await localEngine.load { [weak self] progress, _ in
+                    try await Self.loadCaptionModel(
+                        fallbackModelID: AppConfig.shared.fallbackModelSource,
+                        loader: { fallbackModelID in try await localEngine.load(fallbackModelID: fallbackModelID) { [weak self] progress, _ in
                         // Qwen's progress callback fires off-main. Every
                         // @Published write must explicitly return to main.
                         DispatchQueue.main.async { [weak self] in
@@ -233,8 +251,12 @@ final class LiveCaptionManager {
                                   self.isPanelVisible else { return }
                             self.viewModel?.headerState = .loadingModel(progress)
                         }
-                    }
+                        } },
+                        noteFallback: { LocalModelSwitcher.shared.noteLoadFallback(failed: .optimized, using: .fast) }
+                    )
                     asrModel = localEngine.loadedModel
+                    // A lazy load fixes an earlier launch/reload failure.
+                    if asrModel != nil { LocalModelSwitcher.shared.noteModelLoaded() }
                 } catch is CancellationError {
                     asrModel = nil
                     vm.headerState = .live
@@ -266,6 +288,7 @@ final class LiveCaptionManager {
         let newBackend: any TranscriptionBackend
         switch engine {
         case .local:
+            asrModel = localEngine.loadedModel
             guard let asrModel, let vadModel else {
                 throw NSError(domain: "LiveCaption", code: 20,
                               userInfo: [NSLocalizedDescriptionKey: L10n.string(
@@ -516,6 +539,9 @@ final class LiveCaptionManager {
         onStateChanged?(nil, nil)
         let task = Task { @MainActor [weak self] in
             guard let self else { return }
+            #if DEBUG
+            await self.stopTeardownBarrierForTesting?()
+            #endif
             await self.teardown(stopAudio: true)
             self.hidePanel()
             self.stopTeardownTask = nil

@@ -144,7 +144,7 @@ final class NativeCapReminderE2E {
 
     func run() async {
         let defaults = UserDefaults.standard
-        let keys = ["hushtype.localLivePreviewEnabled", "hushtype.localLiveCapReminderAcknowledgedVersion",
+        let keys = ["hushtype.localLivePreviewEnabled", "hushtype.defaultsProfile", "hushtype.localLiveCapReminderAcknowledgedVersion",
             "hushtype.textTranslationEnabled", "hushtype.textPolishEnabled", "hushtype.autoPolishDictationEnabled"]
         let originals = keys.map { defaults.object(forKey: $0) }
         let wasSettingsVisible = LamitypeSettingsWindowController.shared.reminderParentWindow?.isVisible == true
@@ -169,7 +169,11 @@ final class NativeCapReminderE2E {
         }
         RunLoop.main.add(modalWatchdog, forMode: .common); RunLoop.main.add(modalWatchdog, forMode: .modalPanel)
         defer { modalWatchdog.invalidate() }
+        // Model an upgraded (pre-profile) install, where an absent choice
+        // still means Live preview on and needs the first-use reminder. A
+        // fresh QA domain is stamped with profile 2 at launch (default off).
         defaults.removeObject(forKey: "hushtype.localLivePreviewEnabled")
+        defaults.removeObject(forKey: "hushtype.defaultsProfile")
         AppConfig.shared.localLiveCapReminderAcknowledgedVersion = 0
         // Exercise classification against our own empty field. Probe mode
         // intercepts service entry, so no private selection, clipboard or

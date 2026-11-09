@@ -56,7 +56,11 @@ final class SettingsMenuStructureTests: XCTestCase {
         let routes = mode.submenu!.items
         XCTAssertEqual(routes[0].title, "Local")
         XCTAssertEqual(routes[1].title, "Cloud")
-        XCTAssertEqual(routes[0].submenu!.items.map(\.title), ["Live preview (Experimental)", "Standard"])
+        XCTAssertEqual(routes[0].submenu!.items.map(\.title), [
+            "Live preview (Experimental)", "Standard", "", "Local model",
+            "Fast (4-bit)", "Optimized (6/8-bit)", "Cancel Download",
+        ])
+        XCTAssertTrue(routes[0].submenu!.items.last!.isHidden, "Cancel Download shows only during a switch")
         XCTAssertEqual(routes[1].submenu!.items.map(\.title), ["OpenAI", "Gemini"])
         XCTAssertFalse(ordinary.contains { $0.title == "Local Live" })
         XCTAssertEqual(routes.filter { $0.submenu == nil && $0.action != nil }.map { $0.action!.description }, ["showLiveResult"],

@@ -96,6 +96,30 @@ final class CaptureNoticeTests: XCTestCase {
         XCTAssertFalse(model.expireNotice(ticket))
     }
 
+    func testModelGateRefusalUsesNeutralLocalizedHeading() {
+        let savedLanguage = AppConfig.shared.interfaceLanguageRaw
+        defer {
+            AppConfig.shared.interfaceLanguageRaw = savedLanguage
+            L10n.resetLaunchStateForTests()
+        }
+
+        for (language, heading, message) in [
+            ("en", "Please wait", "Switching model…"),
+            ("zh-Hant-TW", "請稍候", "正在切換模型…")
+        ] {
+            AppConfig.shared.interfaceLanguageRaw = language
+            L10n.resetLaunchStateForTests()
+            let notice = LocalModelGateNotice.presentation()
+            XCTAssertEqual(notice.message, message)
+            XCTAssertEqual(notice.style, .information(heading: heading))
+
+            let model = OverlayStateModel()
+            model.beginNotice(message: notice.message, style: notice.style)
+            XCTAssertFalse(model.isShowingFailureNotice)
+            XCTAssertEqual(model.state, .notice(message: message, style: .information(heading: heading)))
+        }
+    }
+
     // MARK: - Per-press presentation claim
 
     func testAPressClaimsItsErrorPresentationExactlyOnce() {

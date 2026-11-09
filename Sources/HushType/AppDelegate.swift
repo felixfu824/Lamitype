@@ -11,6 +11,14 @@ private let autoPolishLog = Logger(subsystem: "com.felix.hushtype", category: "a
 /// Right Option is a tap below this threshold and a hold at or above it.
 private let dictationTapThreshold: TimeInterval = 0.3
 
+enum LocalModelGateNotice {
+    static func presentation() -> (message: String, style: OverlayNoticeStyle) {
+        let message = L10n.string("status.model.switching", fallback: "Switching model…")
+        let heading = L10n.string("status.model.switching.heading", fallback: "Please wait")
+        return (message, .information(heading: heading))
+    }
+}
+
 /// Pure tap-vs-hold decision for one Right Option press. A press whose capture
 /// failed is never a tap, however briefly it was held, so a failed press can
 /// never translate. Exactly 0.3 s is a HOLD.
@@ -139,6 +147,10 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         case unloaded
     }
 
+    /// Bumped when a launch/reload model load starts or is abandoned, so a
+    /// stale completion cannot overwrite the state of a later operation.
+    private var modelLoadGeneration = 0
+
     private var state: AppState = .loading {
         didSet {
             log.info("State: \(String(describing: self.state))")
@@ -204,12 +216,18 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
             NSApp.terminate(nil)
             return
         }
-
         let appSupport = appSupportDirectoryOverride ?? FileManager.default.urls(
             for: .applicationSupportDirectory,
             in: .userDomainMask
         )[0]
         let roots = AppSupportMigrator.productionRoots(in: appSupport)
+        // Before any launch step writes a setting or app-support file: decide
+        // fresh install vs upgrade.
+        AppConfig.shared.stampFreshInstallDefaultsIfNeeded(priorInstallOnDisk: {
+            let files = FileManager.default
+            return files.fileExists(atPath: roots.old.path) || files.fileExists(atPath: roots.new.path)
+                || LocalModelSwitcher.weightsOnDisk(source: AppConfig.LocalModel.fast.huggingFaceID)
+        })
         let oldRoot = roots.old
         let newRoot = roots.new
         switch AppSupportMigrator.migrate(oldRoot: oldRoot, newRoot: newRoot) {
@@ -238,6 +256,15 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         MLX.Memory.cacheLimit = 1024 * 1024 * 1024  // 1 GB
 
         localEngine = Qwen3TranscriptionEngine()
+        LocalModelSwitcher.shared.engine = localEngine
+        LocalModelSwitcher.shared.retryLoad = { [weak self] in self?.reloadModel() }
+        LocalModelSwitcher.shared.canRetryLoad = { AppConfig.shared.dictationEngine == .local }
+        LocalModelSwitcher.shared.isBusy = { [weak self] in
+            guard let self else { return true }
+            let quiet = self.state == .idle || self.state == .unloaded
+            return !quiet || LocalLiveOwnership.isBusy || LocalLiveOwnership.captionTransitions > 0
+                || self.liveCaptionManager?.isActive == true || self.liveCaptionManager?.isStopping == true
+        }
         statusBar = StatusBarController(localEngine: localEngine)
         hotkeyManager = HotkeyManager()
         #if DEBUG
@@ -407,6 +434,13 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         // flow BEFORE we ever call CGEvent.tapCreate. If onboarding is needed,
         // it blocks via NSAlert and either quits or relaunches the app - in
         // either case the rest of startup never runs.
+        #if DEBUG
+        // Explicit model-switch QA launch: needs no hotkey or Accessibility.
+        if CommandLine.arguments.contains("--qa-model-switch") {
+            runModelSwitchQA()
+            return
+        }
+        #endif
         if OnboardingManager.runIfNeeded() {
             return
         }
@@ -427,15 +461,21 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
 
         // Load local model async.
         statusBar.setState(.loading(0))
+        let fallbackModel = AppConfig.shared.fallbackModelSource
+        modelLoadGeneration += 1
+        let generation = modelLoadGeneration
         Task.detached { [weak self] in
             do {
-                try await self?.localEngine.load { progress, description in
-                    DispatchQueue.main.async {
-                        self?.statusBar.setState(.loading(progress))
+                let usedFallback = try await self?.localEngine.load(fallbackModelID: fallbackModel) { progress, description in
+                    DispatchQueue.main.async { [weak self] in
+                        guard let self, self.modelLoadGeneration == generation else { return }
+                        self.statusBar.setState(.loading(progress))
                     }
-                }
+                } ?? false
                 await MainActor.run {
-                    guard let self else { return }
+                    guard let self, self.modelLoadGeneration == generation else { return }
+                    LocalModelSwitcher.shared.noteModelLoaded()
+                    if usedFallback { LocalModelSwitcher.shared.noteLoadFallback(failed: .optimized, using: .fast) }
                     self.state = .idle
                     self.statusBar.setState(.idle)
                     log.info("Lamitype ready")
@@ -444,8 +484,10 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
             } catch {
                 log.error("Failed to load model: \(error.localizedDescription, privacy: .public)")
                 await MainActor.run {
-                    self?.state = .idle
-                    self?.statusBar.setState(.error(L10n.string(
+                    guard let self, self.modelLoadGeneration == generation else { return }
+                    self.state = .idle
+                    LocalModelSwitcher.shared.noteLoadFailedWithNothingLoaded(AppConfig.shared.localModel)
+                    self.statusBar.setState(.error(L10n.string(
                         "status.model_load_failed",
                         fallback: "Model load failed"
                     )))
@@ -532,12 +574,12 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         overlayState.liveNotice = nil
     }
 
-    // MARK: - Capture failure notice
+    // MARK: - Transient overlay notice
 
-    /// Show a non-modal failure notice in the floating HUD for 4 s.
+    /// Show a non-modal notice in the floating HUD for 4 s.
     ///
     /// Shown regardless of `floatingOverlayEnabled`: that preference governs
-    /// the routine Listening / Transcribing indicator, and a failure the user
+    /// the routine Listening / Transcribing indicator, and a notice the user
     /// cannot see is worse than an indicator they switched off.
     private func showOverlayNotice(message: String, style: OverlayNoticeStyle = .failure) {
         captureNoticeHideWork?.cancel()
@@ -576,6 +618,11 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
 
     private func handleHotkeyPress() {
         livePhysicalKeyDown = true
+        if AppConfig.shared.dictationEngine == .local && LocalModelSwitcher.shared.refusesLocalRequests {
+            showModelSwitchNotice()
+            liveReminderIgnoredPress = true
+            return
+        }
         if LocalLivePreviewController.shared.isRequestPending {
             liveReminderIgnoredPress = true
             return
@@ -1515,6 +1562,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     /// For .translated mode we gate on the cloud-disclosure modal first.
     @MainActor
     private func startCaptionMode(_ mode: AppConfig.CaptionMode, source: AudioSourceKind) {
+        if mode == .local && LocalModelSwitcher.shared.refusesLocalRequests { showModelSwitchNotice(); return }
         guard !LocalLiveOwnership.isBusy else { showLiveCaptionConflict(); return }
         guard let manager = self.liveCaptionManager else {
             NSSound.beep()
@@ -1551,8 +1599,13 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
                 }
                 guard !LocalLiveOwnership.isBusy else { self.showLiveCaptionConflict(); return }
                 AppConfig.shared.liveCaptionEngine = targetEngine
+                if mode == .local && LocalModelSwitcher.shared.refusesLocalRequests { self.showModelSwitchNotice(); return }
                 try await manager.start(source: source)
             } catch {
+                if mode == .local && LocalModelSwitcher.shared.refusesLocalRequests {
+                    self.showModelSwitchNotice()
+                    return
+                }
                 log.error("LiveCaption start failed: \(error.localizedDescription, privacy: .public)")
             }
         }
@@ -1596,6 +1649,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     /// `SystemAudioPermissionFlow` first.
     @MainActor
     private func startCaptionModeOnSystemAudio(_ mode: AppConfig.CaptionMode, forcePicker: Bool) {
+        if mode == .local && LocalModelSwitcher.shared.refusesLocalRequests { showModelSwitchNotice(); return }
         guard !LocalLiveOwnership.isBusy else { showLiveCaptionConflict(); return }
         guard self.liveCaptionManager != nil else {
             NSSound.beep()
@@ -1635,6 +1689,9 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
                 reloadModel()
             }
         } else if state == .unloaded || state == .loading {
+            // Abandon any launch/reload in flight: its completion must not
+            // overwrite the cloud engine's ready state.
+            modelLoadGeneration += 1
             localEngine.unload()
             state = .idle
             statusBar.setState(.idle)
@@ -1646,9 +1703,13 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
             print("[Lamitype] Cannot unload - state is \(state)")
             return
         }
+        LocalModelSwitcher.shared.cancel()
         // Block dictation while a local-caption backend drains. The status
         // row stays unchanged until the final unloaded/idle transition.
         state = .loading
+        // An engine switch or reload during the drain supersedes this unload.
+        modelLoadGeneration += 1
+        let unloadGeneration = modelLoadGeneration
 
         // Snapshot the physical footprint at each step so a user reporting
         // "memory didn't release" can post the numbers and we can see exactly
@@ -1667,6 +1728,11 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         // backend has no Qwen reference and must survive this operation.
         let wasLocalCaptionActive = await liveCaptionManager?.releaseLocalModel() ?? false
         snapshot("1_manager_release")
+        guard modelLoadGeneration == unloadGeneration else {
+            // Must not unload (and cancel) a load the user requested since.
+            log.info("Unload superseded by a later engine switch or reload")
+            return
+        }
 
         localEngine.unload()
         snapshot("2_engine_unload")
@@ -1738,20 +1804,30 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
             print("[Lamitype] Model already loaded")
             return
         }
+        guard state != .loading else {
+            print("[Lamitype] Model load already in progress")
+            return
+        }
 
         state = .loading
         statusBar.setState(.loading(0))
         statusBar.setModelLoaded()
 
+        let fallbackModel = AppConfig.shared.fallbackModelSource
+        modelLoadGeneration += 1
+        let generation = modelLoadGeneration
         Task.detached { [weak self] in
             do {
-                try await self?.localEngine.load { progress, description in
-                    DispatchQueue.main.async {
-                        self?.statusBar.setState(.loading(progress))
+                let usedFallback = try await self?.localEngine.load(fallbackModelID: fallbackModel) { progress, description in
+                    DispatchQueue.main.async { [weak self] in
+                        guard let self, self.modelLoadGeneration == generation else { return }
+                        self.statusBar.setState(.loading(progress))
                     }
-                }
+                } ?? false
                 await MainActor.run {
-                    guard let self else { return }
+                    guard let self, self.modelLoadGeneration == generation else { return }
+                    LocalModelSwitcher.shared.noteModelLoaded()
+                    if usedFallback { LocalModelSwitcher.shared.noteLoadFallback(failed: .optimized, using: .fast) }
                     self.state = .idle
                     self.statusBar.setState(.idle)
                     log.info("Model reloaded")
@@ -1760,8 +1836,10 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
             } catch {
                 log.error("Failed to reload model: \(error.localizedDescription, privacy: .public)")
                 await MainActor.run {
-                    self?.state = .unloaded
-                    self?.statusBar.setState(.error(L10n.string(
+                    guard let self, self.modelLoadGeneration == generation else { return }
+                    self.state = .unloaded
+                    LocalModelSwitcher.shared.noteLoadFailedWithNothingLoaded(AppConfig.shared.localModel)
+                    self.statusBar.setState(.error(L10n.string(
                         "status.model_reload_failed",
                         fallback: "Reload failed"
                     )))
@@ -1944,15 +2022,21 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         language: String?,
         insertionFocus: NSRunningApplication?
     ) async {
+        guard !LocalModelSwitcher.shared.refusesLocalRequests else {
+            showModelSwitchNotice()
+            await finishWithoutInsertion(restoreFocus: insertionFocus)
+            return
+        }
         do {
             if !localEngine.isLoaded {
                 state = .loading
                 statusBar.setState(.loading(0))
-                try await localEngine.load { [weak self] progress, _ in
+                let usedFallback = try await localEngine.load(fallbackModelID: AppConfig.shared.fallbackModelSource) { [weak self] progress, _ in
                     DispatchQueue.main.async {
                         self?.statusBar.setState(.loading(progress))
                     }
                 }
+                if usedFallback { LocalModelSwitcher.shared.noteLoadFallback(failed: .optimized, using: .fast) }
             }
             state = .transcribing
             statusBar.setState(.transcribing)
@@ -2370,11 +2454,16 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
 
 // MARK: - Experimental local live dictation
 extension AppDelegate {
+    private func showModelSwitchNotice() {
+        let notice = LocalModelGateNotice.presentation()
+        showOverlayNotice(message: notice.message, style: notice.style)
+    }
     private func showLiveCaptionConflict() {
         overlayState.liveNotice = L10n.string("live.caption.blocked", fallback: "Finish or cancel live dictation before starting or switching captions.")
     }
 
     private func beginLiveDictation() {
+        guard !LocalModelSwitcher.shared.refusesLocalRequests else { showModelSwitchNotice(); return }
         guard !SecureInputProbe.isActive(),
               !LocalLivePreviewController.shared.needsDefaultConfirmation,
               !LocalLivePreviewController.shared.isRequestPending else { return }
@@ -2392,7 +2481,7 @@ extension AppDelegate {
         let initialEval = EvalCapturePolicy.decide(enabled: AppConfig.shared.evalModeEnabled,
             secureInput: SecureInputProbe.isActive(), targetBundleID: target.application?.bundleIdentifier,
             excludedBundleIDs: AppConfig.shared.autoPolishExcludedBundleIDs) == .capture
-        let tokenizer = LiveSessionTokenizer(modelID: AppConfig.shared.modelId)
+        let tokenizer = LiveSessionTokenizer(modelID: localEngine.loadedModelID ?? AppConfig.shared.modelId)
         let session = LocalLiveDictationSession(capture: audioCapture) { [weak engine = localEngine] samples in
             guard let model = engine?.loadedModel else { throw LiveRecognitionError.unavailable }
             return try LiveQwenRecognizer(model: model, tokenizer: try tokenizer.load()).transcribe(audio: samples, language: language, maxTokens: 1024)
@@ -2510,6 +2599,10 @@ extension AppDelegate {
         liveRecoveryWindow.onRetry = { [weak self] in
             guard let self else { return }
             guard self.state == .idle || self.state == .unloaded else { return }
+            guard !LocalModelSwitcher.shared.refusesLocalRequests else {
+                self.showModelSwitchNotice()
+                return
+            }
             if self.liveDictation?.retry() == true { self.liveRecoveryWindow.working = true }
         }
         liveRecoveryWindow.onSave = { [weak self] in self?.saveLiveRecoveryAudio() }
@@ -2592,6 +2685,85 @@ extension AppDelegate {
 
 #if DEBUG
 extension AppDelegate {
+    /// `--qa-model-switch --qa-output <file.json> --qa-audio <wav>`: loads the
+    /// saved local model, switches Fast → Optimized → Fast through
+    /// LocalModelSwitcher, transcribes the clip after each step and during a
+    /// switch, checks the busy refusal and the menu items, writes the
+    /// results and quits. Release builds do not contain it.
+    func runModelSwitchQA() {
+        let args = CommandLine.arguments
+        guard let outIndex = args.firstIndex(of: "--qa-output"), args.indices.contains(outIndex + 1),
+              let audioIndex = args.firstIndex(of: "--qa-audio"), args.indices.contains(audioIndex + 1) else {
+            NSApp.terminate(nil); return
+        }
+        let output = URL(fileURLWithPath: args[outIndex + 1])
+        let audioURL = URL(fileURLWithPath: args[audioIndex + 1])
+        let switcher = LocalModelSwitcher.shared
+        Task { @MainActor [self] in
+            var steps: [[String: Any]] = []
+            @MainActor func record(_ name: String, _ extra: [String: Any] = [:]) {
+                var row: [String: Any] = ["step": name, "loadedModelID": localEngine.loadedModelID ?? NSNull(),
+                    "savedChoice": AppConfig.shared.localModel.rawValue, "active": switcher.active.rawValue,
+                    "phase": String(describing: switcher.phase), "memoryMB": MemoryUtils.physFootprintMB(),
+                    "menu": statusBar.localModelMenuSnapshotForQA()]
+                row.merge(extra) { $1 }
+                steps.append(row)
+            }
+            @MainActor func transcribe() async -> [String: Any] {
+                let start = CFAbsoluteTimeGetCurrent()
+                let text = (try? await localEngine.transcribe(audio: Self.qaSamples(audioURL), language: AppConfig.shared.language)) ?? "<error>"
+                return ["text": text, "seconds": CFAbsoluteTimeGetCurrent() - start]
+            }
+            @MainActor func waitForSwitch() async -> [String] {
+                var seen: [String] = []
+                for _ in 0..<1200 {
+                    if let status = switcher.statusText, seen.last != status { seen.append(status) }
+                    if !switcher.isSwitching { break }
+                    try? await Task.sleep(nanoseconds: 50_000_000)
+                }
+                return seen
+            }
+            do {
+                state = .loading
+                let loadStart = CFAbsoluteTimeGetCurrent()
+                try await localEngine.load()
+                state = .idle
+                statusBar.setState(.idle)
+                record("launch", ["loadSeconds": CFAbsoluteTimeGetCurrent() - loadStart, "transcript": await transcribe()])
+
+                state = .recording
+                record("busy-refusal", ["selectReturned": switcher.select(.optimized)])
+                state = .idle
+
+                let start = CFAbsoluteTimeGetCurrent()
+                let started = switcher.select(.optimized)
+                let during = await transcribe()
+                record("during-switch-to-optimized", ["selectReturned": started, "transcript": during])
+                let statuses = await waitForSwitch()
+                record("after-switch-to-optimized", ["switchSeconds": CFAbsoluteTimeGetCurrent() - start,
+                    "statusLines": statuses, "transcript": await transcribe()])
+
+                let backStart = CFAbsoluteTimeGetCurrent()
+                record("switch-back-started", ["selectReturned": switcher.select(.fast)])
+                let backStatuses = await waitForSwitch()
+                record("after-switch-to-fast", ["switchSeconds": CFAbsoluteTimeGetCurrent() - backStart,
+                    "statusLines": backStatuses, "transcript": await transcribe()])
+            } catch {
+                record("error", ["error": String(describing: error)])
+            }
+            let data = try? JSONSerialization.data(withJSONObject: ["steps": steps], options: [.prettyPrinted, .sortedKeys])
+            try? data?.write(to: output, options: .atomic)
+            NSApp.terminate(nil)
+        }
+    }
+
+    private static func qaSamples(_ url: URL) -> [Float] {
+        guard let file = try? AVAudioFile(forReading: url),
+              let buffer = AVAudioPCMBuffer(pcmFormat: file.processingFormat, frameCapacity: AVAudioFrameCount(file.length)),
+              (try? file.read(into: buffer)) != nil, let channel = buffer.floatChannelData?[0] else { return [] }
+        return Array(UnsafeBufferPointer(start: channel, count: Int(buffer.frameLength)))
+    }
+
     /// Explicit native-test launch is absent from release; ordinary launches never run it.
     func runNativeE2EWhenReady() {
         if CommandLine.arguments.contains("--native-cap-reminder-e2e") {
@@ -2704,7 +2876,11 @@ extension AppDelegate {
                      "pasteDispatchCount": NativeLocalLiveCounters.pasteDispatches,
                      "failedAudioFrames": liveDictation?.audio.count ?? 0,
                      "cacheLease": LocalLiveOwnership.isBusy,
-                     "modelLoaded": localEngine.isLoaded]
+                     "modelLoaded": localEngine.isLoaded,
+                     "loadedModelID": localEngine.loadedModelID ?? "",
+                     "savedLocalModel": AppConfig.shared.localModel.rawValue,
+                     "activeLocalModel": LocalModelSwitcher.shared.active.rawValue,
+                     "switchPhase": String(describing: LocalModelSwitcher.shared.phase)]
                 }, snapshot: { [self] event in
                     guard overlayWindow.isVisible, let view = overlayWindow.contentView,
                           let rep = view.bitmapImageRepForCachingDisplay(in: view.bounds) else { return }
@@ -2733,8 +2909,11 @@ extension AppDelegate {
                     else { liveRecoveryWindow.window?.orderOut(nil) }
                 }, interruptHotkey: { [self] in hotkeyManager.nativeInterruptAndResume() },
                 staleHotkey: { [self] in hotkeyManager.nativeDeliverStaleDisable() })
+            driver.performProviderMenuAction = { [self] in statusBar.nativePerformMenuAction($0, provider: $1) }
+            driver.modelMenuSnapshot = { [self] in statusBar.localModelMenuSnapshotForQA() }
             await driver.run()
             switchDictationEngine(to: originalEngine)
+            if CommandLine.arguments.contains("--native-quit-when-done") { NSApp.terminate(nil); return }
             if !originalModelLoaded, originalEngine != .local, state == .idle { await unloadModel() }
         }
     }

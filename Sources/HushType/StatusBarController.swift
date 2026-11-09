@@ -62,6 +62,8 @@ final class StatusBarController: NSObject, NSMenuDelegate, NSMenuItemValidation 
     private var standardModeItem: NSMenuItem!
     private var cloudProviderItems: [NSMenuItem] = []
     private var liveToggleItem: NSMenuItem!
+    private var localModelItems: [NSMenuItem] = []
+    private var cancelModelDownloadItem: NSMenuItem!
     private var liveResultItem: NSMenuItem!
     var onQuit: (() -> Void)?
     var onUnloadModel: (() -> Void)?
@@ -177,6 +179,12 @@ final class StatusBarController: NSObject, NSMenuDelegate, NSMenuItemValidation 
             name: .evalStoreDidChange,
             object: nil
         )
+        NotificationCenter.default.addObserver(
+            self,
+            selector: #selector(localModelChanged),
+            name: .lamitypeLocalModelDidChange,
+            object: nil
+        )
         updateIcon(for: .idle)
         log.info("Status bar initialized")
     }
@@ -211,6 +219,9 @@ final class StatusBarController: NSObject, NSMenuDelegate, NSMenuItemValidation 
         case #selector(selectLocalLive), #selector(selectLocalStandard), #selector(selectCloudProvider):
             return previewController.canSelectMode
         case #selector(showLiveResult): return hasLiveResult
+        case #selector(selectLocalModel):
+            return AppConfig.shared.dictationEngine == .local && previewController.canSelectMode
+                && !LocalModelSwitcher.shared.isSwitching
         case #selector(unloadOrReloadModel): return modelActionIsAvailable
         default:
             // Previously disabled items must be revalidated from application state.
@@ -627,6 +638,16 @@ final class StatusBarController: NSObject, NSMenuDelegate, NSMenuItemValidation 
         liveToggleItem = NSMenuItem(title: L10n.string("live.toggle", fallback: "Live preview (Experimental)"), action: #selector(selectLocalLive), keyEquivalent: "")
         standardModeItem = NSMenuItem(title: L10n.string("menu.dictation_mode.standard", fallback: "Standard"), action: #selector(selectLocalStandard), keyEquivalent: "")
         for item in [liveToggleItem!, standardModeItem!] { item.target = self; local.addItem(item) }
+        local.addItem(.separator())
+        local.addItem(.sectionHeader(title: L10n.string("menu.local_model", fallback: "Local model")))
+        for model in AppConfig.LocalModel.allCases {
+            let item = NSMenuItem(title: model.displayName, action: #selector(selectLocalModel), keyEquivalent: "")
+            item.representedObject = model.rawValue; item.target = self
+            local.addItem(item); localModelItems.append(item)
+        }
+        cancelModelDownloadItem = NSMenuItem(title: L10n.string("menu.local_model.cancel_download", fallback: "Cancel Download"), action: #selector(cancelModelDownload), keyEquivalent: "")
+        cancelModelDownloadItem.target = self
+        local.addItem(cancelModelDownloadItem)
         menu.addItem(localModeItem)
         cloudModeItem = NSMenuItem(title: L10n.string("menu.dictation_mode.cloud", fallback: "Cloud"), action: nil, keyEquivalent: "")
         let cloud = NSMenu(); cloud.delegate = self; cloudModeItem.submenu = cloud
@@ -659,6 +680,61 @@ final class StatusBarController: NSObject, NSMenuDelegate, NSMenuItemValidation 
         liveToggleItem.isEnabled = previewController.canSelectMode
         standardModeItem.isEnabled = previewController.canSelectMode
         liveResultItem.isEnabled = hasLiveResult
+        refreshLocalModelItems()
+    }
+
+    private func refreshLocalModelItems() {
+        let switcher = LocalModelSwitcher.shared
+        for item in localModelItems {
+            guard let raw = item.representedObject as? String,
+                  let model = AppConfig.LocalModel(rawValue: raw) else { continue }
+            item.state = model == switcher.active ? .on : .off
+            item.subtitle = localModelSubtitle(model, switcher: switcher)
+        }
+        cancelModelDownloadItem.isHidden = !switcher.isSwitching
+        cancelModelDownloadItem.isEnabled = !switcher.gateClosed
+    }
+
+    private func localModelSubtitle(_ model: AppConfig.LocalModel, switcher: LocalModelSwitcher) -> String? {
+        switch switcher.phase {
+        case .switching(let target, _, _) where target == model:
+            if let percent = switcher.downloadPercent {
+                return L10n.format("menu.local_model.downloading", "Downloading… %1$ld%%", arguments: [percent])
+            }
+            return L10n.string("menu.local_model.switching", fallback: "Switching…")
+        case .failed(let target) where target == model:
+            return L10n.string("menu.local_model.failed", fallback: "Couldn’t download")
+        case .loadFailed(let target) where target == model, .notLoaded(let target) where target == model:
+            return L10n.string("status.model.load_failed", fallback: "Couldn’t load model")
+        default:
+            guard model != switcher.active, !switcher.isOnDisk(model) else { return nil }
+            return L10n.format("menu.local_model.download_size", "Download %1$ld MB", arguments: [model.downloadMB])
+        }
+    }
+
+    @objc private func selectLocalModel(_ sender: NSMenuItem) {
+        guard let raw = sender.representedObject as? String,
+              let model = AppConfig.LocalModel(rawValue: raw) else { return }
+        if !LocalModelSwitcher.shared.select(model) { NSSound.beep() }
+        refreshDictationModeItems(); refreshStatusLine()
+    }
+
+    @objc private func cancelModelDownload() { LocalModelSwitcher.shared.cancel() }
+
+    #if DEBUG
+    /// QA read-out of the Local model menu items and the status line.
+    func localModelMenuSnapshotForQA() -> [String: Any] {
+        refreshDictationModeItems(); refreshStatusLine()
+        let items = localModelItems.map { item -> [String: Any] in
+            ["title": item.title, "checked": item.state == .on, "subtitle": item.subtitle ?? "",
+             "enabled": validateMenuItem(item)]
+        }
+        return ["items": items, "cancelVisible": !cancelModelDownloadItem.isHidden, "statusLine": statusMenuItem.title]
+    }
+    #endif
+
+    @objc private func localModelChanged() {
+        refreshDictationModeItems(); refreshStatusLine()
     }
 
     private func selectLocalMode(live: Bool) {
@@ -1295,10 +1371,14 @@ final class StatusBarController: NSObject, NSMenuDelegate, NSMenuItemValidation 
     private func refreshStatusLine() {
         switch AppConfig.shared.dictationEngine {
         case .local:
+            var status = statusText(for: currentState)
+            if case .idle = currentState, let switchStatus = LocalModelSwitcher.shared.statusText {
+                status = switchStatus
+            }
             statusMenuItem.title = L10n.format(
                 "status.memory",
                 "%1$@ · Memory %2$@",
-                arguments: [statusText(for: currentState), MemoryUtils.formattedMemory()]
+                arguments: [status, MemoryUtils.formattedMemory()]
             )
         case .openai:
             let modelStatus = localEngine.isLoaded
