@@ -8,7 +8,7 @@ let package = Package(
     platforms: [.macOS(.v15)],
     dependencies: [
         .package(url: "https://github.com/sindresorhus/Settings", from: "3.1.2"),
-        .package(url: "https://github.com/felixfu824/speech-swift.git", revision: "e542e60a3dd6318862bd5f8806187b4758c49212"),
+        .package(url: "https://github.com/felixfu824/speech-swift.git", revision: "e544741f09039a93eaefae1228526adb4f642ea3"),
         // Direct mlx-swift dep so live caption can bound the GPU buffer cache
         // (MLX.GPU.set(cacheLimit:) / clearCache) — speech-swift transitively
         // depends on the same version, so SwiftPM resolves a single copy.
