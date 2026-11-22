@@ -58,7 +58,8 @@ final class FloatingOverlayWindow: NSPanel {
 
         isOpaque = false
         backgroundColor = .clear
-        hasShadow = false  // we draw our own shadow inside the SwiftUI view
+        // The panel fits the overlay exactly, so a SwiftUI shadow gets cut off at its edges.
+        hasShadow = false
         level = .screenSaver
         collectionBehavior = [
             .canJoinAllSpaces,
