@@ -528,6 +528,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     private func showOverlayRecording() {
         dismissCaptureNotice()
         guard AppConfig.shared.floatingOverlayEnabled else { return }
+        overlayState.indicatorStyle = AppConfig.shared.indicatorStyle
         let provider: String?
         switch AppConfig.shared.dictationEngine {
         case .local: provider = nil
@@ -561,6 +562,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     private func showOverlayPolishing() {
         dismissCaptureNotice()
         guard AppConfig.shared.floatingOverlayEnabled else { return }
+        overlayState.indicatorStyle = AppConfig.shared.indicatorStyle
         overlayState.state = .polishing
         overlayWindow.show()
     }

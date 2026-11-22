@@ -1513,6 +1513,11 @@
 /* General Settings floating indicator note. */
 "settings.general.indicator.note" = "The small \"Listening / Transcribing\" pill near the bottom of the screen.";
 
+"settings.general.indicator.style" = "Indicator style:";
+"settings.general.indicator.style.standard" = "Standard";
+"settings.general.indicator.style.compact" = "Compact";
+"settings.general.indicator.style.note" = "Applies to Standard and cloud dictation.";
+
 /* Compact fixed-shortcut reference in General Settings. */
 "settings.general.shortcuts" = "Shortcuts:";
 "settings.general.shortcuts.hold_option" = "Hold Right ⌥";
