@@ -31,13 +31,22 @@ final class FloatingOverlayGeometryTests: XCTestCase {
         host.layoutSubtreeIfNeeded()
         let liveWidth = host.fittingSize.width
         XCTAssertEqual(liveWidth, 380, accuracy: 0.5)
+        model.indicatorStyle = .compact
+        host.layoutSubtreeIfNeeded()
+        XCTAssertEqual(host.fittingSize.width, liveWidth, accuracy: 0.5)
         model.live = nil
         for state: OverlayState in [.recording(level: 0.03, provider: nil), .transcribing(provider: nil),
                                     .recording(level: 0.03, provider: "Gemini"), .transcribing(provider: "Gemini"), .polishing] {
             model.state = state
+            model.indicatorStyle = .standard
             host.layoutSubtreeIfNeeded()
             XCTAssertEqual(host.fittingSize.width, liveWidth, accuracy: 0.5, "\(state)")
             XCTAssertEqual(host.fittingSize.height, 48, accuracy: 0.5, "\(state)")
+            model.indicatorStyle = .compact
+            host.layoutSubtreeIfNeeded()
+            let inset = FloatingOverlayGeometry.activityInset * 2
+            XCTAssertEqual(host.fittingSize.width, FloatingOverlayGeometry.activityWidth + inset, accuracy: 0.5)
+            XCTAssertEqual(host.fittingSize.height, FloatingOverlayGeometry.activityHeight + inset, accuracy: 0.5)
         }
         model.state = .notice(message: String(repeating: "Long recording failure notice. ", count: 8))
         host.layoutSubtreeIfNeeded()

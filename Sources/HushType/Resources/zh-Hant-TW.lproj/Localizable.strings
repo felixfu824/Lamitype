@@ -1513,6 +1513,11 @@
 /* 一般設定浮動指示器說明。 */
 "settings.general.indicator.note" = "螢幕下方那個「聆聽中 / 轉錄中」的小標籤。";
 
+"settings.general.indicator.style" = "指示器樣式：";
+"settings.general.indicator.style.standard" = "標準";
+"settings.general.indicator.style.compact" = "精簡";
+"settings.general.indicator.style.note" = "適用於標準和雲端聽寫。";
+
 /* 一般設定中的精簡固定快速鍵參考。 */
 "settings.general.shortcuts" = "快速鍵：";
 "settings.general.shortcuts.hold_option" = "按住右 ⌥";

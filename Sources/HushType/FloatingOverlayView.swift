@@ -38,6 +38,7 @@ struct LiveOverlayState {
 }
 
 final class OverlayStateModel: ObservableObject {
+    @Published var indicatorStyle: AppConfig.IndicatorStyle = .standard
     @Published var live: LiveOverlayState?
     @Published var liveLevel: Float = 0
     @Published var liveNotice: String?
@@ -96,6 +97,10 @@ final class OverlayStateModel: ObservableObject {
 
 enum FloatingOverlayGeometry {
     static let cornerRadius: CGFloat = 16
+    static let activityWidth: CGFloat = 176
+    static let activityHeight: CGFloat = 40
+    // Keep the glass effect inside the transparent panel bounds.
+    static let activityInset: CGFloat = 12
     static let previewWidth: CGFloat = 380
     static let previewHeight: CGFloat = 144
     static let progressWidth: CGFloat = previewWidth
@@ -116,10 +121,12 @@ enum FloatingOverlayGeometry {
 
 struct FloatingOverlayView: View {
     @ObservedObject var model: OverlayStateModel
+    @Environment(\.accessibilityReduceMotion) private var reduceMotion
 
     var body: some View {
         Group {
             if let live = model.live { liveContent(live) }
+            else if model.indicatorStyle == .compact, !model.isShowingNotice { compactActivityPill }
             else { ordinaryContent }
         }
     }
@@ -218,6 +225,53 @@ struct FloatingOverlayView: View {
                 .stroke(strokeColor, lineWidth: strokeWidth)
         )
         .shadow(color: .black.opacity(0.18), radius: 12, x: 0, y: 4)
+        .fixedSize()
+    }
+
+    private var compactActivityPill: some View {
+        let content = ZStack {
+            switch model.state {
+            case .recording(let level, _):
+                HStack(spacing: 12) {
+                    Image(systemName: "mic.fill")
+                        .font(.system(size: 12, weight: .semibold))
+                    AudioBarsView(level: level, extended: true)
+                }
+                .transition(.opacity)
+            case .transcribing, .polishing:
+                HStack(spacing: 7) {
+                    Image(systemName: model.state == .polishing ? "wand.and.sparkles" : "ellipsis")
+                        .font(.system(size: 12, weight: .semibold))
+                        .symbolEffect(.pulse.byLayer, options: .repeating, isActive: !reduceMotion)
+                    Text(label)
+                        .font(.system(size: 12, weight: .medium))
+                        .lineLimit(1)
+                        .minimumScaleFactor(0.8)
+                }
+                .padding(.horizontal, 12)
+                .transition(.opacity)
+            case .hidden, .notice:
+                EmptyView()
+            }
+        }
+        .foregroundStyle(.primary)
+        .frame(width: FloatingOverlayGeometry.activityWidth, height: FloatingOverlayGeometry.activityHeight)
+        .animation(reduceMotion ? nil : .easeInOut(duration: 0.18), value: stateKey)
+        .accessibilityElement(children: .ignore)
+        .accessibilityLabel(Text(label))
+
+        return Group {
+            if #available(macOS 26, *) {
+                content.glassEffect(.regular, in: .capsule)
+            } else {
+                content.background {
+                    VisualEffectBlur(material: .hudWindow)
+                        .clipShape(Capsule())
+                }
+                .overlay { Capsule().strokeBorder(Color.primary.opacity(0.10), lineWidth: 0.5) }
+            }
+        }
+        .padding(FloatingOverlayGeometry.activityInset)
         .fixedSize()
     }
 
@@ -364,37 +418,38 @@ struct FloatingOverlayView: View {
     }
 }
 
-// MARK: - Audio bars (5 vertical capsules driven by RMS)
+// MARK: - Audio bars driven by RMS
 
 private struct AudioBarsView: View {
+    @Environment(\.accessibilityReduceMotion) private var reduceMotion
     let level: Float
+    var extended = false
 
-    private let barCount = 5
     private let maxHeight: CGFloat = 22
-
-    /// Per-bar weight — center bars peak slightly taller for a "voice" curve.
-    private let weights: [CGFloat] = [0.55, 0.85, 1.0, 0.85, 0.55]
+    private static let compactWeights: [CGFloat] = [0.55, 0.85, 1, 0.85, 0.55]
+    private static let extendedWeights: [CGFloat] = [0.25, 0.42, 0.64, 0.88, 1, 0.74, 0.9, 0.55, 0.34]
 
     var body: some View {
-        HStack(alignment: .center, spacing: 3) {
-            ForEach(0..<barCount, id: \.self) { i in
+        let weights = extended ? Self.extendedWeights : Self.compactWeights
+        HStack(alignment: .center, spacing: extended ? 4 : 3) {
+            ForEach(weights.indices, id: \.self) { index in
                 Capsule()
                     .fill(Color.primary.opacity(0.85))
-                    .frame(width: 3, height: barHeight(index: i))
-                    .animation(.easeOut(duration: 0.12), value: level)
+                    .frame(width: 3, height: barHeight(weight: weights[index]))
             }
         }
         .frame(height: maxHeight)
+        .animation(reduceMotion ? nil : .easeOut(duration: 0.12), value: level)
     }
 
-    private func barHeight(index: Int) -> CGFloat {
+    private func barHeight(weight: CGFloat) -> CGFloat {
         // Speech RMS is empirically much smaller than I assumed — typical
         // values are 0.005-0.05 for normal voice. Use a square-root mapping
         // with high boost so soft speech reaches mid-range and normal speech
         // saturates the bars.
         let boosted = min(1.0, CGFloat(level) * 30.0)
         let curved = sqrt(boosted)  // sqrt gives more visual range to soft speech
-        let scaled = curved * weights[index]
+        let scaled = curved * weight
         return max(3, maxHeight * scaled)
     }
 }

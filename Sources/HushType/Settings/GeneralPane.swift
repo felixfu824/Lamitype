@@ -9,6 +9,9 @@ final class GeneralSettingsModel: NSObject, ObservableObject {
     @Published var floatingIndicatorEnabled: Bool {
         didSet { AppConfig.shared.floatingOverlayEnabled = floatingIndicatorEnabled }
     }
+    @Published var indicatorStyle: AppConfig.IndicatorStyle {
+        didSet { AppConfig.shared.indicatorStyle = indicatorStyle }
+    }
 
     private let launchInterfaceLanguage: InterfaceLanguage
 
@@ -22,6 +25,7 @@ final class GeneralSettingsModel: NSObject, ObservableObject {
             launch: launchPreference
         )
         floatingIndicatorEnabled = AppConfig.shared.floatingOverlayEnabled
+        indicatorStyle = AppConfig.shared.indicatorStyle
         super.init()
     }
 
@@ -142,6 +146,26 @@ struct GeneralPane: View {
                 }
             }
 
+            SettingsRow(indicatorStyleLabel) {
+                VStack(alignment: .leading, spacing: 4) {
+                    Picker(indicatorStyleLabel, selection: $model.indicatorStyle) {
+                        Text(L10n.string("settings.general.indicator.style.standard", fallback: "Standard"))
+                            .tag(AppConfig.IndicatorStyle.standard)
+                        Text(L10n.string("settings.general.indicator.style.compact", fallback: "Compact"))
+                            .tag(AppConfig.IndicatorStyle.compact)
+                    }
+                    .labelsHidden()
+                    Text(L10n.string(
+                        "settings.general.indicator.style.note",
+                        fallback: "Applies to Standard and cloud dictation."
+                    ))
+                    .font(.caption)
+                    .foregroundStyle(.secondary)
+                    .fixedSize(horizontal: false, vertical: true)
+                }
+                .disabled(!model.floatingIndicatorEnabled)
+            }
+
             SettingsDivider()
 
             SettingsRow(L10n.string(
@@ -193,6 +217,10 @@ struct GeneralPane: View {
             }
         }
         .settingsPaneLayout()
+    }
+
+    private var indicatorStyleLabel: String {
+        L10n.string("settings.general.indicator.style", fallback: "Indicator style:")
     }
 
     static func makeSettingsPane() -> AppSettings.Pane<GeneralPane> {

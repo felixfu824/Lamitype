@@ -15,6 +15,7 @@ final class AppConfig {
         static let optimizedModelPath = "hushtype.optimizedModelPath"
         static let chineseConversionEnabled = "hushtype.chineseConversionEnabled"
         static let floatingOverlayEnabled = "hushtype.floatingOverlayEnabled"
+        static let indicatorStyle = "hushtype.indicatorStyle"
         static let onboardingCompleted = "hushtype.onboardingCompleted"
         static let numberConversionEnabled = "hushtype.numberConversionEnabled"
         static let textPolishEnabled = "hushtype.textPolishEnabled"
@@ -255,6 +256,16 @@ final class AppConfig {
             defaults.set(newValue, forKey: Keys.floatingOverlayEnabled)
             log.info("Floating overlay enabled: \(newValue, privacy: .public)")
         }
+    }
+
+    enum IndicatorStyle: String {
+        case standard
+        case compact
+    }
+
+    var indicatorStyle: IndicatorStyle {
+        get { IndicatorStyle(rawValue: defaults.string(forKey: Keys.indicatorStyle) ?? "") ?? .standard }
+        set { defaults.set(newValue.rawValue, forKey: Keys.indicatorStyle) }
     }
 
     /// Whether the user has seen the welcome onboarding modal at least once.

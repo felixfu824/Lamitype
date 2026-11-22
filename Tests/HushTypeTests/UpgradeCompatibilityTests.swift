@@ -43,6 +43,7 @@ final class UpgradeCompatibilityTests: XCTestCase {
                     try withStore(values) { config, store, domain in
                         XCTAssertEqual(config.dictationEngine.rawValue, engine ?? "local")
                         XCTAssertEqual(config.floatingOverlayEnabled, indicator ?? true)
+                        XCTAssertEqual(config.indicatorStyle, .standard)
                         XCTAssertTrue(config.localLivePreviewEnabled, "new default must be ON")
                         XCTAssertFalse(config.hasExplicitLocalLiveChoice)
                         XCTAssertEqual(config.localLiveCapReminderAcknowledgedVersion, 0)
@@ -67,6 +68,19 @@ final class UpgradeCompatibilityTests: XCTestCase {
             }
         }
     }
+
+    func testCompactIndicatorPreferenceSurvivesReopen() throws {
+        let values = profile(version: "post-upgrade", engine: "local", indicator: false)
+        try withStore(values) { config, store, _ in
+            config.indicatorStyle = .compact
+            let reopened = AppConfig.forUpgradeTesting(defaults: store)
+            XCTAssertEqual(reopened.indicatorStyle, .compact)
+            XCTAssertFalse(reopened.floatingOverlayEnabled)
+            reopened.indicatorStyle = .standard
+            XCTAssertEqual(config.indicatorStyle, .standard)
+        }
+    }
+
     func testExplicitStandardAndLiveChoicesSurviveReopen() throws {
         for enabled in [false, true] {
             var values = profile(version: "post-upgrade", engine: "local", indicator: false)
