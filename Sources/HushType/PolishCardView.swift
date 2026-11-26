@@ -84,11 +84,6 @@ struct PolishCardView: View {
         .frame(width: 560)
         .fixedSize(horizontal: false, vertical: true)
         .background(.ultraThinMaterial)
-        .clipShape(RoundedRectangle(cornerRadius: 16, style: .continuous))
-        .overlay(
-            RoundedRectangle(cornerRadius: 16, style: .continuous)
-                .stroke(Color.primary.opacity(0.08), lineWidth: 0.5)
-        )
-        .shadow(color: .black.opacity(0.18), radius: 12, x: 0, y: 4)
+        .floatingSurface(cornerRadius: 16)
     }
 }

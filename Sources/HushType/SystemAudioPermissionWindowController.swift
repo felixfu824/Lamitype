@@ -136,7 +136,7 @@ final class SystemAudioPermissionViewModel: ObservableObject {
     }
 }
 
-private struct SystemAudioPermissionView: View {
+struct SystemAudioPermissionView: View {
     @ObservedObject var model: SystemAudioPermissionViewModel
     let appIcon: NSImage
     let onOpenSettings: () -> Void
@@ -155,12 +155,7 @@ private struct SystemAudioPermissionView: View {
         .padding(24)
         .frame(width: SystemAudioPermissionWindowController.panelWidth)
         .background(VisualEffectBlur(material: .hudWindow))
-        .clipShape(RoundedRectangle(cornerRadius: 16, style: .continuous))
-        .overlay(
-            RoundedRectangle(cornerRadius: 16, style: .continuous)
-                .stroke(Color.primary.opacity(0.08), lineWidth: 0.5)
-        )
-        .shadow(color: .black.opacity(0.18), radius: 12, x: 0, y: 4)
+        .floatingSurface(cornerRadius: 16)
     }
 
     private var header: some View {

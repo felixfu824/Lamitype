@@ -212,11 +212,7 @@ struct FloatingOverlayView: View {
         .padding(.vertical, 12)
         .frame(width: FloatingOverlayGeometry.progressWidth)
         .background(VisualEffectBlur(material: .hudWindow))
-        .clipShape(RoundedRectangle(cornerRadius: 16, style: .continuous))
-        .overlay(
-            RoundedRectangle(cornerRadius: 16, style: .continuous)
-                .stroke(strokeColor, lineWidth: strokeWidth)
-        )
+        .floatingSurface(cornerRadius: 16, stroke: strokeColor, lineWidth: strokeWidth)
         .fixedSize()
     }
 

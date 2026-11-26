@@ -110,7 +110,7 @@ final class PermissionSettingsGuidePanel {
     }
 }
 
-private struct PermissionSettingsGuideView: View {
+struct PermissionSettingsGuideView: View {
     let title: String
     let detail: String
     let appURL: URL
@@ -158,11 +158,6 @@ private struct PermissionSettingsGuideView: View {
         .padding(.vertical, 12)
         .frame(width: 500, height: 126)
         .background(VisualEffectBlur(material: .hudWindow))
-        .clipShape(RoundedRectangle(cornerRadius: 16, style: .continuous))
-        .overlay(
-            RoundedRectangle(cornerRadius: 16, style: .continuous)
-                .stroke(Color.primary.opacity(0.08), lineWidth: 0.5)
-        )
-        .shadow(color: .black.opacity(0.18), radius: 12, x: 0, y: 4)
+        .floatingSurface(cornerRadius: 16)
     }
 }

@@ -187,7 +187,7 @@ final class OnboardingSetupViewModel: ObservableObject {
     }
 }
 
-private struct OnboardingSetupView: View {
+struct OnboardingSetupView: View {
     @ObservedObject var model: OnboardingSetupViewModel
     let appIcon: NSImage
     let onOpenAccessibilitySettings: () -> Void
@@ -208,12 +208,7 @@ private struct OnboardingSetupView: View {
         .padding(24)
         .frame(width: OnboardingSetupWindowController.panelWidth)
         .background(VisualEffectBlur(material: .hudWindow))
-        .clipShape(RoundedRectangle(cornerRadius: 16, style: .continuous))
-        .overlay(
-            RoundedRectangle(cornerRadius: 16, style: .continuous)
-                .stroke(Color.primary.opacity(0.08), lineWidth: 0.5)
-        )
-        .shadow(color: .black.opacity(0.18), radius: 12, x: 0, y: 4)
+        .floatingSurface(cornerRadius: 16)
     }
 
     private var header: some View {
