@@ -130,7 +130,7 @@ final class LiveCaptionWindow: NSPanel, NSWindowDelegate {
 
         isOpaque = false
         backgroundColor = .clear
-        hasShadow = false  // SwiftUI view draws its own
+        hasShadow = false  // The SwiftUI surface fits the panel bounds.
         level = .screenSaver
         collectionBehavior = [
             .canJoinAllSpaces,
