@@ -1,7 +1,36 @@
 import AVFoundation
+import CoreAudio
 import os
 
 private let log = Logger(subsystem: "com.felix.hushtype", category: "audio")
+
+struct DictationCaptureTiming {
+    let keyDown: TimeInterval
+    let admitted: TimeInterval
+
+    var pressUptimeMs: Int64 { Int64(keyDown * 1000) }
+
+    static func milliseconds(from start: TimeInterval, to end: TimeInterval) -> Double {
+        (end - start) * 1000
+    }
+}
+
+enum RecordingCancellationReason: String {
+    case shortcutChord, hotkeyInterrupted, secureInput, systemSleep, applicationQuit, userDiscarded
+    case busy, invalidInput, startFailed, noInputBuffer, silentInput, configurationChanged, captureFailure
+
+    init(error: Error) {
+        guard let error = error as? AudioCaptureError else { self = .captureFailure; return }
+        switch error {
+        case .busy: self = .busy
+        case .invalidInput: self = .invalidInput
+        case .startFailed: self = .startFailed
+        case .noInputBuffer: self = .noInputBuffer
+        case .silentInput: self = .silentInput
+        case .configurationChanged: self = .configurationChanged
+        }
+    }
+}
 
 // MARK: - Errors
 
@@ -16,7 +45,9 @@ enum AudioCaptureError: LocalizedError {
     case startFailed(Error)
     /// No positive-frame input buffer arrived within the first-buffer deadline.
     case noInputBuffer
-    /// The audio device configuration changed under this capture. Terminal.
+    /// PCM arrived for at least a second, but stayed at the digital noise floor.
+    case silentInput
+    /// The input could not resume after an audio configuration change.
     case configurationChanged
 
     var errorDescription: String? {
@@ -41,12 +72,21 @@ enum AudioCaptureError: LocalizedError {
                 "error.audio_capture.no_input_buffer",
                 fallback: "No audio was received from the microphone. Check your audio input in System Settings and try again."
             )
+        case .silentInput:
+            return L10n.string("error.audio_capture.silent_input", fallback: "The microphone was silent. Check your input or mute switch and try again.")
         case .configurationChanged:
             return L10n.string(
                 "error.audio_capture.configuration_changed",
-                fallback: "The audio device changed. Start again to use the current microphone."
+                fallback: "The audio configuration changed and the microphone stopped. Try dictating again."
             )
         }
+    }
+
+    static var interruptedRecordingMessage: String {
+        L10n.string(
+            "notice.audio_capture.interrupted_partial",
+            fallback: "The microphone stopped after an audio configuration change. Release the shortcut to use the audio already recorded."
+        )
     }
 }
 
@@ -61,12 +101,15 @@ protocol CaptureDriver: AnyObject {
     /// Native output format of this driver's input node, read before `start`.
     var inputFormat: AVAudioFormat { get }
 
+    /// On the main queue, verify that a startup notification left the original
+    /// hardware path running at its original format.
+    func stillRunningOnOriginalInput(format: AVAudioFormat) -> Bool
+
     /// Install the tap and the configuration observer, then start the engine.
     /// Any partial setup is torn down before this throws.
     ///
     /// `onConfigurationChange` is invoked synchronously on whatever thread
-    /// surfaces the notification, so the caller can latch a failure before any
-    /// main-queue cleanup. The driver never performs lifecycle work inside it.
+    /// surfaces the notification. The driver never performs lifecycle work inside it.
     func start(
         onBuffer: @escaping (AVAudioPCMBuffer) -> Void,
         onConfigurationChange: @escaping () -> Void
@@ -76,6 +119,10 @@ protocol CaptureDriver: AnyObject {
     func stop()
 }
 
+extension CaptureDriver {
+    func stillRunningOnOriginalInput(format: AVAudioFormat) -> Bool { false }
+}
+
 /// Production driver: one fresh `AVAudioEngine` per capture.
 ///
 /// A permanent engine is what broke device switching. Its input node kept
@@ -83,6 +130,7 @@ protocol CaptureDriver: AnyObject {
 /// installed with a stale format and either threw inside `installTap` or
 /// delivered no audio at all. A per-capture engine never carries that state.
 final class AVEngineCaptureDriver: CaptureDriver {
+    private let originalDevice = BluetoothInputDriver.defaultInputDevice
     private let engine = AVAudioEngine()
     private var tapInstalled = false
     private var observerToken: NSObjectProtocol?
@@ -91,10 +139,23 @@ final class AVEngineCaptureDriver: CaptureDriver {
         engine.inputNode.outputFormat(forBus: 0)
     }
 
+    func stillRunningOnOriginalInput(format: AVAudioFormat) -> Bool {
+        guard engine.isRunning, let originalDevice, originalDevice != kAudioObjectUnknown,
+              originalDevice == BluetoothInputDriver.defaultInputDevice else { return false }
+        return inputFormat == format
+    }
+
     func start(
         onBuffer: @escaping (AVAudioPCMBuffer) -> Void,
         onConfigurationChange: @escaping () -> Void
     ) throws {
+        let input = engine.inputNode
+        let sampleRate = input.outputFormat(forBus: 0).sampleRate
+        guard sampleRate.isFinite, sampleRate > 0 else { throw AudioCaptureError.invalidInput }
+        // A fixed frame count queues a quarter second at 16 kHz. Request the
+        // same duration across routes so a headset tap can deliver sooner.
+        let bufferSize = AVAudioFrameCount(max(1, (sampleRate / 10).rounded()))
+
         // Scoped to THIS engine object, registered before start so a change
         // that lands during startup is latched rather than lost.
         observerToken = NotificationCenter.default.addObserver(
@@ -106,13 +167,16 @@ final class AVEngineCaptureDriver: CaptureDriver {
         }
 
         // format: nil adopts the bus format instead of imposing a cached one.
-        engine.inputNode.installTap(onBus: 0, bufferSize: 4096, format: nil) { buffer, _ in
+        input.installTap(onBus: 0, bufferSize: bufferSize, format: nil) { buffer, _ in
             onBuffer(buffer)
         }
         tapInstalled = true
 
         do {
+            let engineStart = ProcessInfo.processInfo.systemUptime
             try engine.start()
+            let engineStarted = ProcessInfo.processInfo.systemUptime
+            log.info("Audio engine started: startUptimeMs=\(engineStart * 1000, privacy: .public) durationMs=\(DictationCaptureTiming.milliseconds(from: engineStart, to: engineStarted), privacy: .public)")
         } catch {
             stop()
             throw error
@@ -136,21 +200,27 @@ final class AVEngineCaptureDriver: CaptureDriver {
 
 /// Microphone capture for push-to-talk dictation and live captions.
 ///
-/// One `Capture` object per session owns its driver, its snapshot of the
-/// service callbacks and its locked state record. Capture identity
-/// (`current === capture`) is what keeps a stopped session's late tap,
-/// notification or deadline from touching a later one; there are no epochs,
-/// generation counters or retry state.
+/// One `Capture` per session owns its callbacks and accumulated audio.
+/// Each engine attachment has its own identity, so callbacks from a replaced
+/// tap cannot feed the replacement or trigger another restart.
 ///
 /// Lifecycle, the first-buffer deadline and all hardware setup/teardown are
 /// main-queue confined.
 final class AudioCaptureService {
+    static let standardDictationLimitSeconds: TimeInterval = 10 * 60
+
     enum Mode {
         case recording
         case continuous
     }
 
-    private let makeDriver: () -> any CaptureDriver
+    private let makeDriver: (Mode) -> any CaptureDriver
+    private let now: () -> TimeInterval
+    private let scheduleDurationCheck: (TimeInterval, DispatchWorkItem) -> Void
+
+    private static func scheduleOnMain(after delay: TimeInterval, work: DispatchWorkItem) {
+        DispatchQueue.main.asyncAfter(deadline: .now() + delay, execute: work)
+    }
 
     /// The one live capture, main-queue confined.
     private var current: Capture?
@@ -170,59 +240,127 @@ final class AudioCaptureService {
     /// never route an older capture's failure to a newer consumer.
     var onError: ((Error) -> Void)?
 
-    init(makeDriver: @escaping () -> any CaptureDriver = { AVEngineCaptureDriver() }) {
-        self.makeDriver = makeDriver
+    init(makeDriver: @escaping () -> any CaptureDriver,
+         now: @escaping () -> TimeInterval = { ProcessInfo.processInfo.systemUptime },
+         scheduleDurationCheck: @escaping (TimeInterval, DispatchWorkItem) -> Void = AudioCaptureService.scheduleOnMain) {
+        self.makeDriver = { _ in makeDriver() }
+        self.now = now
+        self.scheduleDurationCheck = scheduleDurationCheck
+    }
+
+    init() {
+        BluetoothInputDriver.warmDeviceLookup()
+        now = { ProcessInfo.processInfo.systemUptime }
+        scheduleDurationCheck = Self.scheduleOnMain
+        makeDriver = { mode in
+            if mode == .recording, let direct = BluetoothInputDriver() { return direct }
+            return AVEngineCaptureDriver()
+        }
     }
 
     // MARK: - Public API
 
-    func startRecording(limitSeconds: TimeInterval? = nil) throws {
-        try start(mode: .recording, limitSeconds: limitSeconds)
+    /// Pay the process's first audio component and format lookup after onboarding.
+    /// The temporary driver is never started. Each press still gets fresh route
+    /// and format information, even if the devices change immediately afterwards.
+    func warmRecordingFormat() {
+        dispatchPrecondition(condition: .onQueue(.main))
+        guard current == nil else { return }
+        _ = makeDriver(.recording).inputFormat
+    }
+
+    func startRecording(
+        limitSeconds: TimeInterval? = nil,
+        timing: DictationCaptureTiming? = nil,
+        stageLog: DictationStageLog? = nil,
+        onDurationLimit: (() -> Void)? = nil
+    ) throws {
+        try start(mode: .recording, limitSeconds: limitSeconds, timing: timing, stageLog: stageLog)
+        if let onDurationLimit, let capture = current, let deadline = capture.recordingDeadline {
+            enqueueDurationCheck(capture, deadline: deadline, onLimit: onDurationLimit)
+        }
+    }
+
+    private func enqueueDurationCheck(_ capture: Capture, deadline: TimeInterval, onLimit: @escaping () -> Void) {
+        let work = DispatchWorkItem { [weak self, weak capture] in
+            guard let self, let capture, self.current === capture else { return }
+            capture.durationCheck = nil
+            if self.now() < deadline {
+                self.enqueueDurationCheck(capture, deadline: deadline, onLimit: onLimit)
+            } else {
+                onLimit()
+            }
+        }
+        capture.durationCheck = work
+        scheduleDurationCheck(max(0, deadline - now()), work)
     }
 
     /// One immutable snapshot per requested preview, never one queued copy per audio tap.
     func recordingSnapshot() -> [Float] { current?.snapshotSamples() ?? [] }
     var recordingLimitReached: Bool { current?.limitReached ?? false }
+    func recordingDurationElapsed(at uptime: TimeInterval) -> Bool {
+        guard let deadline = current?.recordingDeadline else { return false }
+        return uptime >= deadline
+    }
+    var hasInterruptedRecording: Bool { current?.hasInterruptedRecording ?? false }
 
-    /// Ends the push-to-talk capture. Throws the latched terminal failure
-    /// instead of returning a truncated or empty utterance.
+    /// Ends push-to-talk capture. After a device interruption, returns the
+    /// accumulated audio when available. An interruption with no audio throws.
     func stopRecording() throws -> [Float] {
+        try finishRecording().samples
+    }
+
+    func finishRecording(isTap: Bool = false, reason: DictationStageLog.CaptureEndReason? = nil)
+        throws -> (samples: [Float], interrupted: Bool) {
         dispatchPrecondition(condition: .onQueue(.main))
-        guard let capture = current, capture.mode == .recording else { return [] }
+        guard let capture = current, capture.mode == .recording else { return ([], false) }
 
-        capture.closeGate()
-
-        // Checked BEFORE taking samples: a configuration change already
-        // discarded them, and a failure latched before release wins over it.
-        // Held locally first, because finishFailure may run `onError`, which is
-        // allowed to cancel this capture and even start a new one reentrantly.
+        capture.durationCheck?.cancel()
+        capture.durationCheck = nil
+        capture.closeForRelease(isTap: isTap, reason: reason)
         if let failure = capture.latchedFailure {
+            let partial = capture.snapshotSamples()
             finishFailure(capture)
             if current === capture { current = nil }
-            throw failure
+            guard !partial.isEmpty else { throw failure }
+            log.info("Recording stopped after interruption: samples=\(partial.count, privacy: .public)")
+            try checkSignal(partial)
+            return (partial, true)
         }
 
         cancelDeadline(capture)
-        capture.releaseDriver()
+        capture.detachInput()?.driver.stop()
         current = nil
 
         let result = capture.takeSamples()
         let duration = Double(result.count) / 16000.0
         log.info("Recording stopped: \(result.count) samples (\(String(format: "%.1f", duration))s)")
-        return result
+        if !isTap { try checkSignal(result) }
+        return (result, false)
+    }
+
+    private func checkSignal(_ samples: [Float]) throws {
+        // One 16-bit PCM step (-90 dBFS peak). Any louder sample preserves a
+        // quiet utterance, even if most of a long recording is digital silence.
+        guard samples.count >= 16_000,
+              samples.allSatisfy({ abs($0) <= 1.0 / 32_768 }) else { return }
+        log.error("Dictation capture unusable: reason=silentInput samples=\(samples.count, privacy: .public)")
+        throw AudioCaptureError.silentInput
     }
 
     /// Silent discard, including a latched failure that was never delivered.
     /// Also the acknowledgement that retires a failed capture the caller will
     /// never stop, so the next start is not rejected as busy.
-    func cancelRecording() {
+    func cancelRecording(reason: RecordingCancellationReason) {
         dispatchPrecondition(condition: .onQueue(.main))
         guard let capture = current, capture.mode == .recording else { return }
-        capture.markCancelled()
+        capture.durationCheck?.cancel()
+        capture.durationCheck = nil
+        let discardedSamples = capture.markCancelled(reason: reason)
         cancelDeadline(capture)
-        capture.releaseDriver()
+        capture.detachInput()?.driver.stop()
         current = nil
-        log.info("Recording cancelled")
+        log.info("Recording cancelled: reason=\(reason.rawValue, privacy: .public) samples=\(discardedSamples, privacy: .public)")
     }
 
     // MARK: - Continuous capture (live caption mode)
@@ -239,10 +377,9 @@ final class AudioCaptureService {
     func stopContinuousCapture() {
         dispatchPrecondition(condition: .onQueue(.main))
         guard let capture = current, capture.mode == .continuous else { return }
-        capture.closeGate()
         capture.suppressErrorDelivery()
         cancelDeadline(capture)
-        capture.releaseDriver()
+        capture.detachInput()?.driver.stop()
         current = nil
         log.info("Continuous capture stopped")
     }
@@ -252,8 +389,8 @@ final class AudioCaptureService {
     /// instead of sleeping for a second.
     func checkFirstBufferDeadline() {
         dispatchPrecondition(condition: .onQueue(.main))
-        guard let capture = current else { return }
-        checkFirstBuffer(capture)
+        guard let capture = current, let input = capture.input else { return }
+        checkFirstBuffer(capture, input: input)
     }
 
     /// Test-only view of the work item production ALREADY scheduled for the
@@ -267,99 +404,140 @@ final class AudioCaptureService {
 
     // MARK: - Shared start
 
-    private func start(mode: Mode, limitSeconds: TimeInterval? = nil) throws {
+    private func start(
+        mode: Mode,
+        limitSeconds: TimeInterval? = nil,
+        timing: DictationCaptureTiming? = nil,
+        stageLog: DictationStageLog? = nil
+    ) throws {
         dispatchPrecondition(condition: .onQueue(.main))
         guard current == nil else { throw AudioCaptureError.busy }
 
-        let driver = makeDriver()
-        let nativeFormat = driver.inputFormat
-        guard nativeFormat.channelCount > 0,
-              nativeFormat.sampleRate.isFinite,
-              nativeFormat.sampleRate > 0 else {
-            log.error("Unusable input format: \(nativeFormat.channelCount) ch, \(nativeFormat.sampleRate) Hz")
-            driver.stop()
-            throw AudioCaptureError.invalidInput
-        }
-
-        let targetSampleRate: Double = 16000
-        let targetChannels: AVAudioChannelCount = 1
-
-        guard let targetFormat = AVAudioFormat(
-            commonFormat: .pcmFormatFloat32,
-            sampleRate: targetSampleRate,
-            channels: targetChannels,
-            interleaved: false
-        ) else {
-            driver.stop()
-            throw NSError(
-                domain: "AudioCaptureService",
-                code: 2,
-                userInfo: [NSLocalizedDescriptionKey: L10n.string(
-                    "error.audio_capture.target_format",
-                    fallback: "Failed to create target audio format."
-                )]
-            )
-        }
-
-        let needsConversion = nativeFormat.sampleRate != targetSampleRate
-            || nativeFormat.channelCount != targetChannels
-
-        let converter: AVAudioConverter?
-        if needsConversion {
-            converter = AVAudioConverter(from: nativeFormat, to: targetFormat)
-            if converter == nil {
-                log.warning("Could not create audio converter, capturing in native format")
-            }
-        } else {
-            converter = nil
-        }
-
+        let setupStart = ProcessInfo.processInfo.systemUptime
         let capture = Capture(
             mode: mode,
-            driver: driver,
-            nativeFormat: nativeFormat,
-            targetFormat: targetFormat,
-            converter: converter,
+            timing: timing,
             onSamples: onSamples,
             onRMSLevel: onRMSLevel,
             onError: onError,
-            limitSeconds: mode == .recording ? limitSeconds : nil
+            stageLog: stageLog,
+            limitSeconds: mode == .recording ? limitSeconds : nil,
+            now: now
         )
         current = capture
 
         do {
-            try driver.start(
-                onBuffer: { [weak self, weak capture] buffer in
-                    guard let self, let capture else { return }
-                    self.handleBuffer(buffer, capture: capture)
+            let initial = try makeInput(driver: makeDriver(mode))
+            let driverStart = ProcessInfo.processInfo.systemUptime
+            let input = try startInputWithFallback(initial, capture: capture)
+            let driverStarted = ProcessInfo.processInfo.systemUptime
+            if let timing {
+                log.info("Dictation capture start timing: pressUptimeMs=\(timing.pressUptimeMs, privacy: .public) admissionMs=\(DictationCaptureTiming.milliseconds(from: timing.keyDown, to: timing.admitted), privacy: .public) appSetupMs=\(DictationCaptureTiming.milliseconds(from: timing.admitted, to: setupStart), privacy: .public) audioSetupMs=\(DictationCaptureTiming.milliseconds(from: setupStart, to: driverStart), privacy: .public) driverStartMs=\(DictationCaptureTiming.milliseconds(from: driverStart, to: driverStarted), privacy: .public)")
+            }
+            log.info("Capture started (native: \(input.nativeFormat.sampleRate)Hz → 16000Hz)")
+        } catch {
+            capture.suppressErrorDelivery()
+            current = nil
+            let reason = RecordingCancellationReason(error: error)
+            log.error("Capture start failed: reason=\(reason.rawValue, privacy: .public)")
+            throw error
+        }
+    }
+
+    private func makeInput(driver: any CaptureDriver) throws -> CaptureInput {
+        let format = driver.inputFormat
+        guard format.channelCount > 0, format.sampleRate.isFinite, format.sampleRate > 0 else {
+            log.error("Unusable input format: \(format.channelCount) ch, \(format.sampleRate) Hz")
+            driver.stop()
+            throw AudioCaptureError.invalidInput
+        }
+        return CaptureInput(driver: driver, nativeFormat: format)
+    }
+
+    private func startInputWithFallback(_ input: CaptureInput, capture: Capture) throws -> CaptureInput {
+        do {
+            try startInput(input, capture: capture)
+            return input
+        } catch where input.driver is BluetoothInputDriver {
+            log.info("Direct Bluetooth input unavailable at start; retrying with AVAudioEngine")
+            let fallback = try makeInput(driver: AVEngineCaptureDriver())
+            try startInput(fallback, capture: capture)
+            return fallback
+        }
+    }
+
+    private func startInput(_ input: CaptureInput, capture: Capture) throws {
+        if capture.mode == .recording {
+            let backend = input.driver is BluetoothInputDriver ? "hal" : "avAudioEngine"
+            log.info("Dictation capture backend: pressUptimeMs=\(capture.timing?.pressUptimeMs ?? 0, privacy: .public) backend=\(backend, privacy: .public)")
+        }
+        capture.attach(input)
+        do {
+            try input.driver.start(
+                onBuffer: { [weak self, weak capture, weak input] buffer in
+                    guard let self, let capture, let input else { return }
+                    self.handleBuffer(buffer, capture: capture, input: input)
                 },
-                onConfigurationChange: { [weak self, weak capture] in
-                    guard let capture else { return }
-                    // Notification thread: latch only. No engine lifecycle here.
-                    // An event that did not win the latch (the gate is closed,
-                    // or another failure got there first) schedules nothing.
-                    guard capture.latchFailure(.configurationChanged) else { return }
-                    DispatchQueue.main.async { [weak self] in
-                        guard let self, self.current === capture else { return }
-                        self.finishFailure(capture)
+                onConfigurationChange: { [weak self, weak capture, weak input] in
+                    guard let capture, let input, capture.noteConfigurationChange(on: input) else { return }
+                    // AVAudioEngine can deadlock if torn down inside the notification.
+                    DispatchQueue.main.async { [weak capture, weak input] in
+                        guard let self, let capture, let input, self.current === capture else { return }
+                        if capture.mode == .recording, capture.isStartupNotification,
+                           input.driver.stillRunningOnOriginalInput(format: input.nativeFormat) {
+                            capture.keepStartingInput(input)
+                            log.info("Audio configuration changed during startup; retaining running input")
+                            return
+                        }
+                        self.recoverInput(capture, replaced: input)
                     }
                 }
             )
-            // A change that landed during startup is a startup failure: it
-            // throws, and never reaches onError.
-            if let latched = capture.latchedFailure { throw latched }
-            capture.markStarted()
         } catch {
-            capture.suppressErrorDelivery()
-            capture.closeGate()
-            capture.releaseDriver()
-            current = nil
-            log.error("Capture start failed: \(error.localizedDescription, privacy: .private)")
-            throw (error as? AudioCaptureError) ?? .startFailed(error)
+            capture.detachInput()?.driver.stop()
+            throw AudioCaptureError.startFailed(error)
         }
+        scheduleFirstBufferCheck(capture, input: input)
+    }
 
-        scheduleFirstBufferCheck(capture)
-        log.info("Capture started (native: \(nativeFormat.sampleRate)Hz → 16000Hz)")
+    private func recoverInput(_ capture: Capture, replaced input: CaptureInput) {
+        guard let canRetry = capture.beginRecovery(replacing: input) else { return }
+        cancelDeadline(capture)
+        input.driver.stop()
+        log.info("Audio engine configuration changed: samples=\(capture.sampleCount, privacy: .public) retry=\(canRetry, privacy: .public)")
+        guard canRetry else {
+            failRecovery(capture, cause: .configurationChanged)
+            return
+        }
+        do {
+            func reopen() throws -> CaptureInput {
+                let input = try makeInput(driver: makeDriver(capture.mode))
+                return try startInputWithFallback(input, capture: capture)
+            }
+            let replacement: CaptureInput
+            do {
+                replacement = try reopen()
+            } catch AudioCaptureError.startFailed(let error)
+                where (error as NSError).code == Int(kAudioUnitErr_FormatNotSupported) {
+                // The device changed format between tap installation and graph
+                // initialization. The rejected graph has already been detached.
+                log.info("Recovery input format changed during start; rebuilding the tap once")
+                replacement = try reopen()
+            }
+            log.info("Audio engine reopened: nativeHz=\(replacement.nativeFormat.sampleRate, privacy: .public)")
+        } catch {
+            failRecovery(capture, cause: RecordingCancellationReason(error: error))
+        }
+    }
+
+    private func failRecovery(_ capture: Capture, cause: RecordingCancellationReason) {
+        guard capture.latchFailure(.configurationChanged) else { return }
+        logRecoveryFailure(capture, cause: cause)
+        finishFailure(capture)
+    }
+
+    private func logRecoveryFailure(_ capture: Capture, cause: RecordingCancellationReason) {
+        log.error("Audio engine recovery failed: reason=\(cause.rawValue, privacy: .public) samples=\(capture.sampleCount, privacy: .public)")
     }
 
     // MARK: - Tap body
@@ -367,20 +545,30 @@ final class AudioCaptureService {
     /// Runs on the CoreAudio IO thread. Touches only this capture's immutable
     /// context and its locked record; never the service's mutable callbacks,
     /// AppKit, engine lifecycle or a synchronous main hop.
-    private func handleBuffer(_ buffer: AVAudioPCMBuffer, capture: Capture) {
+    private func handleBuffer(_ buffer: AVAudioPCMBuffer, capture: Capture, input: CaptureInput) {
         // Zero-frame callbacks never satisfy first-buffer readiness.
-        guard buffer.frameLength > 0 else { return }
-        guard capture.noteBufferIfAccepting() else { return }
+        guard buffer.frameLength > 0, buffer.format == input.nativeFormat else { return }
+        guard let samples = capture.acceptBuffer(buffer, from: input, convert: convertedSamples) else { return }
+        switch capture.mode {
+        case .recording:
+            let squares = samples.reduce(Float.zero) { $0 + $1 * $1 }
+            capture.onRMSLevel?(sqrt(squares / Float(samples.count)))
+        case .continuous:
+            capture.onSamples?(samples)
+        }
+    }
 
+    private func convertedSamples(_ buffer: AVAudioPCMBuffer, input: CaptureInput) -> [Float]? {
         let pcmBuffer: AVAudioPCMBuffer
-        if let converter = capture.converter {
+        if buffer.format != CaptureInput.targetFormat {
+            guard let converter = input.converter else { return nil }
             let frameCapacity = AVAudioFrameCount(
-                Double(buffer.frameLength) * capture.targetFormat.sampleRate / capture.nativeFormat.sampleRate
+                Double(buffer.frameLength) * CaptureInput.targetFormat.sampleRate / input.nativeFormat.sampleRate
             )
             guard let convertedBuffer = AVAudioPCMBuffer(
-                pcmFormat: capture.targetFormat,
+                pcmFormat: CaptureInput.targetFormat,
                 frameCapacity: frameCapacity
-            ) else { return }
+            ) else { return nil }
 
             var error: NSError?
             let status = converter.convert(to: convertedBuffer, error: &error) { _, outStatus in
@@ -389,54 +577,44 @@ final class AudioCaptureService {
             }
             guard status != .error, error == nil else {
                 log.error("Audio conversion error: \(error?.localizedDescription ?? "unknown", privacy: .private)")
-                return
+                return nil
             }
             pcmBuffer = convertedBuffer
         } else {
             pcmBuffer = buffer
         }
 
-        guard let channelData = pcmBuffer.floatChannelData?[0] else { return }
+        guard let channelData = pcmBuffer.floatChannelData?[0] else { return nil }
         let frameCount = Int(pcmBuffer.frameLength)
-        guard frameCount > 0 else { return }
+        guard frameCount > 0 else { return nil }
 
-        let newSamples = Array(UnsafeBufferPointer(start: channelData, count: frameCount))
-
-        switch capture.mode {
-        case .recording:
-            var rms: Float = 0
-            for i in 0..<frameCount {
-                rms += channelData[i] * channelData[i]
-            }
-            rms = sqrt(rms / max(Float(frameCount), 1))
-            // Gate rechecked under the lock; callback invoked outside it.
-            guard capture.appendIfAccepting(newSamples) else { return }
-            capture.onRMSLevel?(rms)
-        case .continuous:
-            guard capture.isAccepting else { return }
-            capture.onSamples?(newSamples)
-        }
+        return Array(UnsafeBufferPointer(start: channelData, count: frameCount))
     }
 
     // MARK: - First-buffer deadline
 
-    private func scheduleFirstBufferCheck(_ capture: Capture) {
-        let item = DispatchWorkItem { [weak self, weak capture] in
-            guard let self, let capture else { return }
-            self.checkFirstBuffer(capture)
+    private func scheduleFirstBufferCheck(_ capture: Capture, input: CaptureInput) {
+        let item = DispatchWorkItem { [weak self, weak capture, weak input] in
+            guard let self, let capture, let input else { return }
+            self.checkFirstBuffer(capture, input: input)
         }
         capture.firstBufferCheck = item
         DispatchQueue.main.asyncAfter(deadline: .now() + 1.0, execute: item)
     }
 
-    /// One scheduled check, never rescheduled and never cancelled from the tap.
-    /// It cheaply no-ops once a buffer has arrived.
-    private func checkFirstBuffer(_ capture: Capture) {
+    private func checkFirstBuffer(_ capture: Capture, input: CaptureInput) {
         dispatchPrecondition(condition: .onQueue(.main))
         guard current === capture else { return }
-        guard capture.needsNoInputBufferFailure() else { return }
-        guard capture.latchFailure(.noInputBuffer) else { return }
-        log.error("No input buffer within the first-buffer deadline")
+        if capture.needsStartupRecovery(input) {
+            recoverInput(capture, replaced: input)
+            return
+        }
+        guard let failure = capture.failIfMissingSamples(from: input) else { return }
+        if case .configurationChanged = failure {
+            logRecoveryFailure(capture, cause: .noInputBuffer)
+        } else {
+            log.error("No input buffer within the first-buffer deadline")
+        }
         finishFailure(capture)
     }
 
@@ -459,187 +637,286 @@ final class AudioCaptureService {
     private func finishFailure(_ capture: Capture) {
         dispatchPrecondition(condition: .onQueue(.main))
         cancelDeadline(capture)
-        capture.releaseDriver()
+        capture.detachInput()?.driver.stop()
         if let (error, handler) = capture.claimErrorDelivery() {
             handler(error)
         }
     }
 }
 
-// MARK: - Capture
+// MARK: - Capture record
 
-/// One capture session. A lifetime and ownership container, not an epoch:
-/// identity alone decides whether a late callback still applies.
+private final class CaptureInput {
+    static let targetFormat = AVAudioFormat(
+        commonFormat: .pcmFormatFloat32, sampleRate: 16000, channels: 1, interleaved: false
+    )!
+
+    let driver: any CaptureDriver
+    let nativeFormat: AVAudioFormat
+
+    // Build the converter when the tap first delivers audio. The capture lock
+    // serializes access, and microphone startup can proceed before conversion.
+    lazy var converter: AVAudioConverter? = {
+        let converter = AVAudioConverter(from: self.nativeFormat, to: CaptureInput.targetFormat)
+        if converter == nil { log.error("Could not create input audio converter") }
+        return converter
+    }()
+
+    init(driver: any CaptureDriver, nativeFormat: AVAudioFormat) {
+        self.driver = driver
+        self.nativeFormat = nativeFormat
+    }
+}
+
 private final class Capture {
     let mode: AudioCaptureService.Mode
-    let nativeFormat: AVAudioFormat
-    let targetFormat: AVAudioFormat
-    let converter: AVAudioConverter?
-
-    // Snapshotted at start so the tap can never read a service property that
-    // a later start or stop has since replaced.
+    let timing: DictationCaptureTiming?
     let onSamples: (([Float]) -> Void)?
     let onRMSLevel: ((Float) -> Void)?
     let onError: ((Error) -> Void)?
+    private let stageLog: DictationStageLog?
 
-    /// Main-queue only. Held until main-queue cleanup runs so the engine is
-    /// never released on a notification or IO thread.
-    private var driver: (any CaptureDriver)?
-
-    /// Main-queue only.
+    // Main-queue only. Datapath and notification callbacks use the locked
+    // record below and leave lifecycle operations to the main queue.
     var firstBufferCheck: DispatchWorkItem?
 
     private let lock = NSLock()
+    private var attachedInput: CaptureInput?
+    private var configurationPending = false
+    private var notifiedBeforeSamples = false
+    private var checkingStartupInput = false
+    private var awaitingRecoverySamples = false
+    private var sawFirstBuffer = false
+    private var emittedFirstSamples = false
+    private var inputDeliveredSamples = false
     private var accepting = true
-    private var started = false
-    private var sawBuffer = false
     private var failure: AudioCaptureError?
-    private var cancelled = false
     private var errorDelivered = false
     private var samples: [Float] = []
     private let sampleLimit: Int?
-    private let deadline: TimeInterval?
+    let recordingDeadline: TimeInterval?
+    var durationCheck: DispatchWorkItem?
+    private let now: () -> TimeInterval
     private var reachedLimit = false
-    var limitReached: Bool {
-        lock.lock(); defer { lock.unlock() }
-        return reachedLimit
-    }
-    func snapshotSamples() -> [Float] {
-        lock.lock(); defer { lock.unlock() }
-        return samples
-    }
 
     init(
         mode: AudioCaptureService.Mode,
-        driver: any CaptureDriver,
-        nativeFormat: AVAudioFormat,
-        targetFormat: AVAudioFormat,
-        converter: AVAudioConverter?,
+        timing: DictationCaptureTiming?,
         onSamples: (([Float]) -> Void)?,
         onRMSLevel: ((Float) -> Void)?,
         onError: ((Error) -> Void)?,
-        limitSeconds: TimeInterval? = nil
+        stageLog: DictationStageLog?,
+        limitSeconds: TimeInterval?,
+        now: @escaping () -> TimeInterval
     ) {
         self.mode = mode
-        self.driver = driver
-        self.nativeFormat = nativeFormat
-        self.targetFormat = targetFormat
-        self.converter = converter
+        self.timing = timing
         self.onSamples = onSamples
         self.onRMSLevel = onRMSLevel
         self.onError = onError
+        self.stageLog = stageLog
+        self.now = now
         sampleLimit = limitSeconds.map { Int($0 * 16000) }
-        deadline = limitSeconds.map { ProcessInfo.processInfo.systemUptime + $0 }
+        recordingDeadline = limitSeconds.map { now() + $0 }
     }
 
-    // MARK: Hardware ownership (main queue)
+    var input: CaptureInput? { lock.withLock { attachedInput } }
+    var limitReached: Bool { lock.withLock { reachedLimit } }
+    var latchedFailure: AudioCaptureError? { lock.withLock { failure } }
+    var hasInterruptedRecording: Bool { lock.withLock { failure != nil && !samples.isEmpty } }
+    var sampleCount: Int { lock.withLock { samples.count } }
+    func snapshotSamples() -> [Float] { lock.withLock { samples } }
 
-    func releaseDriver() {
-        driver?.stop()
-        driver = nil
+    func attach(_ input: CaptureInput) {
+        lock.withLock {
+            attachedInput = input
+            configurationPending = false
+            inputDeliveredSamples = false
+            checkingStartupInput = false
+        }
     }
 
-    // MARK: Locked record
-
-    var isAccepting: Bool {
-        lock.lock(); defer { lock.unlock() }
-        return accepting
+    func detachInput() -> CaptureInput? {
+        lock.withLock {
+            let detached = attachedInput
+            attachedInput = nil
+            return detached
+        }
     }
 
-    func markStarted() {
-        lock.lock(); defer { lock.unlock() }
-        started = true
+    func noteConfigurationChange(on input: CaptureInput) -> Bool {
+        lock.withLock {
+            guard accepting, attachedInput === input, !configurationPending else { return false }
+            notifiedBeforeSamples = !inputDeliveredSamples
+            configurationPending = true
+            return true
+        }
     }
 
-    func closeGate() {
-        lock.lock(); defer { lock.unlock() }
-        accepting = false
+    var isStartupNotification: Bool { lock.withLock { configurationPending && notifiedBeforeSamples } }
+
+    func keepStartingInput(_ input: CaptureInput) {
+        lock.withLock {
+            guard accepting, attachedInput === input else { return }
+            configurationPending = false
+            checkingStartupInput = !inputDeliveredSamples
+        }
     }
 
-    /// Marks readiness before conversion and reports whether this capture is
-    /// still accepting audio.
-    func noteBufferIfAccepting() -> Bool {
-        lock.lock(); defer { lock.unlock() }
-        guard accepting else { return false }
-        if let deadline, ProcessInfo.processInfo.systemUptime >= deadline {
+    func needsStartupRecovery(_ input: CaptureInput) -> Bool {
+        lock.withLock {
+            // The deadline may run after a notification was latched but before
+            // its main-queue handler. It must still own a stalled startup.
+            guard acceptsAudio(from: input), !inputDeliveredSamples,
+                  checkingStartupInput || configurationPending else { return false }
+            configurationPending = true
+            return true
+        }
+    }
+
+    /// Allow one replacement per interruption. Its first usable samples
+    /// reset the budget. A second change during the restart ends the capture.
+    func beginRecovery(replacing input: CaptureInput) -> Bool? {
+        lock.withLock {
+            guard accepting, attachedInput === input, configurationPending else { return nil }
+            attachedInput = nil
+            configurationPending = false
+            let canRetry = !awaitingRecoverySamples
+            awaitingRecoverySamples = true
+            return canRetry
+        }
+    }
+
+    func closeForRelease(isTap: Bool, reason: DictationStageLog.CaptureEndReason?) {
+        lock.withLock {
+            accepting = false
+            if !isTap && (configurationPending || awaitingRecoverySamples) && !reachedLimit {
+                failure = .configurationChanged
+            }
+            if sawFirstBuffer {
+                stageLog?.emit(.captureEnded(sampleCount: samples.count, reason: reason))
+            }
+            #if DEBUG || LAMITYPE_CAPTURE_CI
+            dumpOnce(outcome: failure == nil ? "released" : "interrupted")
+            #endif
+        }
+    }
+
+    #if DEBUG || LAMITYPE_CAPTURE_CI
+    private var didDump = false
+
+    // Called under the capture lock once admission to the sample buffer closes.
+    private func dumpOnce(outcome: String) {
+        guard !didDump else { return }
+        didDump = true
+        CaptureDump.enqueue(samples, pressUptimeMs: timing?.pressUptimeMs, outcome: outcome)
+    }
+    #endif
+
+    /// Called with the lock held. The wall clock and sample limits span
+    /// replacements, including time spent waiting for a new input buffer.
+    private func acceptsAudio(from input: CaptureInput) -> Bool {
+        guard accepting, attachedInput === input else { return false }
+        if let recordingDeadline, now() >= recordingDeadline {
             reachedLimit = true
             accepting = false
             return false
         }
-        sawBuffer = true
         return true
     }
 
-    func appendIfAccepting(_ newSamples: [Float]) -> Bool {
-        lock.lock(); defer { lock.unlock() }
-        guard accepting else { return false }
-        if let deadline, ProcessInfo.processInfo.systemUptime >= deadline {
-            reachedLimit = true
-            accepting = false
-            return false
+    func acceptBuffer(
+        _ buffer: AVAudioPCMBuffer,
+        from input: CaptureInput,
+        convert: (AVAudioPCMBuffer, CaptureInput) -> [Float]?
+    ) -> [Float]? {
+        lock.withLock {
+            guard acceptsAudio(from: input) else { return nil }
+            if !sawFirstBuffer {
+                sawFirstBuffer = true
+                if let timing {
+                    let arrived = ProcessInfo.processInfo.systemUptime
+                    log.info("Dictation first input buffer: pressUptimeMs=\(timing.pressUptimeMs, privacy: .public) keyDownToBufferMs=\(DictationCaptureTiming.milliseconds(from: timing.keyDown, to: arrived), privacy: .public) frames=\(buffer.frameLength, privacy: .public)")
+                }
+                // Emit under the lock so release cannot log ahead of the first buffer.
+                stageLog?.emit(.captureStarted)
+            }
+            // Finish converting this accepted buffer before a route change or
+            // release takes ownership of the sample stream.
+            guard let newSamples = convert(buffer, input) else { return nil }
+            if !emittedFirstSamples {
+                emittedFirstSamples = true
+                if let timing {
+                    let produced = ProcessInfo.processInfo.systemUptime
+                    log.info("Dictation first PCM samples: pressUptimeMs=\(timing.pressUptimeMs, privacy: .public) keyDownToPCMms=\(DictationCaptureTiming.milliseconds(from: timing.keyDown, to: produced), privacy: .public) samples=\(newSamples.count, privacy: .public)")
+                }
+            }
+            inputDeliveredSamples = true
+            awaitingRecoverySamples = false
+            if mode == .recording {
+                if let sampleLimit {
+                    samples.append(contentsOf: newSamples.prefix(max(0, sampleLimit - samples.count)))
+                    if samples.count >= sampleLimit { accepting = false; reachedLimit = true }
+                } else {
+                    samples.append(contentsOf: newSamples)
+                }
+            }
+            return newSamples
         }
-        if let sampleLimit {
-            samples.append(contentsOf: newSamples.prefix(max(0, sampleLimit - samples.count)))
-            if samples.count >= sampleLimit { accepting = false; reachedLimit = true }
-        } else { samples.append(contentsOf: newSamples) }
-        return true
     }
 
     func takeSamples() -> [Float] {
-        lock.lock(); defer { lock.unlock() }
-        let result = samples
-        samples.removeAll(keepingCapacity: false)
-        return result
+        lock.withLock {
+            let result = samples
+            samples.removeAll(keepingCapacity: false)
+            return result
+        }
     }
 
-    /// First failure wins. Closes the gate immediately and drops any audio
-    /// accumulated before the failure. Returns true for the first caller.
-    ///
-    /// A notification that reaches an already-closed gate loses: a normal stop
-    /// or a cancel has taken ownership of this capture, and an event still in
-    /// flight when that happened must never erase the audio the caller is
-    /// about to take, nor invent a failure after a clean result.
     func latchFailure(_ error: AudioCaptureError) -> Bool {
-        lock.lock(); defer { lock.unlock() }
-        guard accepting, !cancelled, failure == nil else { return false }
-        accepting = false
-        samples.removeAll(keepingCapacity: false)
-        failure = error
-        return true
+        lock.withLock {
+            guard accepting else { return false }
+            accepting = false
+            failure = error
+            return true
+        }
     }
 
-    var latchedFailure: AudioCaptureError? {
-        lock.lock(); defer { lock.unlock() }
-        return failure
+    func failIfMissingSamples(from input: CaptureInput) -> AudioCaptureError? {
+        lock.withLock {
+            guard acceptsAudio(from: input), !inputDeliveredSamples, !configurationPending else { return nil }
+            let error: AudioCaptureError = awaitingRecoverySamples ? .configurationChanged : .noInputBuffer
+            accepting = false
+            failure = error
+            return error
+        }
     }
 
-    func needsNoInputBufferFailure() -> Bool {
-        lock.lock(); defer { lock.unlock() }
-        return started && accepting && !sawBuffer && failure == nil
-    }
-
-    func markCancelled() {
-        lock.lock(); defer { lock.unlock() }
-        cancelled = true
-        accepting = false
-        errorDelivered = true
-        samples.removeAll(keepingCapacity: false)
+    func markCancelled(reason: RecordingCancellationReason) -> Int {
+        lock.withLock {
+            accepting = false
+            errorDelivered = true
+            #if DEBUG || LAMITYPE_CAPTURE_CI
+            dumpOnce(outcome: reason.rawValue)
+            #endif
+            let count = samples.count
+            samples.removeAll(keepingCapacity: false)
+            return count
+        }
     }
 
     func suppressErrorDelivery() {
-        lock.lock(); defer { lock.unlock() }
-        accepting = false
-        errorDelivered = true
+        lock.withLock {
+            accepting = false
+            errorDelivered = true
+        }
     }
 
-    /// Claims the one-shot delivery right. `errorDelivered` is set under the
-    /// lock before the handler is returned, so a reentrant stop or cancel
-    /// inside `onError` cannot produce a second callback.
     func claimErrorDelivery() -> (AudioCaptureError, (Error) -> Void)? {
-        lock.lock(); defer { lock.unlock() }
-        guard let failure, !errorDelivered, !cancelled else { return nil }
-        errorDelivered = true
-        guard let onError else { return nil }
-        return (failure, onError)
+        lock.withLock {
+            guard let failure, !errorDelivered, let onError else { return nil }
+            errorDelivered = true
+            return (failure, onError)
+        }
     }
 }

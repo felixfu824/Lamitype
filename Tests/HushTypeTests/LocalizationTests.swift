@@ -307,33 +307,18 @@ final class LocalizationTests: XCTestCase {
         }
     }
 
-    func testAutoPolishExcludedSummaryUsesPluralTableWithNames() {
+    func testAutoPolishExcludedCountUsesPluralTable() {
         defaults.set("en", forKey: "hushtype.interfaceLanguage")
         L10n.resetLaunchStateForTests()
         underBothStrategies { _ in
-            XCTAssertEqual(
-                L10n.plural(
-                    "settings.text.auto_polish.excluded_summary",
-                    count: 2,
-                    fallback: "%1$ld excluded: %2$@",
-                    arguments: [2, "Terminal, Notes"]
-                ),
-                "2 excluded: Terminal, Notes"
-            )
+            XCTAssertEqual(L10n.plural("settings.text.auto_polish.excluded_count", 1, fallback: "missing"), "1 app")
+            XCTAssertEqual(L10n.plural("settings.text.auto_polish.excluded_count", 2, fallback: "missing"), "2 apps")
         }
 
         defaults.set("zh-Hant-TW", forKey: "hushtype.interfaceLanguage")
         L10n.resetLaunchStateForTests()
         underBothStrategies { _ in
-            XCTAssertEqual(
-                L10n.plural(
-                    "settings.text.auto_polish.excluded_summary",
-                    count: 2,
-                    fallback: "%1$ld excluded: %2$@",
-                    arguments: [2, "Terminal, Notes"]
-                ),
-                "已排除 2 個：Terminal, Notes"
-            )
+            XCTAssertEqual(L10n.plural("settings.text.auto_polish.excluded_count", 2, fallback: "missing"), "2 個 App")
         }
     }
 
@@ -594,12 +579,21 @@ final class LocalizationTests: XCTestCase {
         return out
     }
 
+    func testPositionalFormatSignaturesPermitReorderedArguments() throws {
+        let original = try XCTUnwrap(Self.formatSignature("%1$@ is unavailable while %2$@ is your dictation key."))
+        let reordered = try XCTUnwrap(Self.formatSignature("%2$@ 是語音輸入鍵時，無法使用 %1$@。"))
+        XCTAssertEqual(Self.sigString(original), Self.sigString(reordered))
+        XCTAssertNotEqual(Self.sigString(original), Self.sigString([(1, "@"), (2, "d")]))
+        XCTAssertNotEqual(Self.sigString(original), Self.sigString([(1, "@"), (1, "@")]))
+    }
+
     // MARK: - Fixture builder
 
-    /// String form of a signature for comparison (nested tuples are not
-    /// Equatable in Swift).
+    /// Normalize like the shell gate: positional arguments can change order
+    /// between locales while retaining the same argument types and counts.
     static func sigString(_ s: [(Int, String)]) -> String {
-        s.map { "\($0.0):\($0.1)" }.joined(separator: ",")
+        s.sorted { $0.0 == $1.0 ? $0.1 < $1.1 : $0.0 < $1.0 }
+            .map { "\($0.0):\($0.1)" }.joined(separator: ",")
     }
 
     /// String form used in failure diagnostics.

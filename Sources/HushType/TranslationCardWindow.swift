@@ -9,7 +9,7 @@ private class KeyPanel: NSPanel {
     var onEscape: (() -> Void)?
 
     override func keyDown(with event: NSEvent) {
-        if event.keyCode == 53 { // Esc
+        if event.keyCode == ShortcutChord.escape.keyCode {
             onEscape?()
         } else {
             super.keyDown(with: event)
@@ -53,6 +53,9 @@ final class TranslationCardWindow {
     private static let autoDismissSeconds: TimeInterval = 10
 
     private var panel: KeyPanel?
+    #if DEBUG
+    var panelForTesting: NSPanel? { panel }
+    #endif
     private var globalClickMonitor: Any?
     private var autoDismissTimer: Timer?
 
@@ -141,9 +144,11 @@ final class TranslationCardWindow {
         autoDismissTimer = nil
     }
 
-    /// Fade out and dismiss the card.
-    func dismiss() {
-        guard let panel = panel else { return }
+    /// Returns whether the panel was visible when dismissal began.
+    @discardableResult
+    func dismiss(animated: Bool = true) -> Bool {
+        guard let panel = panel else { return false }
+        let wasVisible = panel.isVisible
 
         cancelAutoDismiss()
 
@@ -152,16 +157,22 @@ final class TranslationCardWindow {
             globalClickMonitor = nil
         }
 
-        NSAnimationContext.runAnimationGroup({ ctx in
-            ctx.duration = 0.18
-            ctx.timingFunction = CAMediaTimingFunction(name: .easeIn)
-            panel.animator().alphaValue = 0
-        }, completionHandler: { [weak self] in
+        let removePanel = { [weak self] in
             panel.orderOut(nil)
             panel.contentView = nil
-            self?.panel = nil
-        })
+            if self?.panel === panel { self?.panel = nil }
+        }
+        if animated {
+            NSAnimationContext.runAnimationGroup({ ctx in
+                ctx.duration = 0.18
+                ctx.timingFunction = CAMediaTimingFunction(name: .easeIn)
+                panel.animator().alphaValue = 0
+            }, completionHandler: removePanel)
+        } else {
+            removePanel()
+        }
 
         log.info("Translation card dismissed")
+        return wasVisible
     }
 }

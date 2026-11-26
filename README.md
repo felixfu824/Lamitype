@@ -38,31 +38,30 @@
 
 ---
 
-## v0.5.17 有什麼新功能
+## v0.5.18 有什麼新功能
 
-本機聽寫新增「精準（6/8-bit）」模型，權重約 706 MB，與原有的「快速（4-bit）」大小相近。
+**自訂快捷鍵。** 在「設定 → 一般 → 快捷鍵」為每個動作錄製按鍵並選擇手勢：語音輸入、翻譯選取文字、校對選取文字、即時字幕。預設仍是右 ⌥。既有使用者的按鍵不變。
 
-**兩種模型可切換。** 在選單列「本機模型」或「設定 → 語音輸入」選擇。使用 Lamitype 的 speech-swift 引擎評測，精準比快速的錯誤率低：Common Voice 19 繁中低 1.08 個百分點，中英混用（ASCEND）低 0.56 個百分點（[評測細節](https://huggingface.co/felixfu824/Qwen3-ASR-0.6B-MLX-mixed-6-8bit)）。
+**錄音更穩定。** 即時預覽無法自動貼上時，會改為複製文字並提示你按 ⌘V。
 
-**新安裝預設值。** 使用精準模型與標準聽寫，即時預覽及「自動校對聽寫文字」皆關閉。既有使用者的設定不變。
+**介面微調。** 改用 macOS 原生分組版面。
 
-**下載中斷可恢復。** 下次開啟 App 或選擇模型時會補齊檔案。載入失敗時，可在設定中按「再試一次」。
+**更新檢查（Opt-in）。** 預設關閉，使用者可在「設定 → 關於」開啟每天自動檢查是否有版本更新。
 
-**已知問題。** 快速模型在較長的中英混用語音中偶爾會重複文字。精準模型在我們的測試中未出現此問題。
 
 ---
 
 ## 為什麼選擇 Lamitype
 
-**隱私與主導權優先。** 預設模式下語音不離開你的 Mac，模型在本機執行，無雲端帳號、無使用追蹤；首次會下載模型（權重約 708 MB，另含支援檔案）。選擇雲端聽寫時，音訊用**你自己的金鑰**經 HTTPS **直連** OpenAI 或 Gemini，中間沒有 Lamitype 伺服器；每次啟動 App 後，第一次送出雲端請求前都會先徵求同意。**要不要把音訊交給供應商，由你決定。**
+**隱私與主導權優先。** 預設模式下語音不離開你的 Mac，模型在本機執行；首次會下載模型（權重約 708 MB，另含支援檔案）。選擇雲端聽寫時，音訊用**你自己的金鑰**經 HTTPS **直連** OpenAI 或 Gemini，中間沒有 Lamitype 伺服器；每次啟動 App 後，第一次送出雲端請求前都會先徵求同意。**要不要把音訊交給供應商，由你決定。**
 
-**記憶體友善：與你的 AI 助手共存。** 本機模型權重約 708 MB。先前一般本機模式量測的整個程序 RAM 峰值約 2.1 GB，已包含 MLX 閒置快取；這不是所有模式的記憶體上限。一般閒置快取上限為 1 GiB；實驗性的即時預覽會暫時使用 128 MiB，待辨識工作真正結束後還原先前設定。兩者都不是整個程序的記憶體硬上限。你可從選單卸載模型，釋放模型權重與快取緩衝區。以雲端引擎啟動時不載入本機模型；若從本機切換，已載入的模型可能仍保留，直到你從選單卸載。引擎選擇會跨重啟保留，切回本機時再自動載入。
+**記憶體友善：與你的 AI 助手共存。** 本機模型權重約 708 MB。先前一般本機模式量測的整個程序 RAM 峰值約 2.1 GB，已包含 MLX 閒置快取。可從選單卸載模型，釋放模型權重與快取緩衝區。以雲端引擎啟動時不載入本機模型。
 
-**雲端聽寫（Opt-in）。** 支援 **OpenAI**（預設 `gpt-4o-mini-transcribe`）與 **Gemini**（預設 `gemini-3.5-flash-lite`，可選 `gemini-3.7-flash`），使用你的金鑰直連供應商。Gemini 提供 Free tier API Key，但 Google 免費方案可能使用你提交的音訊改進產品，付費方案則不會。內建護欄包括每次啟動 App 後第一次雲端請求前徵求同意、每日花費警示與當日鎖定（預設 US$5），以及在上傳前擋下過長錄音。
+**雲端聽寫（Opt-in）。** 支援 **OpenAI**（預設 `gpt-4o-mini-transcribe`）與 **Gemini**（預設 `gemini-3.5-flash-lite`，可選 `gemini-3.7-flash`），使用你的金鑰直連供應商。Gemini 提供 Free tier API Key，但 Google 免費方案可能使用你提交的音訊改進產品。內建護欄包括每次啟動 App 後第一次雲端請求前徵求同意、每日花費警示與當日鎖定（預設 US$5），以及在上傳前擋下過長錄音。
 
 **真正能用的繁體中文。** Whisper 與多數開源模型預設輸出簡體或大陸用語（软件 而非 軟體）。Lamitype 串接 Qwen3-ASR 與 OpenCC `s2twp`，把「软件、鼠标、质量」轉成台灣慣用的「軟體、滑鼠、品質」。它支援英中同句混用辨識，也可依語境將中英文數字轉成阿拉伯數字（`一零一大樓` → `101 大樓`），預設開啟。本機與雲端引擎共用同一套確定性後處理規則。
 
-**文字就地修正。** 在任何 App 選取文字、雙擊 Right ⌥，裝置端 Apple Foundation Models 會嘗試就地校對錯字、文法與標點（需 macOS 26+ 與 Apple Intelligence）。提示詞要求保留語意、語氣與中英混用，輸出防護會擋下部分明顯偏離；小型模型仍可能漏修或過度修改。
+**文字就地修正。** 在任何 App 選取文字、連按兩下 Right ⌥，裝置端 Apple Foundation Models 會嘗試就地校對錯字、文法與標點（需 macOS 26+ 與 Apple Intelligence）。提示詞要求保留語意、語氣與中英混用，輸出防護會擋下部分明顯偏離；小型模型仍可能漏修或過度修改。
 
 **字幕兩種模式。** 本機 **Live Caption（即時字幕）** 用裝置端管線把字幕顯示在浮動面板上，免費、離線，適合不方便連網的場合。可選的 **Live Translated Caption（即時翻譯字幕）** 把音訊串到 OpenAI 的 `gpt-realtime-translate`，提供 14 種語言的即時翻譯字幕；使用你的金鑰與帳單，不會自動啟動。
 
@@ -90,7 +89,7 @@
 | 功能 | 預設 | 系統需求 |
 |---|---|---|
 | **翻譯**：輕按 Right ⌥ 翻譯選取的文字 | OFF | macOS 15+ |
-| **校對**：雙擊 Right ⌥ 校對選取的文字，就地修正 | **ON** | macOS 26 + Apple Intelligence |
+| **校對**：連按兩下 Right ⌥ 校對選取的文字，就地修正 | **ON** | macOS 26 + Apple Intelligence |
 | **自動校對聽寫文字**：本機聽寫結果插入前先經同一個校對流程，可排除特定 App | OFF | macOS 26 + Apple Intelligence |
 | **校對實驗室**：檢視差異、用指示重跑、標記並匯出本機校對案例 | 每次啟動皆為 OFF | 重跑需 macOS 26 + Apple Intelligence |
 
@@ -118,15 +117,13 @@
 
 **與 AI 助手對話。** 給 Claude 或 ChatGPT 一段詳細的 prompt，打字要 5 分鐘，用說的只要 30 秒。按住 Right ⌥，自然地說完整段 prompt（可任意混用語言）、放開，文字就出現在聊天輸入框中。本機聽寫不需要先把錄音交給另一個轉錄服務；送出文字後，仍依你使用的 AI 服務處理。
 
-**記憶體吃緊的工作日。** Claude Code 跑三個 session、瀏覽器開 20 個分頁，不想再多一個常駐模型？選單切到 OpenAI 或 Gemini 雲端引擎，以雲端引擎啟動時不載入本機模型；若剛從本機切換，可卸載仍保留的模型，聽寫照用，每句多等一兩秒、費用記在你自己的 API 帳單上（若使用 Gemini Free-tier API Key：$0）。
-
-**通勤時的語音筆記。** 在捷運上，Mac 留在家裡。在 iPhone 上點「Start Listening」，切到備忘錄，按 HushType 鍵盤上的麥克風按鈕。語音透過 Tailscale 傳回你的 Mac，約 1 秒完成轉錄，文字出現。<br>誠實註記：手機端功能已許久未測試。
-
 **閱讀其他語言。** 在 Safari、Mail、備忘錄等任何 App 中選取文字，輕按 Right ⌥。半透明卡片即跳出翻譯結果，使用 Apple 裝置端 Translation Framework。10 秒後自動關閉、游標停留會暫停倒數。無 API 金鑰、無雲端。
 
-**在原地把文字改對。** 語音輸入的 Slack 回覆、打太快滿是錯字的留言、有 typo 的中英夾雜句，選取、雙擊 Right ⌥，校對結果直接回到原處（同時保留在剪貼簿），不用貼去聊天機器人再貼回來。提示詞要求只做修正，結果卡片則讓你看清楚改了什麼。
+**在原地把文字改對。** 語音輸入的 Slack 回覆、打太快滿是錯字的留言、有 typo 的中英夾雜句，選取、連按兩下 Right ⌥，校對結果直接回到原處（同時保留在剪貼簿），不用貼去聊天機器人再貼回來。提示詞要求只做修正，結果卡片則讓你看清楚改了什麼。
 
-**看外語內容。** 韓劇、日本新聞、西語足球轉播。在任何 App 開來源，選單列 → **Live Translated Caption → From System Audio…** 選那個 App，翻譯後的英文（或你設定的目標語言）會即時顯示在螢幕下方的浮動字幕面板。Right ⌘ + / 開關。原文小灰字在翻譯上方一起顯示，方便確認翻譯沒走偏；面板抬頭的費用條會即時顯示本次工作階段在你 OpenAI 帳戶上的累積花費。
+**記憶體吃緊的工作日。** Claude Code 跑三個 session、瀏覽器開 20 個分頁，不想再多一個常駐模型？選單切到 OpenAI 或 Gemini 雲端引擎，以雲端引擎啟動時不載入本機模型。
+
+**看外語內容。** 韓劇、日本新聞、西語足球轉播。在任何 App 開來源，選單列 → **Live Translated Caption → From System Audio…** 選那個 App，翻譯後的英文（或你設定的目標語言）會即時顯示在螢幕下方的浮動字幕面板。Right ⌘ + /（預設，可設定）開關。原文小灰字在翻譯上方一起顯示，方便確認翻譯沒走偏；面板抬頭的費用條會即時顯示本次工作階段在你 OpenAI 帳戶上的累積花費。
 
 ---
 
@@ -136,12 +133,12 @@
 macOS（預設本機，不需要網路）：
   按住 Right Option（≥0.3 秒）→ 說話 → 放開 → 文字出現在游標位置
   輕按 Right Option（<0.3 秒）+ 選取文字 → 翻譯卡片
-  選取文字後雙擊 Right Option → 就地校對（Text Polish）
+  選取文字後連按兩下 Right Option → 就地校對（Text Polish）
   本機流程：麥克風 → Qwen3-ASR（MLX、裝置端推論）→ OpenCC s2twp → ITN → 貼上
   雲端流程（選擇加入）：麥克風 → 你的 Mac → HTTPS 直連 OpenAI/Gemini → 同一套 OpenCC/ITN 後處理 → 貼上
                         （沒有 Lamitype 伺服器這一站）
 
-iOS（透過你的 Mac 作為伺服器）：
+iOS（透過你的 Mac 作為伺服器；此為早期開發功能，改名為 Lamitype 後未再測試）：
   開啟 HushType → 開始聆聽 → 切到任何 App → HushType 鍵盤 → 按麥克風
   流程：iPhone 麥克風 → WiFi/Tailscale → Mac 伺服器 → Qwen3-ASR → OpenCC → 結果回傳 → 文字插入
   （iOS 伺服器一律使用本機模型）
@@ -158,7 +155,7 @@ iOS（透過你的 Mac 作為伺服器）：
                                      │    → OpenCC s2twp                │
                                      │                                  │
                                      │  Lamitype.app (選單列)            │
-                                     │    → Right Option 快捷鍵          │
+                                     │    → 語音輸入鍵                   │
                                      │    → 本地轉錄                     │
                                      └──────────────────────────────────┘
 ```
@@ -186,6 +183,8 @@ DMG 為完全獨立版本，OpenCC 及所有相依套件皆已內含。不需要
 ---
 
 ## 更新
+
+可在「設定 → 關於」開啟每天自動檢查更新，預設關閉。
 
 更新等於**覆蓋 `.app` 資料夾**。偏好設定、ASR 模型、使用者資料都存在 `.app` 外面，不會被動到。
 
@@ -257,7 +256,7 @@ make install
 - **按住 Right Option（≥0.3 秒）**：錄音。螢幕底部出現「Listening」指示條與音量條。
 - **放開**：指示條切換為「Transcribing」，文字貼到游標並保留在剪貼簿。
 - **輕按 Right Option（<0.3 秒）**：選取文字後輕按，浮動卡片顯示 Apple Translation Framework 翻譯結果。詳見下方[文字翻譯](#選用功能文字翻譯)。
-- **雙擊 Right Option**：選取文字後雙擊，就地校對並替換。詳見下方 [Text Polish](#選用功能text-polishmacos-26)。
+- **連按兩下 Right Option**：選取文字後連按兩下，就地校對並替換。詳見下方 [Text Polish](#選用功能text-polishmacos-26)。
 
 本機「即時預覽（實驗功能）」可從「聽寫模式」或「設定 → 語音輸入」選擇：按住右側 ⌥ 看草稿，放開後才貼上最終文字。草稿可能修正，每段最多 60 秒；較長的連續錄音請使用標準模式。
 
@@ -304,7 +303,7 @@ make install
 4. 選單列 → **Live Translated Caption → From Microphone**（或 **From System Audio…**）開始。第一次會跳一次性免責說明，接受一次後不再跳。
 5. 字幕面板抬頭會出現費用條（例如 `12:34 · $0.42`），即時顯示工作階段時間與累積花費。自動停止分鐘數在 **設定… → 字幕** 調整，每日花費上限則在 **設定… → 雲端** 調整。
 
-**快捷鍵（兩種共用）：** Right ⌘ + / 切換**上次用過的那種模式**。首次預設本機 Live Caption。要精確選擇哪個模式 + 哪種音源，從選單列點選是最直接的方式。
+**快捷鍵（兩種共用）：** Right ⌘ + /（預設，可設定）切換**上次用過的那種模式**。首次預設本機 Live Caption。要精確選擇哪個模式 + 哪種音源，從選單列點選是最直接的方式。
 
 **模式切換：** 在一個模式執行中點另一個模式的選單項，會自動停止當前的、啟動新的。同一個模式換音源（mic ↔ system）會原地切換、不重建面板。
 
@@ -318,13 +317,13 @@ make install
 
 ### 選用功能：Text Polish（macOS 26+）
 
-使用 macOS 內建的 Apple Foundation Models 在裝置端校對。在任何 App 選取文字 → 雙擊 Right Option → 選取範圍就地替換為模型輸出，結果卡片以 Word 追蹤修訂的方式顯示改了什麼：刪除的字紅色刪除線、加入的字綠色底線。
+使用 macOS 內建的 Apple Foundation Models 在裝置端校對。在任何 App 選取文字 → 連按兩下 Right Option → 選取範圍就地替換為模型輸出，結果卡片以 Word 追蹤修訂的方式顯示改了什麼：刪除的字紅色刪除線、加入的字綠色底線。
 
 <p align="center">
   <img src="Resources/polish-card-diff-zh.png" alt="Text Polish 結果卡片：刪除紅色刪除線、新增綠色底線" width="560">
 </p>
 
-有修正時，修正後的文字同時保留在剪貼簿，所以唯讀畫面（網頁、PDF）也能用：選取、雙擊、貼到你要的地方。原本就正確的文字會顯示「No changes needed」卡片，剪貼簿完全不動。右鍵選單也有：**服務 → Polish with Lamitype**。
+有修正時，修正後的文字同時保留在剪貼簿，所以唯讀畫面（網頁、PDF）也能用：選取、連按兩下、貼到你要的地方。原本就正確的文字會顯示「No changes needed」卡片，剪貼簿完全不動。右鍵選單也有：**服務 → Polish with Lamitype**。
 
 **它嘗試修什麼，以及如何防止過度修改。** 目標是錯字、文法、標點與明顯 typo。提示詞把模型限制為機械式校對員，要求保留語意、語氣、格式、大小寫與語言混用；輸出防護也會拒絕部分明顯偏離。這些是設計目標，不是模型永不出錯的保證：
 
@@ -333,7 +332,7 @@ make install
 
 **能力邊界（誠實說明）：** 在我們的測試中，英文修正最可靠。中文結果較不穩定，可能漏掉語法依存的錯字，也可能過度修改。選取越長越容易回「No changes needed」，建議先從一兩句開始。自動校對預設關閉，請先用手動校對或校對實驗室確認是否符合你的需求。
 
-**速度：** 通常約 1-3 秒。Lamitype 會維持一個預熱好的待命模型 session，把 prompt 處理成本在你雙擊之前先付掉。
+**速度：** 通常約 1-3 秒。Lamitype 會維持一個預熱好的待命模型 session，把 prompt 處理成本在你連按兩下之前先付掉。
 
 **校對提示詞：** 在 **設定 → 文字 → 編輯校對提示詞…** 查看及編輯完整提示詞。手動校對、自動校對與實驗室重跑共用同一份提示詞，沒有附加規則或覆寫模式。先用草稿重跑案例，再按「儲存提示詞」套用到之後的校對；開啟編輯器不會啟用擷取。可還原預設提示詞。未自訂時會使用新版 App 的預設內容，自訂後則保留你的版本。
 
@@ -343,7 +342,7 @@ make install
 
 實驗室資料位於 `~/Library/Application Support/Lamitype/eval.noindex/`，每個項目是一個只有使用者可讀的 JSON 檔。內容包含文字與目標 App 識別碼，不含錄音、截圖、剪貼簿歷程或按鍵內容，也不會由 Lamitype 上傳。資料夾不會被 Spotlight 索引，但可能隨其他 Application Support 資料納入 Time Machine 備份。自動校對排除清單也會阻止實驗室擷取，而且清單一開始是空的。macOS Secure Input 啟用期間不會擷取；並非每個 App 或密碼欄位都會啟用這項系統保護。無法辨識前方 App 時也不擷取。排除 App 後，手動使用「服務 → Polish with Lamitype」仍可校對，但不會建立實驗室項目。匯出檔為純文字，且不包含 App 識別碼。
 
-**需求與開關：** macOS 26（Tahoe）+ 已啟用 Apple Intelligence + Apple Silicon。「設定 → 文字 → 啟用文字校對」預設開啟，自動校對預設關閉。選單列未勾選時仍可雙擊 Right ⌥ 或用「服務 → Polish with Lamitype」手動校對。關閉總開關會同時關閉自動校對，選單項目變灰；可點旁邊的「前往設定啟用文字校對…」開啟「文字」設定，App 不會直接替你啟用。重新啟用後回到手動模式。AFM 無法使用時不執行校對。
+**需求與開關：** macOS 26（Tahoe）+ 已啟用 Apple Intelligence + Apple Silicon。「設定 → 文字 → 啟用文字校對」預設開啟，自動校對預設關閉。選單列未勾選時仍可連按兩下 Right ⌥ 或用「服務 → Polish with Lamitype」手動校對。關閉總開關會同時關閉自動校對，選單項目變灰；可點旁邊的「前往設定啟用文字校對…」開啟「文字」設定，App 不會直接替你啟用。重新啟用後回到手動模式。AFM 無法使用時不執行校對。
 
 ## 安裝指南：iOS（iPhone + Mac 伺服器）
 
@@ -496,7 +495,7 @@ defaults write com.felix.hushtype hushtype.numberConversionEnabled -bool false
 # 底部浮動「Listening / Transcribing」指示條（預設:true）
 defaults write com.felix.hushtype hushtype.floatingOverlayEnabled -bool false
 
-# Text Polish：雙擊 Right ⌥ 就地校對選取文字
+# Text Polish：連按兩下 Right ⌥ 就地校對選取文字
 # （預設:true,需要 macOS 26 + Apple Intelligence）
 defaults write com.felix.hushtype hushtype.textPolishEnabled -bool false
 
@@ -523,12 +522,7 @@ defaults write com.felix.hushtype hushtype.translateTargetLanguage -string "en"
 
 ### 更改快捷鍵（macOS）
 
-編輯 `Sources/HushType/HotkeyManager.swift`:
-```swift
-private static let rightOptionKeyCode: Int64 = 61
-```
-
-常用鍵碼：Right Option （61）、Right Command （54）、Left Option （58）、Left Control （59）、Fn/Globe （63）。
+在「設定 → 一般 → 快捷鍵」設定，變更會立即生效。每個動作有各自的按鍵與手勢。預設：右 ⌥ 按住聽寫、輕按翻譯、連按兩下校對；即時字幕為右 ⌘ + /。兩個動作不能使用相同的按鍵與手勢。不支援 Fn 與地球鍵。**回復預設值**會重設所有動作。在密碼欄位等使用安全輸入的位置，快捷鍵可能暫停。
 
 ---
 
@@ -539,7 +533,7 @@ private static let rightOptionKeyCode: Int64 = 61
 ### 本機模式（預設）
 
 - **不會自動儲存錄音。** 一般聽寫只在錄音與轉錄時使用音訊，完成後即丟棄。實驗性的本機即時預覽可能在 RAM 保留一段失敗錄音，直到重新辨識成功、主動捨棄或結束 App；只有明確選擇**儲存音訊…**及檔案位置時，才會寫出 WAV。最終文字會在記憶體保留到下一次開始即時擷取或 App 結束；睡眠或偵測到安全輸入也會清除 App 持有的 RAM 錄音與結果，不會刪除已貼上的文字、剪貼簿內容或明確儲存的 WAV。若你主動啟用校對實驗室，App 會把聽寫與校對結果的文字暫存在本機；正常結束時刪除，異常結束後則在下次啟動清除。匯出檔、明確儲存的音訊與已儲存的校對提示詞不受影響。
-- **本機聽寫可離線運作。** 首次下載模型（權重約 708 MB，另含支援檔案）後，本機聽寫不需網路。手動檢查更新、雲端聽寫與 Live Translated Caption 等選用功能仍需連網。
+- **本機聽寫可離線運作。** 首次下載模型（權重約 708 MB，另含支援檔案）後，本機聽寫不需網路。選用的更新檢查、雲端聽寫與 Live Translated Caption 等選用功能仍需連網。
 - **無遙測。** 無分析追蹤、無使用統計、無回傳機制。macOS App 除了初始模型下載（由 speech-swift 內的 HuggingFace Hub SDK 處理）以及選用的 GitHub releases 更新檢查外，不包含任何本機模式網路程式碼。
 - **可完全離網運作。** 事先在另一台機器準備模型資料夾（macOS App 為 `~/Library/Caches/qwen3-speech/models/aufklarer/Qwen3-ASR-0.6B-MLX-4bit/`，Python / iOS 伺服器則使用獨立的 Hugging Face 快取 `~/.cache/huggingface/hub/models--mlx-community--Qwen3-ASR-0.6B-4bit/`）再複製過來，App 將永遠不需要網路。
 
@@ -550,7 +544,7 @@ private static let rightOptionKeyCode: Int64 = 61
 - **金鑰儲存。** 金鑰存在 `~/Library/Application Support/Lamitype/`（`openai.json` / `gemini.json`），App 寫入時自動設定 `0600` 檔案權限，與 `.env` 檔同一個安全模型。
 - **花費護欄。** 每日花費警示（預設 $5）在上傳之前就擋下會超標的請求並鎖定當日雲端；錄音過長在上傳前就被擋下、絕不送出。
 - **Gemini Free tier 揭露。** 使用 Google 免費方案時，Google 可能會使用提交的音訊來改進其產品；付費方案則不會。
-- **狀態語意。** 語音輸入引擎的選擇跨重啟保留（讓雲端使用者持續不佔模型記憶體）。字幕的引擎旗標每次重啟重設回本機，但 Right ⌘ + / 會記得你**上次用過的字幕模式（含雲端）**，且雲端字幕的一次性免責揭露只出現一次，上次用的是雲端翻譯字幕的話，重啟後按快捷鍵會直接再開雲端（計費）字幕。
+- **狀態語意。** 語音輸入引擎的選擇跨重啟保留（讓雲端使用者持續不佔模型記憶體）。字幕的引擎旗標每次重啟重設回本機，但 Right ⌘ + /（預設，可設定）會記得你**上次用過的字幕模式（含雲端）**，且雲端字幕的一次性免責揭露只出現一次，上次用的是雲端翻譯字幕的話，重啟後按快捷鍵會直接再開雲端（計費）字幕。
 - **iOS 音訊留在你的網路中。** iPhone 音訊直接傳送到你的 Mac，透過區域網路 WiFi 或 Tailscale（WireGuard 加密），不經過任何第三方伺服器；iOS 伺服器一律使用本機模型。
 
 ---
@@ -571,7 +565,7 @@ Lamitype/
 │   ├── DraggableAppTileView.swift     可拖進系統設定的 Lamitype.app 圖塊
 │   ├── SystemAudioPermissionFlow.swift        螢幕與系統音訊錄製權限流程
 │   ├── SystemAudioPermissionWindowController.swift  系統音訊權限設定面板
-│   ├── HotkeyManager.swift            Right Option 的 CGEvent tap
+│   ├── HotkeyManager.swift            語音輸入鍵的 CGEvent tap
 │   ├── AudioCaptureService.swift      AVAudioEngine 麥克風錄音（16kHz 單聲道、RMS 發佈器）
 │   ├── TranscriptionEngine.swift      可拋出錯誤的引擎 protocol + 本機 Qwen3ASR 引擎（MLX）
 │   ├── OpenAITranscribeEngine.swift   雲端聽寫引擎：OpenAI（HTTPS 直連）
@@ -633,7 +627,7 @@ Lamitype/
 
 | 項目 | 位置 | 範例 |
 |---|---|---|
-| 快捷鍵 | `Sources/HushType/HotkeyManager.swift` | 任何修飾鍵的鍵碼 |
+| 快捷鍵 | 設定 → 一般 → 快捷鍵 | 語音輸入鍵與即時字幕快捷鍵 |
 | OpenCC 設定 | `Sources/HushType/ChineseConverter.swift` | 把 `s2twp` 改成 `s2t`，即為標準繁體 |
 
 ---
@@ -650,6 +644,7 @@ Lamitype/
 
 ## 已知限制
 
+- 藍牙耳機的麥克風閒置後可能需要約 2 秒才會恢復收音。耳機喚醒時，可能漏掉第一個詞或前兩個詞。按下快捷鍵後稍等再說話，或改用 Mac 內建麥克風。
 - iOS 需要 Mac 開機且伺服器運行中（無雲端備援）
 - 免費佈署：iOS App 每 7 天過期（需透過 Xcode 重新簽署）
 - 聆聽時間固定為 5 分鐘（尚無介面可調整）

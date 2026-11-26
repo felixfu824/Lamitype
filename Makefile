@@ -74,9 +74,14 @@ bundle-app: build l10n-verify
 	@cp "$(BUILD_DIR)/mlx.metallib" "$(BUNDLE_DIR)/Contents/Resources/"
 	@ln -s "../Resources/mlx.metallib" "$(BUNDLE_DIR)/Contents/MacOS/mlx.metallib"
 	@cp Resources/Info.plist "$(BUNDLE_DIR)/Contents/"
+	@xcrun actool --compile "$(BUNDLE_DIR)/Contents/Resources" \
+		--platform macosx --minimum-deployment-target 15.0 --accent-color AccentColor \
+		--output-partial-info-plist "$(BUILD_DIR)/LamitypeAssetsInfo.plist" Resources/Assets.xcassets
+	@test -f "$(BUNDLE_DIR)/Contents/Resources/Assets.car"
 	@cp "Resources/$(ICON_NAME).icns" "$(BUNDLE_DIR)/Contents/Resources/"
 	@cp scripts/ios_server.py "$(BUNDLE_DIR)/Contents/Resources/"
 	@cp -R Resources/ThirdPartyLicenses "$(BUNDLE_DIR)/Contents/Resources/"
+	@cp -R Resources/Fonts "$(BUNDLE_DIR)/Contents/Resources/"
 	@for d in $(L10N_LOCALES) $(L10N_LEGACY_LOCALES); do rm -rf "$(BUNDLE_DIR)/Contents/Resources/$$d"; done
 	@for d in $(L10N_LOCALES); do cp -R "Sources/HushType/Resources/$$d" "$(BUNDLE_DIR)/Contents/Resources/"; done
 	@$(MAKE) l10n-verify-dest

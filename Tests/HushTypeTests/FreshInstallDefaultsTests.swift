@@ -24,6 +24,10 @@ final class FreshInstallDefaultsTests: XCTestCase {
     func testFreshInstallGetsOptimizedStandardDictationAndNoAutoPolish() throws {
         try withStore([:]) { config, store, _ in
             XCTAssertTrue(config.stampFreshInstallDefaultsIfNeeded(priorInstallOnDisk: noPriorInstall))
+            XCTAssertEqual(config.shortcutBindings, .default)
+            XCTAssertNil(store.object(forKey: "hushtype.shortcut.dictationKey"))
+            XCTAssertNil(store.object(forKey: "hushtype.shortcut.liveCaption"))
+            XCTAssertNil(store.object(forKey: "hushtype.shortcut.bindings"))
             XCTAssertTrue(config.usesFreshInstallDefaults)
             XCTAssertEqual(config.localModel, .optimized)
             XCTAssertEqual(config.modelId, AppConfig.LocalModel.optimized.huggingFaceID)

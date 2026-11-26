@@ -38,27 +38,25 @@
 
 ---
 
-## What's new in v0.5.17
+## What's new in v0.5.18
 
-Local dictation adds Optimized (6/8-bit), with about 706 MB of weights, roughly the same size as the existing Fast (4-bit) model.
+**Set your own shortcuts.** In Settings → General → Shortcuts, record a key and pick a gesture for each action: Dictate, Translate selection, Polish selection and Live Caption. Right ⌥ stays the default. Existing users keep their keys.
 
-**Switch between two models.** Choose under Local model in the menu bar or Settings → Dictation. In evaluations using Lamitype’s speech-swift engine, Optimized has lower error rates than Fast: 1.08 percentage points on Common Voice 19 zh-TW and 0.56 on mixed Chinese-English (ASCEND) ([evaluation details](https://huggingface.co/felixfu824/Qwen3-ASR-0.6B-MLX-mixed-6-8bit)).
+**More reliable recording.** If Live preview cannot paste, it copies the text and asks you to press ⌘V.
 
-**New-install defaults.** Optimized and Standard dictation, with Live preview and Auto Polish Dictation off. Existing installs keep their settings.
+**Interface refresh.** Settings now use the native macOS grouped layout.
 
-**Interrupted downloads recover.** The next app launch or model selection downloads the missing files. If loading fails, click Try Again in Settings.
-
-**Known issue.** Fast occasionally repeats text in long mixed Chinese-English speech. Optimized did not in our tests.
+**Update check (opt-in).** Off by default. Turn on the daily update check in Settings → About.
 
 ---
 
 ## Why Lamitype
 
-**Privacy and control first.** In the default mode, voice stays on your Mac: the model runs locally, with no cloud account or usage tracking after the one-time model download (≈708 MB in weights; supporting files are additional). When you choose cloud dictation, audio goes over HTTPS **directly** to OpenAI or Gemini with **your own key**, with no Lamitype server in between. Lamitype asks for consent before the first cloud request after each app launch. **You decide whether audio goes to a provider.**
+**Privacy and control first.** In the default mode, voice stays on your Mac: the model runs locally after a one-time download (≈708 MB in weights; supporting files are additional). When you choose cloud dictation, audio goes over HTTPS **directly** to OpenAI or Gemini with **your own key**, with no Lamitype server in between. Lamitype asks for consent before the first cloud request after each app launch. **You decide whether audio goes to a provider.**
 
-**Memory-friendly: coexists with your agents.** The local model weights are about 708 MB. Earlier ordinary-Local measurements observed about 2.1 GB for the full process, including MLX's idle cache; this is not a memory bound for every mode. The standard idle-cache limit is 1 GiB; experimental Live preview temporarily uses 128 MiB and restores the prior setting after inference drains. Neither setting caps total process memory. You can unload the model from the menu to free its weights and cached buffers. Cloud launches do not load the local model; a warm model may remain after switching from Local until you unload it. The engine choice persists across restarts, and the model reloads when you switch back to local.
+**Memory-friendly: coexists with your agents.** The local model weights are about 708 MB. Earlier ordinary-Local measurements observed about 2.1 GB for the full process, including MLX's idle cache. You can unload the model from the menu to free its weights and cached buffers. Cloud launches do not load the local model.
 
-**Cloud dictation (opt-in).** Lamitype supports **OpenAI** (default `gpt-4o-mini-transcribe`) and **Gemini** (default `gemini-3.5-flash-lite`, with `gemini-3.7-flash` as the quality option), using your key in a direct connection. Gemini offers a free-tier API key, but Google may use audio submitted on the free tier to improve its products; the paid tier does not. Guardrails include consent before the first cloud request after each app launch, a daily spend warning with same-day lockout (default US$5), and blocking over-long recordings before upload.
+**Cloud dictation (opt-in).** Lamitype supports **OpenAI** (default `gpt-4o-mini-transcribe`) and **Gemini** (default `gemini-3.5-flash-lite`, with `gemini-3.7-flash` as the quality option), using your key in a direct connection. Gemini offers a free-tier API key, but Google may use audio submitted on the free tier to improve its products. Guardrails include consent before the first cloud request after each app launch, a daily spend warning with same-day lockout (default US$5), and blocking over-long recordings before upload.
 
 **Traditional Chinese that actually works.** Whisper and most open-source models default to Simplified or Mainland phrasing. Lamitype chains Qwen3-ASR with OpenCC `s2twp` to turn terms such as 软件, 鼠标, and 质量 into Taiwan usage: 軟體, 滑鼠, and 品質. It supports EN/ZH code-switching and offers context-aware Chinese and English number conversion (`一零一大樓` → `101 大樓`), on by default. Local and cloud engines use the same deterministic post-processing rules.
 
@@ -118,15 +116,13 @@ Local dictation adds Optimized (6/8-bit), with about 706 MB of weights, roughly 
 
 **Talking to AI agents.** Giving Claude or ChatGPT a detailed prompt takes 5 minutes to type, 30 seconds to say. Hold Right ⌥, speak your entire prompt (mixing languages as needed), release, and text appears in the chat input. Local dictation does not require sending the recording to another transcription service first. Once you submit the text, it is handled by the AI service you use.
 
-**A memory-tight workday.** Three Claude Code sessions running, 20 browser tabs open, no appetite for one more resident model? Switch to the OpenAI or Gemini cloud engine in the menu: the local model stays unloaded, dictation keeps working, each utterance takes a second or two longer, and the cost lands on your own API bill (with a Gemini free-tier key: $0).
-
-**Voice notes on the go.** On the subway, Mac at home. Tap "Start Listening" on iPhone, switch to Notes, tap the mic button on the HushType keyboard. Audio travels over Tailscale to your Mac, transcribes in ~1 second, text appears.<br>Honest note: the phone-side features have not been tested in a long while.
-
 **Reading in another language.** Select any text in Safari, Mail, Notes, anywhere, and tap Right ⌥. A translucent card pops up with the translation via Apple's on-device Translation Framework. Auto-dismisses after 10s, pauses on hover. No API key, no cloud.
 
 **Cleaning up text where you wrote it.** A dictated Slack reply, a comment typed too fast, a 中英 mixed sentence with a typo: select it, double-tap Right ⌥, and the polish result lands back in place (and on the clipboard), without a round-trip through a chatbot tab. The prompt asks for corrections only, and the result card shows what changed.
 
-**Watching foreign-language content.** Korean drama, Japanese news, Spanish football commentary. Open the source in any app, click **Live Translated Caption → From System Audio…** in the menu bar, pick the app, and translated English (or whichever target you set) streams onto a floating caption panel anchored at the bottom of your screen. Right ⌘ + / toggles it on and off. The original-language line shows above the translation as a confidence check; cost chip in the header tracks the session bill against your own OpenAI key.
+**A memory-tight workday.** Three Claude Code sessions running, 20 browser tabs open, no appetite for one more resident model? Switch to the OpenAI or Gemini cloud engine in the menu; cloud launches do not load the local model.
+
+**Watching foreign-language content.** Korean drama, Japanese news, Spanish football commentary. Open the source in any app, click **Live Translated Caption → From System Audio…** in the menu bar, pick the app, and translated English (or whichever target you set) streams onto a floating caption panel anchored at the bottom of your screen. Right ⌘ + / (default, configurable) toggles it on and off. The original-language line shows above the translation as a confidence check; cost chip in the header tracks the session bill against your own OpenAI key.
 
 ---
 
@@ -141,7 +137,7 @@ macOS (local by default, zero network required):
   Cloud pipeline (opt-in): mic → your Mac → HTTPS direct to OpenAI/Gemini → same OpenCC/ITN post-processing → paste
                            (no Lamitype server on the way)
 
-iOS (via your Mac as server):
+iOS (via your Mac as server; an early feature, untested since the rename to Lamitype):
   Open HushType → Start Listening → switch to any app → HushType keyboard → tap mic
   Pipeline: iPhone mic → WiFi/Tailscale → Mac server → Qwen3-ASR → OpenCC → result back → text inserted
 ```
@@ -157,7 +153,7 @@ iOS (via your Mac as server):
                                      │    → OpenCC s2twp                │
                                      │                                  │
                                      │  Lamitype.app (menu bar)         │
-                                     │    → Right Option hotkey         │
+                                     │    → Dictation key               │
                                      │    → Local transcription         │
                                      └──────────────────────────────────┘
 ```
@@ -185,6 +181,8 @@ See [Prerequisites](#prerequisites-and-dependencies) and [macOS Setup Guide](#se
 ---
 
 ## Updating
+
+An optional daily update check is available in Settings → About and is off by default.
 
 Updating means **replacing the `.app` bundle**. Preferences, the ASR model, and user data live outside the bundle and are preserved.
 
@@ -303,7 +301,7 @@ Two products sharing the same floating caption panel. Mutually exclusive at runt
 4. Click **Live Translated Caption → From Microphone** (or **From System Audio…**) in the menu. First time you do this, a one-time disclosure modal explains the cost and privacy profile; accept once and it stays accepted.
 5. A cost chip in the caption panel header (e.g. `12:34 · $0.42`) shows session duration and spend. Configure auto-stop minutes under **Settings… → Caption** and the daily spend cap under **Settings… → Cloud**.
 
-**Hotkey** (both products): Right ⌘ + / toggles **whichever product you last started**. First-use default is local (Live Caption). The menu items are the authoritative way to pick a specific product + source.
+**Hotkey** (both products): Right ⌘ + / (default, configurable) toggles **whichever product you last started**. First-use default is local (Live Caption). The menu items are the authoritative way to pick a specific product + source.
 
 **Mid-session switching:** Clicking the other product's menu item while one is running auto-stops the current session and starts the new one. Clicking the same product's other source switches in place without rebuilding the panel.
 
@@ -522,12 +520,7 @@ defaults write com.felix.hushtype hushtype.translateTargetLanguage -string "en"
 
 ### Changing the Hotkey (macOS)
 
-Edit `Sources/HushType/HotkeyManager.swift`: Update both the modifier keycode and its side-specific flag mask (Right Option: keycode `61`, mask `0x40`).
-```swift
-private static let rightOptionKeyCode: Int64 = 61
-```
-
-Common keycodes: Right Option (61), Right Command (54), Left Option (58), Left Control (59), Fn/Globe (63).
+Set shortcuts in Settings → General → Shortcuts. Changes apply immediately. Each action has its own key and gesture. Defaults: Right ⌥ hold to dictate, tap to translate, double-tap to polish; Right ⌘ + / for Live Caption. Two actions cannot share the same key and gesture. Fn and Globe keys are not supported. **Restore Defaults** resets every action. Shortcuts may pause in password fields and other places that use Secure Input.
 
 ---
 
@@ -549,7 +542,7 @@ Two modes, one principle: **there is never a third party in the middle, and the 
 - **Key storage.** Keys live in `~/Library/Application Support/Lamitype/` (`openai.json` / `gemini.json`); the app sets `0600` file permissions on write (the same security model as a `.env` file).
 - **Spend guardrails.** The daily spend warning (default $5) blocks a request before it would cross the threshold and locks cloud for the day; over-long recordings are blocked before upload and never sent.
 - **Gemini free-tier disclosure.** On Google's free tier, Google may use submitted audio to improve its products; the paid tier does not.
-- **State semantics.** The dictation engine choice persists across restarts (so cloud users stay at zero model RAM). The caption engine flag resets to local each launch, but Right ⌘ + / remembers the **last caption mode you used (cloud included)**, and the one-time cloud disclosure does not repeat: if your last session was Live Translated Caption, the hotkey starts a paid cloud session again after a relaunch.
+- **State semantics.** The dictation engine choice persists across restarts (so cloud users stay at zero model RAM). The caption engine flag resets to local each launch, but Right ⌘ + / (default, configurable) remembers the **last caption mode you used (cloud included)**, and the one-time cloud disclosure does not repeat: if your last session was Live Translated Caption, the hotkey starts a paid cloud session again after a relaunch.
 - **iOS audio stays on your network.** iPhone audio travels directly to your Mac over local WiFi or Tailscale (WireGuard-encrypted), never through a third-party server; the iOS server always uses the local model.
 
 ---
@@ -571,7 +564,7 @@ Lamitype/
 │   ├── DraggableAppTileView.swift     Draggable Lamitype.app tile for System Settings
 │   ├── SystemAudioPermissionFlow.swift        Screen & System Audio permission flow
 │   ├── SystemAudioPermissionWindowController.swift  System-audio permission setup panel
-│   ├── HotkeyManager.swift            CGEvent tap for Right Option
+│   ├── HotkeyManager.swift            CGEvent tap for the dictation key
 │   ├── AudioCaptureService.swift      AVAudioEngine mic capture (16kHz mono, RMS publisher)
 │   ├── TranscriptionEngine.swift      Throwing engine protocol + local Qwen3ASR engine (MLX)
 │   ├── OpenAITranscribeEngine.swift   Cloud dictation engine: OpenAI (HTTPS direct)
@@ -652,7 +645,7 @@ To run Lamitype on your own devices, change these:
 |---|---|---|
 | Bundle ID | `iOS/project.yml` (both targets) + `iOS/Shared/AppGroupConstants.swift` | `com.yourname.hushtype` / `group.com.yourname.hushtype` |
 | Server URL default | `iOS/VoxKey/Views/ContentView.swift` | Your Tailscale or LAN IP |
-| Hotkey | `Sources/HushType/HotkeyManager.swift` | Any modifier keycode |
+| Hotkey | Settings → General → Shortcuts | Dictation key and Live Caption shortcut |
 | Model | `iOS/VoxKey/Services/RemoteTranscriber.swift` + `scripts/ios_server.py` | `mlx-community/Qwen3-ASR-1.7B-8bit` for better quality |
 | Session timeout | `iOS/VoxKey/Services/BackgroundAudioManager.swift` | `sessionDuration` property |
 | OpenCC config | `Sources/HushType/ChineseConverter.swift` + `scripts/ios_server.py` | Change `s2twp` to `s2t` for standard Traditional |
@@ -694,6 +687,7 @@ lsof -ti :8000 :8199 | xargs kill
 
 ## Known Limitations
 
+- A Bluetooth headset mic can take up to about 2 seconds to wake after being idle. You may lose the first word or two while the headset wakes. After pressing the shortcut, wait a moment before speaking, or use the Mac’s built-in mic.
 - iOS requires Mac to be on and server running (no cloud fallback)
 - Free provisioning: iOS app expires every 7 days (re-sign via Xcode)
 - Session timeout is fixed at 5 minutes (no UI to change yet)

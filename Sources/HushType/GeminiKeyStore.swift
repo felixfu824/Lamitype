@@ -57,7 +57,11 @@ enum GeminiKeyStore {
     /// I/O failures fall back to `.empty` so the UI can recover.
     static func load() -> LoadStatus {
         ensureExists()
+        return readExisting(at: fileURL)
+    }
 
+    /// Read key status without creating a template.
+    static func readExisting(at fileURL: URL) -> LoadStatus {
         // Defense in depth: refuse to follow symlinks AND refuse oversized
         // files. The path itself is system-controlled (Application Support /
         // Lamitype), so a malicious symlink there would already mean the user

@@ -228,9 +228,9 @@ private struct OnboardingSetupView: View {
                     .font(.system(size: 22, weight: .semibold))
                     .multilineTextAlignment(.center)
 
-                Text(L10n.string(
+                Text(ShortcutDisplay.format(
                     "onboarding.intro",
-                    fallback: "Allow Lamitype to listen for Right Option and record your voice locally."
+                    "Allow Lamitype to listen for %1$@ and record your voice locally.", spoken: true
                 ))
                     .font(.system(size: 13))
                     .foregroundStyle(.secondary)
@@ -246,9 +246,9 @@ private struct OnboardingSetupView: View {
             symbol: "figure.stand",
             tint: .blue,
             title: L10n.string("permission.accessibility.title", fallback: "Accessibility"),
-            subtitle: L10n.string(
+            subtitle: ShortcutDisplay.format(
                 "permission.accessibility.subtitle",
-                fallback: "Required for the Right Option hotkey."
+                "Required for the %1$@ hotkey.", spoken: true
             ),
             status: model.accessibilitySettingsOpened
                 ? L10n.string("permission.status.restart_needed", fallback: "Restart needed")

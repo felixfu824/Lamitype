@@ -3,14 +3,9 @@ import os
 
 private let log = Logger(subsystem: "com.felix.hushtype", category: "version-check")
 
-/// User-initiated GitHub release check. Hits the public Releases API only when
-/// the user has just clicked through an explicit consent dialog (see
-/// `UpdateCheckCoordinator.checkForUpdates`). No automatic checks, no caching, no
-/// background polling — every call is a fresh fetch driven by an explicit user
-/// action.
-///
-/// The API endpoint is unauthenticated and returns minimal JSON. We parse only
-/// `tag_name` and `html_url` — no Codable boilerplate needed for two fields.
+/// GitHub release fetch shared by consented manual checks and opt-in daily
+/// checks. The coordinator owns consent, scheduling and persisted results.
+/// Parses only the public release tag and page URL; no telemetry is sent.
 enum VersionChecker {
 
     enum CheckError: Error, LocalizedError {
@@ -60,7 +55,7 @@ enum VersionChecker {
 
     /// Fetch the latest GitHub release and compare to the current bundle version.
     /// Throws on network or parsing errors. Caller is responsible for showing
-    /// the consent dialog before calling this — `check()` itself does NOT ask
+    /// manual consent or daily opt-in before calling this; `check()` does NOT ask
     /// for permission and unconditionally hits the network.
     static func check() async throws -> Result {
         log.info("Fetching latest release from GitHub")

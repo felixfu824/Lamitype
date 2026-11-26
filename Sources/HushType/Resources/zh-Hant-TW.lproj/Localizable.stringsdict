@@ -78,7 +78,9 @@
 		</dict>
 	</dict>
 
-	<key>settings.text.auto_polish.excluded_summary</key>
+
+
+	<key>settings.dictation.dictionary.entries</key>
 	<dict>
 		<key>NSStringLocalizedFormatKey</key>
 		<string>%#@count@</string>
@@ -89,9 +91,23 @@
 			<key>NSStringFormatValueTypeKey</key>
 			<string>l</string>
 			<key>other</key>
-			<string>已排除 %1$ld 個：%2$@</string>
+			<string>已載入 %1$ld 筆，適用於所有引擎。</string>
 		</dict>
 	</dict>
 
+	<key>settings.text.auto_polish.excluded_count</key>
+	<dict>
+		<key>NSStringLocalizedFormatKey</key>
+		<string>%#@count@</string>
+		<key>count</key>
+		<dict>
+			<key>NSStringFormatSpecTypeKey</key>
+			<string>NSStringFormatSpecTypeInt</string>
+			<key>NSStringFormatValueTypeKey</key>
+			<string>l</string>
+			<key>other</key>
+			<string>%1$ld 個 App</string>
+		</dict>
+	</dict>
 </dict>
 </plist>

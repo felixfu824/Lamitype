@@ -30,26 +30,27 @@ final class LocalModelPickerSnapshotTests: XCTestCase {
             defer { defaults.removePersistentDomain(forName: suite) }
             let switcher = LocalModelSwitcher(config: AppConfig.forUpgradeTesting(defaults: defaults))
 
-            try render(switcher, enabled: true, name: "\(language)_1_fast_active", into: out)
+            try render(switcher, name: "\(language)_1_fast_active", into: out)
             switcher.setPhaseForTesting(.switching(to: .optimized, downloading: true, progress: 0.336))
-            try render(switcher, enabled: true, name: "\(language)_2_downloading", into: out)
+            try render(switcher, name: "\(language)_2_downloading", into: out)
             switcher.setPhaseForTesting(.switching(to: .optimized, downloading: true, progress: 0.9))
-            try render(switcher, enabled: true, name: "\(language)_3_loading", into: out)
+            try render(switcher, name: "\(language)_3_loading", into: out)
             switcher.setPhaseForTesting(.failed(.optimized))
-            try render(switcher, enabled: true, name: "\(language)_4_failed", into: out)
+            try render(switcher, name: "\(language)_4_failed", into: out)
             switcher.setPhaseForTesting(.idle)
             XCTAssertTrue(switcher.select(.optimized))
-            try render(switcher, enabled: true, name: "\(language)_5_optimized_active", into: out)
-            try render(switcher, enabled: false, name: "\(language)_6_cloud_engine_dimmed", into: out)
+            try render(switcher, name: "\(language)_5_optimized_active", into: out)
+            switcher.setPhaseForTesting(.loadFailed(.fast))
+            try render(switcher, name: "\(language)_6_load_failed", into: out)
         }
     }
 
-    private func render(_ switcher: LocalModelSwitcher, enabled: Bool, name: String, into dir: URL) throws {
-        let row = SettingsRow(L10n.string("settings.dictation.local_model", fallback: "Local model:")) {
-            LocalModelPicker(switcher: switcher, enabled: enabled)
+    private func render(_ switcher: LocalModelSwitcher, name: String, into dir: URL) throws {
+        let row = SettingsPage(height: 235) {
+            Section(L10n.string("settings.dictation.local_model", fallback: "Local model")) {
+                LocalModelPicker(switcher: switcher)
+            }
         }
-        .padding(20)
-        .frame(width: 640, alignment: .leading)
         .background(Color(nsColor: .windowBackgroundColor))
 
         let host = NSHostingView(rootView: row)

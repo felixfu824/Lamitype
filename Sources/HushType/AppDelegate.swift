@@ -8,7 +8,7 @@ import UserNotifications
 private let log = Logger(subsystem: "com.felix.hushtype", category: "app")
 private let autoPolishLog = Logger(subsystem: "com.felix.hushtype", category: "auto-polish")
 
-/// Right Option is a tap below this threshold and a hold at or above it.
+/// The dictation key is a tap below this threshold and a hold at or above it.
 private let dictationTapThreshold: TimeInterval = 0.3
 
 enum LocalModelGateNotice {
@@ -19,7 +19,7 @@ enum LocalModelGateNotice {
     }
 }
 
-/// Pure tap-vs-hold decision for one Right Option press. A press whose capture
+/// Pure tap-vs-hold decision for one dictation key press. A press whose capture
 /// failed is never a tap, however briefly it was held, so a failed press can
 /// never translate. Exactly 0.3 s is a HOLD.
 func isTranslationTap(elapsed: TimeInterval, captureFailed: Bool) -> Bool {
@@ -33,6 +33,7 @@ func isTranslationTap(elapsed: TimeInterval, captureFailed: Bool) -> Bool {
 final class DictationPressRecord {
     /// Monotonic, so a system clock change cannot turn a hold into a tap.
     let keyDownUptime: TimeInterval
+    let stageLog = DictationStageLog()
     var failed = false
     var errorPresented = false
     var cancelled = false
@@ -50,6 +51,20 @@ final class DictationPressRecord {
     }
 }
 
+/// Stops the accepted press on its first chord, without releasing the physical
+/// hotkey latch. The eventual release remains suppressed by HotkeyManager.
+@MainActor
+func cancelChordCapture(
+    press: DictationPressRecord?, cancelCapture: () -> Void,
+    cancelLive: () -> Void, hideOverlay: () -> Void
+) -> AppDelegate.AppState {
+    press?.cancelled = true
+    cancelCapture()
+    cancelLive()
+    hideOverlay()
+    return .idle
+}
+
 /// T2 bridge only. T3 replaces these placeholders with the real provider
 /// engines; reporting `isLoaded == true` keeps cloud hotkey presses on the
 /// throwing error path instead of silently treating them as an unloaded model.
@@ -64,8 +79,16 @@ private final class CloudDictationPlaceholderEngine: TranscriptionEngine {
 }
 
 @MainActor
-private final class TapArbiter {
+final class TapArbiter {
+    /// Single-key chords (Right ⌥ alone, Caps Lock, a bare key). Every single tap on a key
+    /// that also carries a double-tap action is delayed by this window, so keep it short.
     static let doubleTapWindow: TimeInterval = 0.35
+    /// Multi-key chords (modifiers + key): re-pressing the whole chord takes longer.
+    static let multiKeyDoubleTapWindow: TimeInterval = 0.5
+
+    static func doubleTapWindow(for chord: ShortcutChord) -> TimeInterval {
+        chord.isMultiKey ? multiKeyDoubleTapWindow : doubleTapWindow
+    }
 
     private final class PendingTap {
         var fired = false
@@ -80,7 +103,8 @@ private final class TapArbiter {
     }
     var hasPendingAction: Bool { pendingTap != nil || secondTapCandidate }
 
-    func deferSingleTap(_ action: @escaping @MainActor () -> Void) {
+    func deferSingleTap(window: TimeInterval = TapArbiter.doubleTapWindow,
+                        _ action: @escaping @MainActor () -> Void) {
         reset()
 
         let pending = PendingTap()
@@ -93,12 +117,12 @@ private final class TapArbiter {
         }
         pendingTap = pending
         DispatchQueue.main.asyncAfter(
-            deadline: .now() + Self.doubleTapWindow,
+            deadline: .now() + window,
             execute: pending.workItem
         )
     }
 
-    /// Called at the start of every Right ⌥ press. Main-queue serialization
+    /// Called at the start of every dictation key press. Main-queue serialization
     /// makes `fired` the boundary interlock: either the deferred action began,
     /// or this press cancels it and owns the intent as tap #2; never both.
     @discardableResult
@@ -108,6 +132,27 @@ private final class TapArbiter {
         self.pendingTap = nil
         secondTapCandidate = true
         return true
+    }
+
+    func finish(chord: ShortcutChord, held: Bool, bindings: ShortcutBindings,
+                enabled: (ShortcutAction) -> Bool, perform: @escaping (ShortcutAction?) -> Void) {
+        func action(_ gesture: ShortcutGesture) -> ShortcutAction? {
+            ShortcutAction.allCases.first {
+                $0 != .dictate && bindings[$0].gesture == gesture && bindings[$0].chord == chord
+                    && enabled($0)
+            }
+        }
+        if held {
+            reset()
+            perform(action(.hold))
+        } else if consumeSecondTapCandidate() {
+            perform(action(.doubleTap))
+        } else if action(.doubleTap) != nil {
+            let single = action(.tap)
+            deferSingleTap(window: Self.doubleTapWindow(for: chord)) { perform(single) }
+        } else {
+            perform(action(.tap))
+        }
     }
 
     func consumeSecondTapCandidate() -> Bool {
@@ -169,6 +214,12 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     private var translationManager: TranslationManager!
     private var liveCaptionManager: LiveCaptionManager?
     private let tapArbiter = TapArbiter()
+    private var actionTaps: [ShortcutChord: TapArbiter] = [:]
+
+    private func resetActionTaps() {
+        for arbiter in actionTaps.values { arbiter.reset() }
+        actionTaps.removeAll()
+    }
 
     /// The dictation press currently held, if any. Created only for an
     /// accepted press; cleared on release, cancellation or failure handoff.
@@ -180,6 +231,14 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     }
     private var liveReminderIgnoredPress = false
     private let defaultLiveHoldGate = DefaultLiveHoldGate()
+    private lazy var pressAdmission = DictationPressAdmission(onSecureInputBlocked: { [weak self] key in
+        // Keep HUD/window work outside the physical event-tap callback.
+        DispatchQueue.main.async { [weak self] in
+            self?.showSecureInputNotice(key: key)
+        }
+    })
+    private var physicalPressBegan: TimeInterval?
+    private var claimedSecondTapAtDown = false
     private var livePrivacyTimer: Timer?
     private var hotkeyFocusObserver: NSObjectProtocol?
     private var liveBlockedPressUptime: TimeInterval?
@@ -196,10 +255,10 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         case provided(String)
     }
 
-    /// Wall-clock at which the user pressed Right ⌥. Set on press, read on
+    /// Wall-clock at which the user pressed the dictation key. Set on press, read on
     /// release for tap-vs-hold disambiguation (<0.3s = tap → translate).
     /// Used only when live caption is active and we gate the dictation path.
-    private var liveCaptionGatePressTimestamp: Date?
+    private var liveCaptionGatePressTimestamp: TimeInterval?
 
     // Floating overlay (created lazily on first use)
     private let overlayState = OverlayStateModel()
@@ -266,7 +325,9 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
                 || self.liveCaptionManager?.isActive == true || self.liveCaptionManager?.isStopping == true
         }
         statusBar = StatusBarController(localEngine: localEngine)
-        hotkeyManager = HotkeyManager()
+        hotkeyManager = HotkeyManager(bindings: effectiveShortcutBindings)
+        NotificationCenter.default.addObserver(self, selector: #selector(applyShortcutBindings),
+                                               name: .shortcutBindingsDidChange, object: AppConfig.shared)
         #if DEBUG
         if NativeFixtureAudioInput.isEnabled {
             audioCapture = AudioCaptureService(makeDriver: {
@@ -281,6 +342,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
             guard let self else { return false }
             return (self.state == .idle || self.state == .unloaded) && (!self.livePhysicalKeyDown || self.liveReminderIgnoredPress)
                 && self.currentDictationPress == nil && !self.tapArbiter.hasPendingAction
+                && !self.actionTaps.values.contains { $0.hasPendingAction }
         }
         #if DEBUG
         runNativeE2EWhenReady()
@@ -292,7 +354,9 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         )
         manager.onStateChanged = { [weak self] mode, source in
             self?.statusBar.setLiveCaptionState(mode: mode, source: source)
+            SettingsStatusModel.shared.refresh(.caption)
         }
+        SettingsStatusModel.shared.bindCaptionManager(manager)
         liveCaptionManager = manager
 
         TextPolisher.refreshAvailabilityCache()
@@ -322,23 +386,46 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
             MainActor.assumeIsolated {
                 guard let self else { return }
                 self.tapArbiter.reset()
+                self.resetActionTaps()
+                if self.pressAdmission.isPending {
+                    self.pressAdmission.cancel()
+                    self.liveReminderIgnoredPress = self.livePhysicalKeyDown
+                }
                 if self.defaultLiveHoldGate.cancel() { self.liveReminderIgnoredPress = self.livePhysicalKeyDown }
             }
         }
 
         // Wire hotkey callbacks
+        hotkeyManager.onBindingsWillChange = { [weak self] in
+            self?.pressAdmission.cancel()
+            self?.tapArbiter.reset()
+        }
+        hotkeyManager.actionEnabled = Self.shortcutEnabled
+        hotkeyManager.onActionCancelled = { [weak self] in self?.resetActionTaps() }
+        hotkeyManager.onActionPress = { [weak self] chord in
+            guard let self else { return }
+            let arbiter = self.actionTaps[chord] ?? TapArbiter()
+            self.actionTaps[chord] = arbiter
+            arbiter.cancelPendingForSecondPress()
+        }
+        hotkeyManager.onActionRelease = { [weak self] chord, duration in
+            guard let self, let arbiter = self.actionTaps[chord] else { return }
+            self.finishShortcut(chord: chord, held: duration >= 0.3, arbiter: arbiter)
+        }
         hotkeyManager.onPress = { [weak self] in
-            self?.handleHotkeyPress()
+            self?.handlePhysicalHotkeyPress()
         }
         hotkeyManager.onRelease = { [weak self] in
-            self?.handleHotkeyRelease()
+            self?.handlePhysicalHotkeyRelease()
         }
-        hotkeyManager.onCancelledRelease = { [weak self] in
-            self?.handleCancelledHotkeyRelease()
+        hotkeyManager.onSecureInputIgnored = { [weak self] key, began in
+            self?.pressAdmission.secureInputIgnored(key: key, began: began)
+        }
+        hotkeyManager.onCancelledRelease = { [weak self] reason in
+            self?.handleCancelledHotkeyRelease(reason: reason)
         }
         hotkeyManager.onChordDuringHold = { [weak self] in
-            guard let self, self.defaultLiveHoldGate.cancel() else { return }
-            self.tapArbiter.reset(); self.liveReminderIgnoredPress = true
+            self?.handleHotkeyChord()
         }
         hotkeyManager.onLiveCaptionToggle = { [weak self] in
             #if DEBUG
@@ -445,6 +532,12 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
             return
         }
 
+        UpdateCheckCoordinator.shared.startAfterOnboarding()
+
+        if AVCaptureDevice.authorizationStatus(for: .audio) == .authorized {
+            audioCapture.warmRecordingFormat()
+        }
+
         // Start hotkey listener
         hotkeyManager.start()
 
@@ -509,8 +602,10 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         if evalStoreSessionStarted {
             EvalStore.shared.endSessionAndClear()
         }
-        cancelLiveDictation()
+        cancelLiveDictation(reason: .applicationQuit)
+        audioCapture?.cancelRecording(reason: .applicationQuit)
         livePrivacyTimer?.invalidate()
+        pressAdmission.cancel()
         tapArbiter.reset()
         hotkeyManager.stop()
         hideOverlay()
@@ -601,6 +696,21 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         DispatchQueue.main.asyncAfter(deadline: .now() + 4.0, execute: work)
     }
 
+    private func showInterruptedCaptureNotice() {
+        let heading = L10n.string("notice.audio_capture.interrupted_heading", fallback: "Recording interrupted")
+        showOverlayNotice(message: AudioCaptureError.interruptedRecordingMessage, style: .information(heading: heading))
+    }
+
+    private func showRecordingDurationCapNotice() {
+        let minutes = Int(AudioCaptureService.standardDictationLimitSeconds / 60)
+        let heading = L10n.string("notice.audio_capture.duration_cap_heading", fallback: "Recording stopped")
+        let message = L10n.format(
+            "notice.audio_capture.duration_cap", "The %1$lld-minute recording limit was reached.",
+            arguments: [minutes]
+        )
+        showOverlayNotice(message: message, style: .information(heading: heading))
+    }
+
     /// Retire any notice and its pending dismissal. Orders the panel out only
     /// when a notice is what is currently showing, so this is safe to call
     /// before every overlay transition.
@@ -616,8 +726,67 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
 
     // MARK: - Hotkey Handlers
 
-    private func handleHotkeyPress() {
+    private func showSecureInputNotice(key: ShortcutChord) {
+        guard liveDictation == nil || liveDictation?.phase == .finished else { return }
+        showOverlayNotice(message: L10n.format(
+            "shortcut.secure_input.paused",
+            "Secure input is on, so %1$@ dictation is paused. Leave the password field or turn off Secure Keyboard Entry.",
+            arguments: [key.title]
+        ), style: .information(heading: key.title))
+    }
+
+    private func handlePhysicalHotkeyPress() {
+        guard let press = hotkeyManager.currentPress else { return }
+        let began = press.began
+        physicalPressBegan = began
         livePhysicalKeyDown = true
+        // Claim tap #2 at key down, not 150 ms later when the first tap's
+        // deferred action might already have fired.
+        claimedSecondTapAtDown = tapArbiter.cancelPendingForSecondPress()
+        pressAdmission.press(key: press.key, began: began,
+            isCancelled: { press.isCancelled },
+            secureInputAtPress: press.secureInputAtPress,
+            onAdmissionCheck: { press.secureInputAtAdmission = $0 },
+            needsReload: { [weak self] in
+                self?.state == .unloaded && AppConfig.shared.dictationEngine == .local
+            }, start: { [weak self] began in
+                guard let self else { return }
+                if self.livePhysicalKeyDown { self.handleSoloDictationPress(began: began) }
+                else { self.reloadAfterCleanHold(began: began) }
+            })
+    }
+
+    private func handlePhysicalHotkeyRelease() {
+        defer { physicalPressBegan = nil; claimedSecondTapAtDown = false }
+        switch pressAdmission.release() {
+        case .cancelled:
+            handleCancelledHotkeyRelease(reason: .shortcutChord)
+        case .tap:
+            livePhysicalKeyDown = false
+            guard !(liveDictation.map { $0.phase != .recovery } ?? false),
+                  !LocalLivePreviewController.shared.isRequestPending else {
+                tapArbiter.reset()
+                return
+            }
+            handleTapDetected()
+        case .ignoredHold:
+            livePhysicalKeyDown = false
+            tapArbiter.reset()
+        case .started, .none:
+            handleHotkeyRelease()
+        }
+    }
+
+    private func reloadAfterCleanHold(began: TimeInterval) {
+        guard ProcessInfo.processInfo.systemUptime - began >= DictationPressAdmission.reloadThreshold,
+              state == .unloaded, AppConfig.shared.dictationEngine == .local,
+              NSApp.modalWindow == nil, !LocalModelSwitcher.shared.refusesLocalRequests else { return }
+        tapArbiter.reset()
+        reloadModel()
+    }
+
+    private func handleSoloDictationPress(began: TimeInterval) {
+        let timing = DictationCaptureTiming(keyDown: began, admitted: ProcessInfo.processInfo.systemUptime)
         if AppConfig.shared.dictationEngine == .local && LocalModelSwitcher.shared.refusesLocalRequests {
             showModelSwitchNotice()
             liveReminderIgnoredPress = true
@@ -647,14 +816,14 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
                 if preview.isRequestPending || preview.needsDefaultConfirmation { return }
                 liveReminderIgnoredPress = false
             } else {
-                defaultLiveHoldGate.press { [weak self] _ in self?.confirmDefaultLiveHold() }
+                defaultLiveHoldGate.press(began: began) { [weak self] _ in self?.confirmDefaultLiveHold() }
                 return
             }
         }
         if let liveDictation {
             if liveDictation.phase == .recovery {
                 _ = tapArbiter.cancelPendingForSecondPress()
-                liveBlockedPressUptime = ProcessInfo.processInfo.systemUptime
+                liveBlockedPressUptime = began
                 liveBlockedReason = L10n.string("live.recovery.blocked", fallback: "Retry, save and discard, or discard the recording first.")
             }
             return
@@ -664,7 +833,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         // dismisses it and proceeds through the normal checks below.
         dismissCaptureNotice()
 
-        let claimedSecondTap = tapArbiter.cancelPendingForSecondPress()
+        let claimedSecondTap = claimedSecondTapAtDown
 
         // Gate dictation only when Live Caption is active on the MIC source -
         // both would compete for the mic. System-audio Live Caption uses
@@ -677,16 +846,16 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
                 log.info("Ignoring mic-gated press - state is \(String(describing: self.state), privacy: .public)")
                 return
             }
-            liveCaptionGatePressTimestamp = Date()
+            liveCaptionGatePressTimestamp = began
             return
         }
 
-        // If model is unloaded and user holds Right ⌥, auto-reload
+        // Admission permits a reload only after a clean 0.3-second hold,
+        // including for Right Option. Never load on a modifier key down.
         if state == .unloaded {
             if claimedSecondTap { tapArbiter.reset() }
             if AppConfig.shared.dictationEngine == .local {
-                print("[Lamitype] Model unloaded - auto-reloading...")
-                reloadModel()
+                reloadAfterCleanHold(began: began)
                 return
             }
             // A cloud engine is ready without Qwen. This state can occur when
@@ -709,29 +878,52 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         }
 
         if AppConfig.shared.dictationEngine == .local && AppConfig.shared.localLivePreviewEnabled {
-            beginLiveDictation()
+            // Dismiss the card before Local Live snapshots the insertion target.
+            translationCardWindow.dismiss(animated: false)
+            beginLiveDictation(timing: timing)
             return
         }
 
-        // Timestamped immediately before the throwing start.
-        let press = DictationPressRecord(keyDownUptime: ProcessInfo.processInfo.systemUptime)
+        // Physical key-down time survives the solo admission delay.
+        guard let physicalPress = hotkeyManager.currentPress else { return }
+        let press = DictationPressRecord(keyDownUptime: began)
         currentDictationPress = press
+        press.stageLog.emit(.pressAdmitted)
         audioCapture.onError = { [weak self, weak press] error in
             // AudioCaptureService delivers this on the main queue, after it has
             // released the hardware.
             guard let self, let press, self.currentDictationPress === press else { return }
+            if self.audioCapture.hasInterruptedRecording {
+                self.showInterruptedCaptureNotice()
+                return
+            }
             self.failCapturePress(error)
         }
 
         do {
-            try audioCapture.startRecording()
+            try audioCapture.startRecording(
+                limitSeconds: AudioCaptureService.standardDictationLimitSeconds,
+                timing: timing,
+                stageLog: press.stageLog,
+                onDurationLimit: { [weak self, weak press, weak physicalPress] in
+                    guard let self, let press, let physicalPress, self.currentDictationPress === press,
+                          self.hotkeyManager.retireDurationCappedHold(physicalPress) else { return }
+                    self.pressAdmission.cancel()
+                    self.physicalPressBegan = nil
+                    self.claimedSecondTapAtDown = false
+                    self.livePhysicalKeyDown = false
+                    self.finishStandardDictation(press, releaseUptime: ProcessInfo.processInfo.systemUptime,
+                                                  reason: .durationCap)
+                }
+            )
         } catch {
+            translationCardWindow.dismiss(animated: false)
             failCapturePress(error)
             return
         }
 
-        // Only after the start succeeds: never show a HUD for a recording that
-        // is not happening.
+        // Get microphone input flowing before updating the card and HUD.
+        translationCardWindow.dismiss(animated: false)
         state = .recording
         statusBar.setState(.recording)
         showOverlayRecording()
@@ -744,9 +936,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         guard let press = currentDictationPress else { return }
         press.failed = true
         tapArbiter.reset()
-        // The service has already latched and (asynchronously) delivered; this
-        // just discards whatever capture state is left.
-        audioCapture.cancelRecording()
+        audioCapture.cancelRecording(reason: RecordingCancellationReason(error: error))
         state = .idle
         statusBar.setState(.idle)
         presentDictationCaptureError(message: error.localizedDescription, press: press)
@@ -782,7 +972,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         case .consumedHold: return
         case .none: break
         }
-        if liveReminderIgnoredPress { liveReminderIgnoredPress = false; return }
+        if liveReminderIgnoredPress { liveReminderIgnoredPress = false; tapArbiter.reset(); return }
         if liveClosedPressAwaitingRelease { liveClosedPressAwaitingRelease = false; return }
         if let began = liveBlockedPressUptime {
             liveBlockedPressUptime = nil
@@ -809,7 +999,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
                 log.info("Ignoring mic-gated release - state is \(String(describing: self.state), privacy: .public)")
                 return
             }
-            let elapsed = liveCaptionGatePressTimestamp.map { Date().timeIntervalSince($0) } ?? 0
+            let elapsed = liveCaptionGatePressTimestamp.map { releaseUptime - $0 } ?? 0
             liveCaptionGatePressTimestamp = nil
             if elapsed < 0.3 {
                 handleTapDetected()
@@ -828,26 +1018,33 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
             print("[Lamitype] Ignoring release - no dictation press is open")
             return
         }
+        let reason: DictationStageLog.CaptureEndReason? =
+            audioCapture.recordingDurationElapsed(at: releaseUptime) ? .durationCap : nil
+        finishStandardDictation(press, releaseUptime: releaseUptime, reason: reason)
+    }
+
+    private func finishStandardDictation(_ press: DictationPressRecord, releaseUptime: TimeInterval,
+                                         reason: DictationStageLog.CaptureEndReason?) {
         if press.failed {
             // The failure helper already restored the UI and owns the alert.
             currentDictationPress = nil
             return
         }
 
-        let samples: [Float]
+        let isTap = reason == nil &&
+            isTranslationTap(elapsed: releaseUptime - press.keyDownUptime, captureFailed: press.failed)
+        let recording: (samples: [Float], interrupted: Bool)
         do {
-            samples = try audioCapture.stopRecording()
+            recording = try audioCapture.finishRecording(isTap: isTap, reason: reason)
         } catch {
             failCapturePress(error)
             currentDictationPress = nil
             return
         }
+        let samples = recording.samples
         print("[Lamitype] Recording stopped: \(samples.count) samples (\(String(format: "%.1f", Double(samples.count) / 16000.0))s)")
 
-        // Measured from the snapshot taken on entry, classified only now that
-        // stopRecording has returned without a terminal failure.
-        let elapsed = releaseUptime - press.keyDownUptime
-        if isTranslationTap(elapsed: elapsed, captureFailed: press.failed) {
+        if isTap && !recording.interrupted {
             hideOverlay()
             state = .idle
             statusBar.setState(.idle)
@@ -858,14 +1055,14 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
 
         // A hold from here on. The sample count is an audio-sufficiency guard,
         // never a tap classifier.
-        guard samples.count > 4800 else {
+        guard recording.interrupted || samples.count > 4800 else {
             state = .idle
             statusBar.setState(.idle)
             tapArbiter.reset()
             presentDictationCaptureError(
-                message: L10n.string(
+                message: ShortcutDisplay.format(
                     "error.audio_capture.too_short",
-                    fallback: "Not enough audio was captured. Hold Right Option and try again."
+                    "Not enough audio was captured. Hold %1$@ and try again.", spoken: true
                 ),
                 press: press
             )
@@ -877,13 +1074,18 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         currentDictationPress = nil
         state = .transcribing
         statusBar.setState(.transcribing)
-        switchOverlayToTranscribing()
+        if reason == .durationCap {
+            showRecordingDurationCapNotice()
+        } else {
+            switchOverlayToTranscribing()
+        }
         print("[Lamitype] Transcribing...")
 
         let language = AppConfig.shared.language
         let selection = AppConfig.shared.dictationEngine
         let engine = activeEngine!
         let insertionFocus = captureInsertionFocus()
+        let stageLog = press.stageLog
 
         if selection == .local {
             launchTranscription(
@@ -891,7 +1093,8 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
                 language: language,
                 selection: selection,
                 engine: engine,
-                insertionFocus: insertionFocus
+                insertionFocus: insertionFocus,
+                stageLog: stageLog
             )
         } else {
             // The hotkey callbacks originate inside CGEventTap. Queue consent
@@ -902,7 +1105,8 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
                     language: language,
                     selection: selection,
                     engine: engine,
-                    insertionFocus: insertionFocus
+                    insertionFocus: insertionFocus,
+                    stageLog: stageLog
                 )
             }
         }
@@ -934,7 +1138,8 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         language: String?,
         selection: AppConfig.DictationEngine,
         engine: any TranscriptionEngine,
-        insertionFocus: NSRunningApplication?
+        insertionFocus: NSRunningApplication?,
+        stageLog: DictationStageLog
     ) async {
         guard state == .transcribing else { return }
         let provider = consentProvider(for: selection)
@@ -964,7 +1169,8 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
                 language: language,
                 selection: selection,
                 engine: engine,
-                insertionFocus: insertionFocus
+                insertionFocus: insertionFocus,
+                stageLog: stageLog
             )
             return
         }
@@ -979,7 +1185,8 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
                 language: language,
                 selection: selection,
                 engine: engine,
-                insertionFocus: insertionFocus
+                insertionFocus: insertionFocus,
+                stageLog: stageLog
             )
             return
         }
@@ -1000,7 +1207,8 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
                     projection,
                     samples: samples,
                     language: language,
-                    insertionFocus: insertionFocus
+                    insertionFocus: insertionFocus,
+                    stageLog: stageLog
                 )
                 return
             }
@@ -1026,7 +1234,8 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
             selection: selection,
             engine: engine,
             metering: metering,
-            insertionFocus: insertionFocus
+            insertionFocus: insertionFocus,
+            stageLog: stageLog
         )
     }
 
@@ -1036,12 +1245,15 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         selection: AppConfig.DictationEngine,
         engine: any TranscriptionEngine,
         metering: CloudDictationMetering? = nil,
-        insertionFocus: NSRunningApplication?
+        insertionFocus: NSRunningApplication?,
+        stageLog: DictationStageLog
     ) {
         let metering = metering ?? cloudDictationMetering(for: selection)
         Task.detached { [weak self, engine] in
             do {
+                let started = ProcessInfo.processInfo.systemUptime
                 let text = try await engine.transcribe(audio: samples, language: language)
+                stageLog.emit(.transcriptionDone(text: text, latency: ProcessInfo.processInfo.systemUptime - started))
                 if let metering {
                     let snapshot = await CloudUsageTracker.shared.recordDictation(
                         seconds: Double(samples.count) / 16_000.0,
@@ -1068,7 +1280,8 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
                 await self?.finishSuccessfulTranscription(
                     insertionText,
                     insertionFocus: insertionFocus,
-                    resetNetworkFailures: selection != .local
+                    resetNetworkFailures: selection != .local,
+                    stageLog: stageLog
                 )
             } catch {
                 log.error("Transcription failed: \(error.localizedDescription, privacy: .public)")
@@ -1100,7 +1313,8 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
                     language: language,
                     selection: selection,
                     engine: engine,
-                    insertionFocus: insertionFocus
+                    insertionFocus: insertionFocus,
+                    stageLog: stageLog
                 )
             }
         }
@@ -1109,15 +1323,16 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     private func finishSuccessfulTranscription(
         _ text: String,
         insertionFocus: NSRunningApplication?,
-        resetNetworkFailures: Bool
+        resetNetworkFailures: Bool,
+        stageLog: DictationStageLog
     ) async {
         if resetNetworkFailures { consecutiveCloudNetworkFailures = 0 }
         _ = await restoreInsertionFocus(insertionFocus)
-        guard !text.isEmpty else {
-            print("[Lamitype] Empty transcription, skipping insert")
+        guard !text.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty else {
+            log.info("Dictation ended without insertion: reason=emptyTranscription")
             state = .idle
             statusBar.setState(.idle)
-            hideOverlay()
+            showOverlayNotice(message: L10n.string("live.error.empty", fallback: "No speech was recognized."))
             return
         }
 
@@ -1126,7 +1341,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         #endif
         print("[Lamitype] Inserting text...")
         state = .inserting
-        TextInserter.insert(text)
+        TextInserter.insert(text, stageLog: stageLog)
         state = .idle
         statusBar.setState(.idle)
         hideOverlay()
@@ -1141,52 +1356,136 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     }
 
     private func handleTapDetected() {
+        #if DEBUG
+        if let tapActionForTesting { tapActionForTesting(); return }
+        #endif
         guard NSApp.modalWindow == nil, state == .idle else {
             tapArbiter.reset()
             log.info("Ignoring tap - state is \(String(describing: self.state), privacy: .public)")
             return
         }
 
-        if tapArbiter.consumeSecondTapCandidate() {
-            print("[Lamitype] Double tap detected - triggering Text Polish")
-            handlePolish(source: .copySelection)
-            return
-        }
-
-        if AppConfig.shared.textPolishEnabled && TextPolisher.isAvailableCached {
-            tapArbiter.deferSingleTap { [weak self] in
-                guard let self, NSApp.modalWindow == nil, self.state == .idle else {
-                    log.info("Deferred translation dropped - app is no longer idle")
-                    return
-                }
-                guard AppConfig.shared.textTranslationEnabled else { return }
-                self.handleTranslation(source: .copySelection)
-            }
-            return
-        }
-
-        guard AppConfig.shared.textTranslationEnabled else {
-            print("[Lamitype] Too short, skipping (translation not enabled)")
-            return
-        }
-        print("[Lamitype] Short tap detected - triggering translation")
-        handleTranslation(source: .copySelection)
+        guard let chord = effectiveShortcutBindings[.dictate].chord else { return }
+        finishShortcut(chord: chord, held: false, arbiter: tapArbiter)
     }
 
-    private func handleCancelledHotkeyRelease() {
+    private static func shortcutEnabled(_ action: ShortcutAction) -> Bool {
+        switch action {
+        case .translate: return AppConfig.shared.textTranslationEnabled
+        case .polish: return AppConfig.shared.textPolishEnabled && TextPolisher.isAvailableCached
+        case .caption, .dictate: return true
+        }
+    }
+
+    private func finishShortcut(chord: ShortcutChord, held: Bool, arbiter: TapArbiter) {
+        let bindings = effectiveShortcutBindings
+        arbiter.finish(chord: chord, held: held, bindings: bindings, enabled: Self.shortcutEnabled) { [weak self] in
+            guard chord == .rightOption || !SecureInputProbe.isActive() else { return }
+            self?.performShortcut($0)
+        }
+    }
+
+    private func performShortcut(_ action: ShortcutAction?) {
+        guard let action, Self.shortcutEnabled(action), NSApp.modalWindow == nil else { return }
+        if action == .caption { hotkeyManager.onLiveCaptionToggle?(); return }
+        guard state == .idle, !(liveDictation.map { $0.phase != .recovery && $0.phase != .finished } ?? false),
+              !LocalLivePreviewController.shared.isRequestPending else { return }
+        switch action {
+        case .translate: handleTranslation(source: .copySelection)
+        case .polish: handlePolish(source: .copySelection)
+        default: break
+        }
+    }
+
+    #if DEBUG
+    private var tapActionForTesting: (() -> Void)?
+
+    /// Exercise the caption-conflict release without capture or model loading.
+    func releaseLiveCaptionBlockedPressForTesting(elapsed: TimeInterval, onTap: @escaping () -> Void) -> Bool {
+        physicalPressBegan = ProcessInfo.processInfo.systemUptime - elapsed
+        tapActionForTesting = onTap
+        defer {
+            physicalPressBegan = nil; tapActionForTesting = nil
+            dismissCaptureNotice()
+        }
+        markLiveCaptionBlockedPress()
+        handleHotkeyRelease()
+        return overlayState.isShowingNotice
+    }
+
+    /// Inspect model state without depending on panel visibility on a locked screen.
+    func showSecureInputNoticeForTesting(session: LocalLiveDictationSession?, key: DictationKey) -> (notice: Bool, live: Bool) {
+        liveDictation = session
+        overlayState.live = session.map { LiveOverlayState(phase: $0.phase, draft: "Preserved Live draft") }
+        defer { dismissCaptureNotice() }
+        showSecureInputNotice(key: key.chord)
+        return (overlayState.isShowingNotice, overlayState.live != nil)
+    }
+
+    /// Exercise the early-release path without a microphone or clipboard access.
+    func releaseQuickTapForTesting(session: LocalLiveDictationSession?, key: DictationKey,
+                                   elapsed: TimeInterval, onTap: @escaping () -> Void) {
+        liveDictation = session
+        state = .idle
+        tapActionForTesting = onTap
+        defer { tapActionForTesting = nil }
+        livePhysicalKeyDown = true
+        // Pin Secure Input off so the seam never depends on the host session
+        // (a locked screen or a secure field would otherwise block the tap).
+        pressAdmission.press(key: key.chord, began: ProcessInfo.processInfo.systemUptime - elapsed,
+                             secureInputAtPress: false,
+                             needsReload: { false }, start: { _ in preconditionFailure("Quick tap admitted unexpectedly") })
+        handlePhysicalHotkeyRelease()
+    }
+
+    /// Exercise the real handlers without launching the app, model or event tap.
+    func connectLiveSessionForTesting(_ session: LocalLiveDictationSession, hotkey: HotkeyManager) {
+        liveDictation = session
+        hotkey.onPress = { [weak self] in self?.livePhysicalKeyDown = true }
+        hotkey.onChordDuringHold = { [weak self] in self?.handleHotkeyChord() }
+        hotkey.onCancelledRelease = { [weak self] reason in self?.handleCancelledHotkeyRelease(reason: reason) }
+    }
+    #endif
+
+    private func handleHotkeyChord() {
+        pressAdmission.cancel()
+        defaultLiveHoldGate.cancel()
+        tapArbiter.reset()
+        liveCaptionGatePressTimestamp = nil
+        liveBlockedPressUptime = nil
+        liveClosedPressAwaitingRelease = false
+        // Keep livePhysicalKeyDown until the cancelled release. That release
+        // clears this flag without cancelling the same capture/session twice.
+        liveReminderIgnoredPress = true
+        let activeLive = liveDictation.flatMap { $0.phase == .recording ? $0 : nil }
+        guard currentDictationPress != nil || activeLive != nil else { return }
+        let press = currentDictationPress
+        currentDictationPress = nil
+        state = cancelChordCapture(
+            press: press,
+            cancelCapture: { self.audioCapture.cancelRecording(reason: .shortcutChord) },
+            cancelLive: { activeLive?.cancel(reason: .shortcutChord) },
+            hideOverlay: { self.hideOverlay() }
+        )
+        statusBar.setState(.idle)
+    }
+
+    private func handleCancelledHotkeyRelease(reason: RecordingCancellationReason) {
+        pressAdmission.cancel()
+        physicalPressBegan = nil; claimedSecondTapAtDown = false
         livePhysicalKeyDown = false
         if defaultLiveHoldGate.cancel() { tapArbiter.reset(); return }
-        if liveReminderIgnoredPress { liveReminderIgnoredPress = false; return }
+        if liveReminderIgnoredPress { liveReminderIgnoredPress = false; tapArbiter.reset(); return }
         if liveClosedPressAwaitingRelease { liveClosedPressAwaitingRelease = false; return }
         if liveBlockedPressUptime != nil { liveBlockedPressUptime = nil; tapArbiter.reset(); return }
-        if let liveDictation, liveDictation.phase != .recovery {
-            liveDictation.cancel(); tapArbiter.reset(); return
+        if let liveDictation, liveDictation.phase == .recording {
+            liveDictation.cancel(reason: reason); tapArbiter.reset(); return
         }
         tapArbiter.reset()
         liveCaptionGatePressTimestamp = nil
 
         guard let press = currentDictationPress else {
-            log.info("Suppressed Right Option release had no active recording")
+            log.info("Suppressed dictation key release had no active recording")
             return
         }
 
@@ -1194,11 +1493,10 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         // not yet shown, and never translates or inserts.
         press.cancelled = true
         currentDictationPress = nil
-        audioCapture.cancelRecording()
+        audioCapture.cancelRecording(reason: reason)
         state = .idle
         statusBar.setState(.idle)
         hideOverlay()
-        log.info("Cancelled recording after option-character chord")
     }
 
     // MARK: - Translation
@@ -1239,7 +1537,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
                 self.statusBar.setState(.idle)
                 switch source {
                 case .copySelection:
-                    // A bare Right ⌥ tap with nothing selected is a common
+                    // A bare dictation key tap with nothing selected is a common
                     // accident - stay silent like pre-0.6 releases. Only the
                     // explicit Services path earns an alert.
                     print("[Lamitype] No text on clipboard for translation")
@@ -1398,6 +1696,11 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
             return ResolvedSelection(text: text, priorPasteboardItems: nil)
 
         case .copySelection:
+            // The nonactivating translation card can still own keyboard focus.
+            // Give it back to the editor before posting the selection copy.
+            if translationCardWindow.dismiss(animated: false) {
+                try? await Task.sleep(nanoseconds: 30_000_000)
+            }
             let pasteboard = NSPasteboard.general
             let priorItems = preservingPasteboard
                 ? copyPasteboardItems(pasteboard.pasteboardItems ?? [])
@@ -1466,17 +1769,32 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         }
     }
 
+    private var effectiveShortcutBindings: ShortcutBindings {
+        #if DEBUG
+        // Existing native posters and JSON diagnostics intentionally use defaults.
+        if CommandLine.arguments.contains("--native-e2e") { return .default }
+        #endif
+        return AppConfig.shared.shortcutBindings
+    }
+
+    @objc private func applyShortcutBindings() {
+        precondition(Thread.isMainThread)
+        hotkeyManager?.apply(effectiveShortcutBindings)
+    }
+
     private func simulateCmdC() {
         let source = CGEventSource(stateID: .hidSystemState)
 
         // Key down: C (keycode 0x08) with Cmd
         let keyDown = CGEvent(keyboardEventSource: source, virtualKey: 0x08, keyDown: true)
         keyDown?.flags = .maskCommand
+        keyDown?.setIntegerValueField(.eventSourceUserData, value: ShortcutBindings.syntheticEventTag)
         keyDown?.post(tap: .cghidEventTap)
 
         // Key up
         let keyUp = CGEvent(keyboardEventSource: source, virtualKey: 0x08, keyDown: false)
         keyUp?.flags = .maskCommand
+        keyUp?.setIntegerValueField(.eventSourceUserData, value: ShortcutBindings.syntheticEventTag)
         keyUp?.post(tap: .cghidEventTap)
     }
 
@@ -1611,7 +1929,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         }
     }
 
-    /// Hotkey handler (Right ⌘ + /): toggle whichever product was last
+    /// Hotkey handler (Live Caption shortcut): toggle whichever product was last
     /// started. First-use (no AppConfig.lastStartedCaptionMode set) defaults
     /// to local - nobody accidentally starts a paid translation session via
     /// muscle memory on day one.
@@ -1788,9 +2106,9 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
                 "alert.model_unloaded.local.title",
                 fallback: "Model Unloaded"
             )
-            alert.informativeText = L10n.string(
+            alert.informativeText = ShortcutDisplay.format(
                 "alert.model_unloaded.local.message",
-                fallback: "The speech recognition model has been removed from memory.\n\nVoice input will require a cold start (~3 seconds) the next time you press Right ⌥."
+                "The speech recognition model has been removed from memory.\n\nVoice input will require a cold start (~3 seconds) the next time you press %1$@."
             )
         }
         alert.alertStyle = .informational
@@ -1907,7 +2225,8 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         _ projection: CloudUsageTracker.DictationUploadProjection,
         samples: [Float],
         language: String?,
-        insertionFocus: NSRunningApplication?
+        insertionFocus: NSRunningApplication?,
+        stageLog: DictationStageLog
     ) async {
         let alert = NSAlert()
         alert.alertStyle = .warning
@@ -1942,7 +2261,8 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
             await transcribeLocallyOnce(
                 samples: samples,
                 language: language,
-                insertionFocus: insertionFocus
+                insertionFocus: insertionFocus,
+                stageLog: stageLog
             )
         default:
             await finishWithoutInsertion(restoreFocus: insertionFocus)
@@ -1955,7 +2275,8 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         language: String?,
         selection: AppConfig.DictationEngine,
         engine: any TranscriptionEngine,
-        insertionFocus: NSRunningApplication?
+        insertionFocus: NSRunningApplication?,
+        stageLog: DictationStageLog
     ) async {
         switch error {
         case .network, .timeout:
@@ -1977,13 +2298,15 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
                 language: language,
                 selection: selection,
                 engine: engine,
-                insertionFocus: insertionFocus
+                insertionFocus: insertionFocus,
+                stageLog: stageLog
             )
         case .useLocalOnce:
             await transcribeLocallyOnce(
                 samples: samples,
                 language: language,
-                insertionFocus: insertionFocus
+                insertionFocus: insertionFocus,
+                stageLog: stageLog
             )
         case .switchToLocal:
             switchDictationEngine(to: .local)
@@ -2020,7 +2343,8 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     private func transcribeLocallyOnce(
         samples: [Float],
         language: String?,
-        insertionFocus: NSRunningApplication?
+        insertionFocus: NSRunningApplication?,
+        stageLog: DictationStageLog
     ) async {
         guard !LocalModelSwitcher.shared.refusesLocalRequests else {
             showModelSwitchNotice()
@@ -2043,7 +2367,9 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
             if AppConfig.shared.floatingOverlayEnabled {
                 overlayState.state = .transcribing(provider: nil)
             }
+            let started = ProcessInfo.processInfo.systemUptime
             let text = try await localEngine.transcribe(audio: samples, language: language)
+            stageLog.emit(.transcriptionDone(text: text, latency: ProcessInfo.processInfo.systemUptime - started))
             guard let insertionText = await prepareLocalDictationText(
                 text,
                 engine: .local,
@@ -2053,7 +2379,8 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
             await finishSuccessfulTranscription(
                 insertionText,
                 insertionFocus: insertionFocus,
-                resetNetworkFailures: false
+                resetNetworkFailures: false,
+                stageLog: stageLog
             )
         } catch {
             log.error("Use Local Once failed: \(error.localizedDescription, privacy: .public)")
@@ -2462,30 +2789,33 @@ extension AppDelegate {
         overlayState.liveNotice = L10n.string("live.caption.blocked", fallback: "Finish or cancel live dictation before starting or switching captions.")
     }
 
-    private func beginLiveDictation() {
+    private func markLiveCaptionBlockedPress() {
+        liveBlockedPressUptime = physicalPressBegan ?? ProcessInfo.processInfo.systemUptime
+        liveBlockedReason = L10n.string("live.caption.stop_first", fallback: "Stop local captions before using live dictation.")
+    }
+
+    private func beginLiveDictation(timing: DictationCaptureTiming) {
         guard !LocalModelSwitcher.shared.refusesLocalRequests else { showModelSwitchNotice(); return }
         guard !SecureInputProbe.isActive(),
               !LocalLivePreviewController.shared.needsDefaultConfirmation,
               !LocalLivePreviewController.shared.isRequestPending else { return }
         guard LocalLiveOwnership.captionTransitions == 0, !LocalLiveOwnership.localCaptionActive else {
-            liveBlockedPressUptime = ProcessInfo.processInfo.systemUptime
-            liveBlockedReason = L10n.string("live.caption.stop_first", fallback: "Stop local captions before using live dictation.")
+            markLiveCaptionBlockedPress()
             return
         }
         guard localEngine.loadedModel != nil else { return }
-        let pressed = ProcessInfo.processInfo.systemUptime
-        let target = LiveInsertionTarget()
         let language = AppConfig.shared.language
         let options = DictationPostProcessor.Options.snapshot()
         let initialPolish = AppConfig.shared.textPolishEnabled && AppConfig.shared.autoPolishDictationEnabled
-        let initialEval = EvalCapturePolicy.decide(enabled: AppConfig.shared.evalModeEnabled,
-            secureInput: SecureInputProbe.isActive(), targetBundleID: target.application?.bundleIdentifier,
-            excludedBundleIDs: AppConfig.shared.autoPolishExcludedBundleIDs) == .capture
         let tokenizer = LiveSessionTokenizer(modelID: localEngine.loadedModelID ?? AppConfig.shared.modelId)
         let session = LocalLiveDictationSession(capture: audioCapture) { [weak engine = localEngine] samples in
             guard let model = engine?.loadedModel else { throw LiveRecognitionError.unavailable }
             return try LiveQwenRecognizer(model: model, tokenizer: try tokenizer.load()).transcribe(audio: samples, language: language, maxTokens: 1024)
         }
+        let target = LiveInsertionTarget(stageLog: session.stageLog)
+        let initialEval = EvalCapturePolicy.decide(enabled: AppConfig.shared.evalModeEnabled,
+            secureInput: SecureInputProbe.isActive(), targetBundleID: target.application?.bundleIdentifier,
+            excludedBundleIDs: AppConfig.shared.autoPolishExcludedBundleIDs) == .capture
         session.prepareRecognition = { [weak engine = localEngine] in
             guard let engine else { throw LiveRecognitionError.unavailable }
             try await engine.load()
@@ -2494,9 +2824,10 @@ extension AppDelegate {
         session.onUpdate = { [weak self, weak session] in
             guard let self, let session, self.liveDictation === session else { return }
             guard session.phase != .recovery, session.phase != .finished else { return }
+            if session.phase != .recording { self.dismissCaptureNotice() }
             // Retry is Copy-only and has no insertion target. Avoid querying
             // Accessibility from an assistive action callback while retry starts.
-            if !session.retrying { target.observe() }
+            if session.phase == .recording { target.observe() }
             guard session.elapsed >= 0.3 || session.phase != .recording else { return }
             self.overlayState.live = LiveOverlayState(phase: session.phase, draft: session.draft,
                 elapsed: min(60, session.elapsed), earlierDraftHidden: session.blockStart > 0, stoppedAtLimit: session.stoppedAtLimit, previewUnavailable: session.previewUnavailable)
@@ -2509,11 +2840,14 @@ extension AppDelegate {
             self?.liveClosedPressAwaitingRelease = self?.livePhysicalKeyDown ?? false
             self?.showOverlayNotice(message: error.localizedDescription)
         }
+        session.onCaptureInterrupted = { [weak self] in
+            self?.showInterruptedCaptureNotice()
+        }
         session.prepareFinal = { [weak self, weak session] raw in
-            guard let self, let session, self.liveDictation === session, !session.cancelled, !SecureInputProbe.isActive() else { return nil }
+            guard let self, let session, self.liveDictation === session, session.canPrepareFinal else { return nil }
             self.state = .transcribing
             let deterministic = try? await LocalLiveInference.run { DictationPostProcessor.apply(raw, options: options) }
-            guard !session.cancelled, !SecureInputProbe.isActive(), let deterministic else { return nil }
+            guard session.canPrepareFinal, let deterministic else { return nil }
             let decision = AutoPolishPolicy.decideNow(engine: .local, targetBundleID: target.application?.bundleIdentifier)
             var output = deterministic
             var outcome: EvalOutcome = .notPolished
@@ -2524,7 +2858,7 @@ extension AppDelegate {
                 self.overlayState.live?.phase = .polishing
                 self.statusBar.setState(.polishing)
                 let polished = await DictationPolishStage.apply(deterministic) { await TextPolisher.polishDictation($0) }
-                guard !session.cancelled, !SecureInputProbe.isActive() else { return nil }
+                guard session.canPrepareFinal else { return nil }
                 output = polished.text
                 switch polished.outcome {
                 case .polished(let changed): outcome = changed ? .polished : .unchanged
@@ -2566,26 +2900,53 @@ extension AppDelegate {
             #endif
             self.statusBar.hasLiveResult = true
         }
-        session.onResult = { [weak self] text, retried in
-            guard let self, !SecureInputProbe.isActive() else { return }
-            let sent: Bool
-            if !retried, let application = target.application, target.mayPaste() {
-                sent = TextInserter.insertLive(text, targetPID: application.processIdentifier,
-                                               verify: { target.mayPaste() })
-            } else {
-                sent = false
+        session.onResult = { [weak self, weak session, stageLog = session.stageLog] text, retried in
+            guard let self, let session, self.liveDictation === session else {
+                stageLog.emit(.livePasteSkipped(.superseded, charCount: text.count, copyAvailable: false))
+                return
             }
+            // Secure Input revokes the Live result, including in-memory recovery.
+            guard !SecureInputProbe.isActive() else {
+                stageLog.emit(.livePasteSkipped(.secureInput, charCount: text.count, copyAvailable: false))
+                self.showLivePrivacyNotice()
+                return
+            }
+            let reason: LivePasteReason?
+            if let copyOnly = session.copyOnlyReason { reason = copyOnly }
+            else if retried { reason = .retryCopyOnly }
+            else if let application = target.application {
+                reason = TextInserter.livePasteDenial(text, targetPID: application.processIdentifier,
+                    stageLog: stageLog, verify: { target.denial() })
+            } else { reason = .missingApplication }
+            let sent = reason == nil
             #if DEBUG
             NativeLocalLiveCounters.results += 1
             if sent { NativeLocalLiveCounters.pasteDispatches += 1 }
             #endif
-            let message = sent
-                ? L10n.string("live.result.sent", fallback: "Paste sent · text is on the clipboard")
-                : L10n.string("live.result.copy", fallback: "Text ready. Copy to your destination.")
+            if reason == .secureBefore || reason == .secureAfter || reason == .secureInput || SecureInputProbe.isActive() {
+                if let reason { stageLog.emit(.livePasteSkipped(reason, charCount: text.count, copyAvailable: false)) }
+                self.showLivePrivacyNotice()
+                return
+            }
+            let copied = reason == .capturedAXUnresponsive && target.copyAfterCaptureTimeout(text)
+            guard !SecureInputProbe.isActive() else {
+                stageLog.emit(.livePasteSkipped(.secureInput, charCount: text.count, copyAvailable: false))
+                self.showLivePrivacyNotice()
+                return
+            }
+            let message: String
+            if sent {
+                message = L10n.string("live.result.sent", fallback: "Paste sent · text is on the clipboard")
+            } else if copied {
+                message = L10n.string("live.result.clipboard_notice", fallback: "Text copied. Press ⌘V where you want to paste it.")
+            } else {
+                message = L10n.string("live.result.copy", fallback: "Text ready. Copy to your destination.")
+            }
             self.liveRecoveryWindow.storeResult(text: text, message: message)
             self.statusBar.hasLiveResult = true
-            if !sent {
-                self.showOverlayNotice(message: L10n.string("live.result.manual_notice", fallback: "Automatic paste skipped. Open Dictation mode → Last Live Result… to copy."),
+            if let reason {
+                stageLog.emit(.livePasteSkipped(reason, charCount: text.count, copyAvailable: true))
+                self.showOverlayNotice(message: copied ? message : L10n.string("live.result.manual_notice", fallback: "Automatic paste skipped. Open Dictation mode → Last Live Result… to copy."),
                     style: .information(heading: L10n.string("live.result.ready", fallback: "Text ready")))
             }
         }
@@ -2593,7 +2954,8 @@ extension AppDelegate {
             guard let self, let session, self.liveDictation === session else { return }
             self.liveDictation = nil
             self.state = .idle; self.statusBar.setState(.idle)
-            if !self.overlayState.isShowingNotice { self.hideOverlay() }
+            if session.clearedFinalForSecureInput { self.showLivePrivacyNotice() }
+            else if !self.overlayState.isShowingNotice { self.hideOverlay() }
             self.hotkeyManager?.resumeIfNeeded()
         }
         liveRecoveryWindow.onRetry = { [weak self] in
@@ -2614,7 +2976,7 @@ extension AppDelegate {
         }
         liveDictation = session
         do {
-            if try session.start(pressUptime: pressed) {
+            if try session.start(pressUptime: timing.keyDown, captureTiming: timing) {
                 liveRecoveryWindow.text = ""; statusBar.hasLiveResult = false
                 liveRecoveryWindow.window?.orderOut(nil)
                 state = .recording; statusBar.setState(.recording)
@@ -2626,16 +2988,27 @@ extension AppDelegate {
         }
     }
 
-    private func cancelLiveDictation() {
+    private func showLivePrivacyNotice() {
+        liveRecoveryWindow.text = ""
+        liveRecoveryWindow.hasAudio = false
+        liveRecoveryWindow.window?.orderOut(nil)
+        statusBar.hasLiveResult = false
+        showOverlayNotice(message: L10n.string("live.result.secure_discard",
+            fallback: "Secure Input turned on. The Local Live result was cleared for privacy."))
+    }
+
+    private func cancelLiveDictation(reason: RecordingCancellationReason) {
         guard let liveDictation else { return }
         liveClosedPressAwaitingRelease = livePhysicalKeyDown
-        liveDictation.cancel()
+        liveDictation.cancel(reason: reason)
     }
 
     @objc private func liveSystemWillSleep() {
+        if pressAdmission.isPending { liveReminderIgnoredPress = livePhysicalKeyDown }
+        pressAdmission.cancel()
         if defaultLiveHoldGate.cancel() { liveReminderIgnoredPress = livePhysicalKeyDown }
         tapArbiter.reset()
-        cancelLiveDictation()
+        cancelLiveDictation(reason: .systemSleep)
         liveRecoveryWindow.text = ""; liveRecoveryWindow.hasAudio = false
         liveRecoveryWindow.window?.orderOut(nil)
         statusBar.hasLiveResult = false

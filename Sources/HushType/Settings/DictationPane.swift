@@ -116,18 +116,11 @@ final class DictationSettingsModel: ObservableObject {
     }
 
     private func refreshDictionaryStatus() {
-        if !DictionaryReplacer.fileExists {
-            dictionaryStatus = L10n.string(
-                "menu.dictionary.no_file",
-                fallback: "No dictionary file"
-            )
-            return
-        }
         let count = DictionaryReplacer.entryCount
         dictionaryStatus = L10n.plural(
-            "menu.dictionary.entries_loaded",
+            "settings.dictation.dictionary.entries",
             count,
-            fallback: count == 1 ? "%1$ld entry loaded" : "%1$ld entries loaded"
+            fallback: count == 1 ? "%ld entry. Applies to every engine." : "%ld entries. Applies to every engine."
         )
     }
 }
@@ -142,209 +135,124 @@ struct DictationPane: View {
     }
 
     var body: some View {
-        VStack(alignment: .leading, spacing: SettingsGrid.rowSpacing) {
-            SettingsRow(L10n.string("settings.dictation.engine_label", fallback: "Engine:")) {
-                Picker("", selection: $model.engine) {
-                    engineChoice(
-                        title: L10n.string("menu.engine.local_qwen", fallback: "Local (Qwen3-ASR)"),
-                        detail: L10n.string(
-                            "settings.engine.local.detail",
-                            fallback: "Private · Free · ~2.1 GB RAM (1 GB cache cap)"
+        SettingsPage(height: 640, pane: .dictation) {
+            Section {
+                HStack {
+                    Picker(L10n.string("settings.dictation.engine_label", fallback: "Engine"), selection: $model.engine) {
+                        SettingLabel(
+                            title: L10n.string("menu.engine.local_qwen", fallback: "Local (Qwen3-ASR)"),
+                            description: L10n.string("settings.engine.local.detail", fallback: "On-device · Free")
                         )
-                    )
-                    .tag(AppConfig.DictationEngine.local)
-
-                    engineChoice(
-                        title: L10n.string("menu.engine.openai_cloud", fallback: "OpenAI Cloud"),
-                        detail: L10n.format(
-                            "settings.engine.cloud.detail",
-                            "%1$@ · No model RAM",
-                            arguments: [rateText(model.openAIRate)]
+                        .tag(AppConfig.DictationEngine.local)
+                        SettingLabel(
+                            title: L10n.string("menu.engine.openai_cloud", fallback: "OpenAI Cloud"),
+                            description: cloudRate(model.openAIRate)
                         )
-                    )
-                    .tag(AppConfig.DictationEngine.openai)
-
-                    engineChoice(
-                        title: L10n.string("menu.engine.gemini_cloud", fallback: "Gemini Cloud"),
-                        detail: L10n.format(
-                            "settings.engine.gemini.detail",
-                            "%1$@ · No model RAM",
-                            arguments: [rateText(model.geminiRate)]
+                        .tag(AppConfig.DictationEngine.openai)
+                        SettingLabel(
+                            title: L10n.string("menu.engine.gemini_cloud", fallback: "Gemini Cloud"),
+                            description: cloudRate(model.geminiRate)
                         )
-                    )
-                    .tag(AppConfig.DictationEngine.gemini)
-                }
-                .labelsHidden()
-                .pickerStyle(.radioGroup)
-            }
-            .padding(.bottom, 8)
-
-            SettingsRow(L10n.string("settings.dictation.local_model", fallback: "Local model:")) {
-                LocalModelPicker(switcher: LocalModelSwitcher.shared, enabled: model.engine == .local)
-            }
-            .padding(.bottom, 8)
-
-            SettingsRow {
-                VStack(alignment: .leading, spacing: 4) {
-                    Toggle(L10n.string("live.toggle", fallback: "Live preview (Experimental)"), isOn: Binding(
-                        get: { model.livePreviewEnabled },
-                        set: { model.requestLivePreviewEnabled($0, from: .settings(LamitypeSettingsWindowController.shared.reminderParentWindow)) }
-                    ))
-                        .disabled(!model.livePreviewCanChange)
-                        .accessibilityIdentifier("local-live-preview-toggle")
-                    Text(L10n.string("live.settings.detail", fallback: "See draft text while you speak. Stops after 60 seconds; final text may change. Always shows the preview and countdown. Turn off for Standard dictation: text appears after recording stops."))
-                        .font(.caption).foregroundStyle(.secondary).fixedSize(horizontal: false, vertical: true)
-                    if model.liveBusy {
-                        Text(L10n.string("live.settings.busy", fallback: "Finish or cancel live dictation before changing these settings."))
-                            .font(.caption).foregroundStyle(.secondary)
-                    } else if model.engine == .local, !model.livePreviewCanChange {
-                        Text(L10n.string("live.cap_reminder.busy", fallback: "Finish the current action before changing live preview."))
-                            .font(.caption).foregroundStyle(.secondary)
-                    }
-                }
-            }
-
-            SettingsRow(L10n.string("settings.engine.openai_model", fallback: "OpenAI model:")) {
-                Picker("", selection: $model.openAIModel) {
-                    Text(L10n.string(
-                        "settings.model.recommended",
-                        fallback: "gpt-4o-mini-transcribe (recommended)"
-                    )).tag("gpt-4o-mini-transcribe")
-                    Text(L10n.string(
-                        "settings.model.gpt_transcribe",
-                        fallback: "gpt-transcribe"
-                    )).tag("gpt-transcribe")
-                }
-                .labelsHidden()
-                .disabled(model.engine != .openai)
-            }
-
-            SettingsRow(L10n.string("settings.engine.gemini_model", fallback: "Gemini model:")) {
-                Picker("", selection: $model.geminiModel) {
-                    Text(L10n.string(
-                        "settings.model.quality",
-                        fallback: "gemini-3.7-flash (quality)"
-                    )).tag("gemini-3.7-flash")
-                    Text(L10n.string(
-                        "settings.model.budget",
-                        fallback: "gemini-3.5-flash-lite (budget)"
-                    )).tag("gemini-3.5-flash-lite")
-                }
-                .labelsHidden()
-                .disabled(model.engine != .gemini)
-            }
-            .padding(.bottom, 8)
-
-            SettingsRow {
-                Text(L10n.string(
-                    "settings.engine.cloud_unloads_local",
-                    fallback: "Cloud dictation sends audio directly to the selected provider using your key. The local speech model stays unloaded."
-                ))
-                .font(.caption)
-                .foregroundStyle(.secondary)
-                .fixedSize(horizontal: false, vertical: true)
-            }
-
-            SettingsDivider()
-
-            SettingsRow(L10n.string(
-                "menu.speech_to_text_language",
-                fallback: "Speech-to-Text Language:"
-            )) {
-                Picker("", selection: $model.speechLanguage) {
-                    Text(L10n.string("menu.choice.auto", fallback: "Auto"))
-                        .tag(nil as String?)
-                    Text(L10n.string("picker.autonym.en", fallback: "English"))
-                        .tag("english" as String?)
-                    Text(L10n.string("picker.autonym.zh", fallback: "中文"))
-                        .tag("chinese" as String?)
-                    Text(L10n.string("picker.autonym.ja", fallback: "日本語"))
-                        .tag("japanese" as String?)
-                }
-                .labelsHidden()
-            }
-
-            SettingsRow(L10n.string(
-                "menu.number_conversion",
-                fallback: "Number Conversion:"
-            )) {
-                VStack(alignment: .leading, spacing: 4) {
-                    Toggle(L10n.string(
-                        "menu.number_conversion.subtitle",
-                        fallback: "Spoken numbers → digits"
-                    ), isOn: $model.numberConversionEnabled)
-                    Text(L10n.string(
-                        "settings.dictation.number_conversion.note",
-                        fallback: "Chinese and English. Japanese and Korean text is left as spoken."
-                    ))
-                    .font(.caption)
-                    .foregroundStyle(.secondary)
-                    .fixedSize(horizontal: false, vertical: true)
-                }
-            }
-
-            SettingsRow(L10n.string(
-                "menu.punctuation_cleanup",
-                fallback: "Punctuation Cleanup:"
-            )) {
-                VStack(alignment: .leading, spacing: 4) {
-                    Picker("", selection: $model.punctuationMode) {
-                        Text(L10n.string(
-                            "menu.punctuation.soft",
-                            fallback: "Soft: trim inline commas"
-                        )).tag(PunctuationMode.soft)
-                        Text(L10n.string(
-                            "menu.punctuation.hard",
-                            fallback: "Hard: trim all marks"
-                        )).tag(PunctuationMode.hard)
-                        Text(L10n.string(
-                            "menu.punctuation.off",
-                            fallback: "Off: keep model output"
-                        )).tag(PunctuationMode.off)
+                        .tag(AppConfig.DictationEngine.gemini)
                     }
                     .labelsHidden()
-                    Text(L10n.string(
-                        "settings.dictation.punctuation.note",
-                        fallback: "Trims the over-eager Chinese punctuation the model inserts on pauses. Chinese text only."
-                    ))
-                    .font(.caption)
-                    .foregroundStyle(.secondary)
-                    .fixedSize(horizontal: false, vertical: true)
+                    .pickerStyle(.radioGroup)
+                    .horizontalRadioGroupLayout()
+                    .modifier(SettingsActiveTint())
+                }
+                .frame(maxWidth: .infinity, alignment: .leading)
+            } header: {
+                HStack(spacing: 8) {
+                    Text(L10n.string("settings.dictation.engine_label", fallback: "Engine"))
+                    Spacer()
+                    SettingsInfoButton(
+                        title: L10n.string("settings.engine.local.memory", fallback: "Local memory"),
+                        detail: L10n.string("settings.engine.local.memory.detail", fallback: "Uses about 2.1 GB of memory, including a 1 GB cache cap.")
+                    )
                 }
             }
 
-            SettingsDivider()
+            switch model.engine {
+            case .local:
+                Section(L10n.string("settings.dictation.local_model", fallback: "Local model")) {
+                    LocalModelPicker(switcher: LocalModelSwitcher.shared)
+                    livePreview
+                }
+            case .openai:
+                cloudModelSection("OpenAI", selection: $model.openAIModel) {
+                    Text(L10n.string("settings.model.recommended", fallback: "gpt-4o-mini-transcribe (recommended)"))
+                        .tag("gpt-4o-mini-transcribe")
+                    Text(L10n.string("settings.model.gpt_transcribe", fallback: "gpt-transcribe"))
+                        .tag("gpt-transcribe")
+                }
+            case .gemini:
+                cloudModelSection("Gemini", selection: $model.geminiModel) {
+                    Text(L10n.string("settings.model.quality", fallback: "gemini-3.7-flash (quality)"))
+                        .tag("gemini-3.7-flash")
+                    Text(L10n.string("settings.model.budget", fallback: "gemini-3.5-flash-lite (budget)"))
+                        .tag("gemini-3.5-flash-lite")
+                }
+            }
 
-            SettingsRow(L10n.string(
-                "settings.dictation.dictionary",
-                fallback: "Customized Dictionary:"
-            )) {
-                VStack(alignment: .leading, spacing: 5) {
-                    Text(AppConfig.dictionaryFileURL.path)
-                        .font(.system(size: 11, design: .monospaced))
-                        .foregroundStyle(.secondary)
-                        .textSelection(.enabled)
-                    Button(L10n.string(
-                        "common.button.open_in_textedit",
-                        fallback: "Open file in TextEdit"
-                    )) {
-                        model.openDictionary()
+            Section(L10n.string("settings.dictation.output", fallback: "Output")) {
+                SettingRow(L10n.string("settings.dictation.spoken_language", fallback: "Spoken language")) {
+                    Picker(L10n.string("settings.dictation.spoken_language", fallback: "Spoken language"),
+                           selection: $model.speechLanguage) {
+                        Text(L10n.string("menu.choice.auto", fallback: "Auto")).tag(nil as String?)
+                        Text(L10n.string("picker.autonym.en", fallback: "English")).tag("english" as String?)
+                        Text(L10n.string("picker.autonym.zh", fallback: "中文")).tag("chinese" as String?)
+                        Text(L10n.string("picker.autonym.ja", fallback: "日本語")).tag("japanese" as String?)
                     }
-                    .buttonStyle(.bordered)
-                    Text(model.dictionaryStatus)
-                        .font(.caption)
-                        .foregroundStyle(.secondary)
-                    Text(L10n.string(
-                        "settings.dictation.dictionary.note",
-                        fallback: "One replacement per line. Applied after transcription, on every dictation engine including cloud."
-                    ))
-                    .font(.caption)
-                    .foregroundStyle(.secondary)
-                    .fixedSize(horizontal: false, vertical: true)
+                    .settingsPopup()
+                }
+
+                VStack(alignment: .leading, spacing: 6) {
+                    Toggle(isOn: $model.numberConversionEnabled) {
+                        SettingLabel(
+                            title: L10n.string("settings.dictation.number_conversion", fallback: "Convert numbers to digits"),
+                            description: L10n.string("settings.dictation.number_conversion.note", fallback: "Chinese and English only.")
+                        )
+                    }
+                    .toggleStyle(.switch)
+                    .modifier(SettingsActiveTint())
+
+                    if model.numberConversionEnabled {
+                        SampleRow(before: "今天三十二度", after: "今天32度")
+                    }
+                }
+
+                VStack(alignment: .leading, spacing: 6) {
+                    SettingRow(
+                        L10n.string("settings.dictation.punctuation", fallback: "Punctuation cleanup"),
+                        description: L10n.string("settings.dictation.punctuation.note", fallback: "Chinese text only.")
+                    ) {
+                        Picker(L10n.string("settings.dictation.punctuation", fallback: "Punctuation cleanup"),
+                               selection: $model.punctuationMode) {
+                            Text(L10n.string("menu.punctuation.soft", fallback: "Soft: trim inline commas")).tag(PunctuationMode.soft)
+                            Text(L10n.string("menu.punctuation.hard", fallback: "Hard: trim all marks")).tag(PunctuationMode.hard)
+                            Text(L10n.string("menu.punctuation.off", fallback: "Off: keep model output")).tag(PunctuationMode.off)
+                        }
+                        .settingsPopup()
+                    }
+
+                    switch model.punctuationMode {
+                    case .soft:
+                        SampleRow(before: "你好，世界。真的嗎？對！", after: "你好世界。真的嗎？對！")
+                    case .hard:
+                        SampleRow(before: "你好，世界。再見！", after: "你好世界 再見")
+                    case .off:
+                        EmptyView()
+                    }
+                }
+
+                FileSettingRow(title: L10n.string("settings.dictation.dictionary", fallback: "Custom dictionary"),
+                               url: AppConfig.dictionaryFileURL) {
+                    SettingsNote(model.dictionaryStatus)
+                } open: {
+                    model.openDictionary()
                 }
             }
         }
-        .settingsPaneLayout()
         .disabled(model.liveBusy)
         .onReceive(NotificationCenter.default.publisher(for: .localLiveActivityChanged)) { _ in model.refreshLivePreview() }
         .onReceive(NotificationCenter.default.publisher(for: .localLivePreviewControlsChanged)) { _ in model.refreshLivePreview() }
@@ -383,17 +291,56 @@ struct DictationPane: View {
         }
     }
 
-    private func engineChoice(title: String, detail: String) -> some View {
-        VStack(alignment: .leading, spacing: 2) {
-            Text(title)
-            Text(detail)
-                .font(.caption)
-                .foregroundStyle(.secondary)
+    private var livePreview: some View {
+        Toggle(isOn: Binding(
+            get: { model.livePreviewEnabled },
+            set: {
+                model.requestLivePreviewEnabled($0, from: .settings(LamitypeSettingsWindowController.shared.reminderParentWindow))
+            }
+        )) {
+            SettingLabel(
+                title: L10n.string("settings.dictation.preview", fallback: "Live preview"),
+                description: livePreviewDescription,
+                badge: L10n.string("settings.dictation.experimental", fallback: "Experimental")
+            )
+        }
+        .toggleStyle(.switch)
+        .modifier(SettingsActiveTint())
+        .disabled(!model.livePreviewCanChange)
+        .accessibilityIdentifier("local-live-preview-toggle")
+    }
+
+    private var livePreviewDescription: String {
+        if model.liveBusy {
+            return L10n.string("live.settings.busy", fallback: "Finish or cancel live dictation before changing these settings.")
+        }
+        if !model.livePreviewCanChange {
+            return L10n.string("live.cap_reminder.busy", fallback: "Finish the current action before changing live preview.")
+        }
+        return L10n.string("live.settings.detail", fallback: "Shows draft text while you speak. Stops after 60 seconds.")
+    }
+
+    private func cloudModelSection<Choices: View>(
+        _ provider: String, selection: Binding<String>, @ViewBuilder choices: () -> Choices
+    ) -> some View {
+        Section {
+            SettingRow(L10n.string("settings.dictation.model", fallback: "Model")) {
+                Picker(L10n.string("settings.dictation.model", fallback: "Model"), selection: selection, content: choices)
+                    .settingsPopup()
+            }
+        } header: {
+            Text(provider)
+        } footer: {
+            SettingsNote(L10n.format(
+                "settings.engine.cloud_unloads_local",
+                "Audio goes directly to %1$@ with your key. The local model stays unloaded.",
+                arguments: [provider]
+            ))
         }
     }
 
-    private func rateText(_ rate: Double) -> String {
-        L10n.format("format.usd_rate_per_minute", "$%1$.3f/min", arguments: [rate])
+    private func cloudRate(_ rate: Double) -> String {
+        let formattedRate = L10n.format("format.usd_rate_per_minute", "$%1$.3f/min", arguments: [rate])
+        return L10n.format("settings.engine.cloud.detail", "%1$@ · Your own key", arguments: [formattedRate])
     }
-
 }

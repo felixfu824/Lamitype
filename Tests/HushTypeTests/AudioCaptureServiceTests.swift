@@ -1,4 +1,5 @@
 import AVFoundation
+import CoreAudio
 import XCTest
 @testable import HushType
 
@@ -10,6 +11,7 @@ import XCTest
 private final class FakeCaptureDriver: CaptureDriver {
     var format: AVAudioFormat
     var startError: Error?
+    var runningOnOriginalInput = false
     var fireConfigurationChangeDuringStart = false
 
     private(set) var startCount = 0
@@ -29,7 +31,15 @@ private final class FakeCaptureDriver: CaptureDriver {
         self.format = format
     }
 
-    var inputFormat: AVAudioFormat { format }
+    private(set) var formatReads = 0
+    var inputFormat: AVAudioFormat {
+        formatReads += 1
+        return format
+    }
+
+    func stillRunningOnOriginalInput(format: AVAudioFormat) -> Bool {
+        runningOnOriginalInput && self.format == format
+    }
 
     func start(
         onBuffer: @escaping (AVAudioPCMBuffer) -> Void,
@@ -127,8 +137,35 @@ final class AudioCaptureServiceTests: XCTestCase {
         return service
     }
 
-    private func makeBuffer(frames: AVAudioFrameCount, value: Float = 0) -> AVAudioPCMBuffer {
-        let buffer = AVAudioPCMBuffer(pcmFormat: nativeFormat, frameCapacity: max(frames, 1))!
+    func testFormatWarmupLeavesInputStoppedAndPressUsesCurrentRoute() throws {
+        let service = makeService()
+        factory.format = makeUnusableFormat()
+        service.warmRecordingFormat()
+        let warm = factory.last
+        XCTAssertEqual(warm.formatReads, 1)
+        XCTAssertEqual(warm.startCount, 0)
+        XCTAssertNil(warm.savedOnBuffer)
+
+        factory.format = nativeFormat
+        try service.startRecording()
+        let active = factory.last
+        XCTAssertFalse(active === warm)
+        XCTAssertEqual(active.startCount, 1)
+        active.savedOnBuffer?(makeBuffer(frames: 320, value: 0.25))
+        XCTAssertEqual(try service.stopRecording(), Array(repeating: Float(0.25), count: 320))
+    }
+
+    func testFormatWarmupDuringCaptureDoesNotOpenAnotherDriver() throws {
+        let service = makeService()
+        try service.startRecording()
+        service.warmRecordingFormat()
+        XCTAssertEqual(factory.drivers.count, 1)
+        XCTAssertEqual(factory.last.stopCount, 0)
+        _ = try service.stopRecording()
+    }
+
+    private func makeBuffer(frames: AVAudioFrameCount, value: Float = 0, format: AVAudioFormat? = nil) -> AVAudioPCMBuffer {
+        let buffer = AVAudioPCMBuffer(pcmFormat: format ?? nativeFormat, frameCapacity: max(frames, 1))!
         buffer.frameLength = frames
         if frames > 0, let channel = buffer.floatChannelData?[0] {
             for index in 0..<Int(frames) { channel[index] = value }
@@ -173,11 +210,66 @@ final class AudioCaptureServiceTests: XCTestCase {
              (.invalidInput, .invalidInput),
              (.startFailed, .startFailed),
              (.noInputBuffer, .noInputBuffer),
+             (.silentInput, .silentInput),
              (.configurationChanged, .configurationChanged):
             break
         default:
             XCTFail("expected \(expected), got \(actual)", file: file, line: line)
         }
+    }
+
+    // MARK: - Standard dictation duration cap
+
+    func testStandardDictationCapFinishesAtTenMinutesWithoutAnotherBuffer() throws {
+        var uptime: TimeInterval = 42
+        var checks: [(TimeInterval, DispatchWorkItem)] = []
+        let service = AudioCaptureService(makeDriver: factory.make, now: { uptime },
+                                          scheduleDurationCheck: { checks.append(($0, $1)) })
+        var finishedSamples: [Float]?
+        try service.startRecording(limitSeconds: AudioCaptureService.standardDictationLimitSeconds,
+                                   onDurationLimit: {
+            finishedSamples = try? service.finishRecording(reason: .durationCap).samples
+        })
+        factory.last.savedOnBuffer?(makeBuffer(frames: 5000, value: 0.25))
+
+        XCTAssertEqual(checks.first?.0, 600)
+        uptime = 641
+        checks.removeFirst().1.perform()
+        XCTAssertNil(finishedSamples)
+        XCTAssertEqual(factory.last.stopCount, 0)
+        XCTAssertEqual(checks.first?.0, 1)
+
+        uptime = 642
+        checks.removeFirst().1.perform()
+        XCTAssertEqual(finishedSamples, Array(repeating: 0.25, count: 5000))
+        XCTAssertEqual(factory.last.stopCount, 1)
+        XCTAssertTrue(checks.isEmpty)
+    }
+
+    func testReleaseBeforeCapPreservesAudioAndRetiresDeadline() throws {
+        var uptime: TimeInterval = 42
+        var checks: [DispatchWorkItem] = []
+        let service = AudioCaptureService(makeDriver: factory.make, now: { uptime },
+                                          scheduleDurationCheck: { _, check in checks.append(check) })
+        var capCount = 0
+        try service.startRecording(limitSeconds: AudioCaptureService.standardDictationLimitSeconds,
+                                   onDurationLimit: { capCount += 1 })
+        factory.last.savedOnBuffer?(makeBuffer(frames: 5000, value: 0.5))
+
+        let releaseUptime: TimeInterval = 641
+        uptime = 642
+        XCTAssertFalse(service.recordingDurationElapsed(at: releaseUptime))
+        XCTAssertTrue(service.recordingDurationElapsed(at: uptime))
+        XCTAssertEqual(try service.stopRecording(), Array(repeating: 0.5, count: 5000))
+        XCTAssertEqual(factory.last.stopCount, 1)
+        let oldCheck = checks.removeFirst()
+        XCTAssertTrue(oldCheck.isCancelled)
+        try service.startRecording(limitSeconds: AudioCaptureService.standardDictationLimitSeconds,
+                                   onDurationLimit: { capCount += 1 })
+        oldCheck.perform()
+        XCTAssertEqual(capCount, 0)
+        XCTAssertEqual(factory.last.stopCount, 0)
+        service.cancelRecording(reason: .userDiscarded)
     }
 
     // MARK: 1. Fresh driver per capture
@@ -328,56 +420,210 @@ final class AudioCaptureServiceTests: XCTestCase {
 
     // MARK: 5. Configuration change
 
-    func testConfigurationChangeDiscardsTheUtteranceAndStopRecordingThrows() throws {
+    func testOutputConfigurationChangeRebuildsTapAndPreservesTheUtterance() throws {
         let service = makeService()
         try service.startRecording()
-        factory.last.savedOnBuffer?(makeBuffer(frames: 8000, value: 0.5))
+        let old = factory.last
+        let oldDeadline = try XCTUnwrap(service.scheduledFirstBufferDeadline())
+        old.savedOnBuffer?(makeBuffer(frames: 800, value: 0.25))
 
-        factory.last.savedOnConfigurationChange?()
-        // Repeat events are latched once.
-        factory.last.savedOnConfigurationChange?()
+        old.savedOnConfigurationChange?()
+        old.savedOnConfigurationChange?()
+        flushMainQueue()
 
-        XCTAssertThrowsError(try service.stopRecording()) { error in
-            assertCaptureError(error, is: .configurationChanged)
-        }
+        XCTAssertEqual(factory.drivers.count, 2)
+        XCTAssertEqual(old.stopRanOnMainThread, [true])
+        XCTAssertTrue(oldDeadline.isCancelled)
+        oldDeadline.perform()
+        old.savedOnBuffer?(makeBuffer(frames: 500, value: 0.9))
+        old.savedOnConfigurationChange?()
+        let replacement = factory.last
+        replacement.savedOnBuffer?(makeBuffer(frames: 320, value: 0.5))
         service.checkFirstBufferDeadline()
         flushMainQueue()
 
-        XCTAssertEqual(errors.count, 1)
-        assertCaptureError(errors[0], is: .configurationChanged)
-        XCTAssertEqual(factory.last.stopCount, 1)
-
-        // Nothing survives for insertion: a later stop yields no audio.
-        XCTAssertEqual(try service.stopRecording(), [])
+        let result = try service.finishRecording()
+        XCTAssertFalse(result.interrupted)
+        XCTAssertEqual(result.samples, Array(repeating: 0.25, count: 800) + Array(repeating: 0.5, count: 320))
+        XCTAssertEqual(replacement.stopCount, 1)
+        XCTAssertTrue(errors.isEmpty)
     }
 
-    // MARK: 6. Notification thread
-
-    func testConfigurationChangeOnBackgroundQueueStillThrowsFromStopOnMain() throws {
+    func testProfileSwitchRebuildsConverterForTheNewRate() throws {
         let service = makeService()
         try service.startRecording()
-        factory.last.savedOnBuffer?(makeBuffer(frames: 1600, value: 0.1))
+        let old = factory.last
+        old.savedOnBuffer?(makeBuffer(frames: 800, value: 0.25))
+        let newFormat = try XCTUnwrap(AVAudioFormat(
+            commonFormat: .pcmFormatFloat32, sampleRate: 32000, channels: 1, interleaved: false
+        ))
+        factory.format = newFormat
+        old.savedOnConfigurationChange?()
+        flushMainQueue()
 
-        let driver = factory.last
-        let latched = DispatchSemaphore(value: 0)
-        DispatchQueue.global(qos: .userInitiated).async {
-            driver.savedOnConfigurationChange?()
-            latched.signal()
-        }
-        XCTAssertEqual(latched.wait(timeout: .now() + 5), .success)
+        factory.last.savedOnBuffer?(makeBuffer(frames: 1600, value: 0.75, format: newFormat))
+        service.checkFirstBufferDeadline()
+        let result = try service.finishRecording()
+        XCTAssertFalse(result.interrupted)
+        XCTAssertEqual(result.samples.count, 1600)
+        XCTAssertEqual(Array(result.samples.prefix(800)), Array(repeating: 0.25, count: 800))
+        XCTAssertEqual(try XCTUnwrap(result.samples.last), 0.75, accuracy: 0.01)
+        XCTAssertTrue(errors.isEmpty)
+    }
 
-        // Main has not yet drained the queued cleanup.
-        XCTAssertThrowsError(try service.stopRecording()) { error in
-            assertCaptureError(error, is: .configurationChanged)
+    func testDirectBluetoothInputRequiresTheVerifiedBuiltInOutputRoute() {
+        XCTAssertTrue(BluetoothInputDriver.supportsOutput(transport: kAudioDeviceTransportTypeBuiltIn))
+        for transport in [nil, kAudioDeviceTransportTypeBluetooth, kAudioDeviceTransportTypeBluetoothLE,
+                          kAudioDeviceTransportTypeAggregate, kAudioDeviceTransportTypeUSB] {
+            XCTAssertFalse(BluetoothInputDriver.supportsOutput(transport: transport))
         }
+    }
+
+    func testTapWhileReplacementHasNoSamplesRetiresBothDrivers() throws {
+        let service = makeService()
+        try service.startRecording()
+        factory.last.savedOnBuffer?(makeBuffer(frames: 1600, value: 0.25))
+        factory.last.savedOnConfigurationChange?()
+        flushMainQueue()
+        let recording = try service.finishRecording(isTap: true)
+        XCTAssertFalse(recording.interrupted)
+        XCTAssertTrue(errors.isEmpty)
+        XCTAssertEqual(factory.drivers.map(\.stopCount), [1, 1])
+        try service.startRecording()
+        _ = try service.finishRecording(isTap: true)
+    }
+
+    func testRunningStartupInputKeepsItsFirstSamplesAndStillRecoversOnLaterChanges() throws {
+        let service = makeService()
+        try service.startRecording()
+        let first = factory.last
+        first.runningOnOriginalInput = true
+        first.savedOnConfigurationChange?()
+        first.savedOnBuffer?(makeBuffer(frames: 320, value: 0.25))
+        flushMainQueue()
+        XCTAssertEqual(factory.drivers.count, 1)
+        service.checkFirstBufferDeadline()
+        first.savedOnConfigurationChange?()
+        flushMainQueue()
+        XCTAssertEqual(factory.drivers.count, 2)
+        factory.last.savedOnBuffer?(makeBuffer(frames: 320, value: 0.5))
+        let recording = try service.finishRecording()
+        XCTAssertFalse(recording.interrupted)
+        XCTAssertEqual(recording.samples, Array(repeating: 0.25, count: 320) + Array(repeating: 0.5, count: 320))
+        XCTAssertTrue(errors.isEmpty)
+    }
+
+    func testRunningButSilentStartupGraphStillReopensAtOriginalDeadline() throws {
+        let service = makeService()
+        try service.startRecording()
+        factory.last.runningOnOriginalInput = true
+        factory.last.savedOnConfigurationChange?()
+        flushMainQueue()
+        XCTAssertEqual(factory.drivers.count, 1)
+        service.checkFirstBufferDeadline()
+        XCTAssertEqual(factory.drivers.count, 2)
+        service.checkFirstBufferDeadline()
         XCTAssertEqual(errors.count, 1)
-        XCTAssertEqual(driver.stopCount, 1)
-        XCTAssertEqual(driver.stopRanOnMainThread, [true])
+        assertCaptureError(errors[0], is: .configurationChanged)
+    }
+
+    func testStartupNotificationQueuedAtDeadlineCannotLeaveCaptureWithoutAWatchdog() throws {
+        let service = makeService()
+        try service.startRecording()
+        factory.last.runningOnOriginalInput = true
+        factory.last.savedOnConfigurationChange?()
+        service.checkFirstBufferDeadline()
+        flushMainQueue()
+        XCTAssertEqual(factory.drivers.count, 2)
+        service.checkFirstBufferDeadline()
+        XCTAssertEqual(errors.count, 1)
+        assertCaptureError(errors[0], is: .configurationChanged)
+    }
+
+    func testReplacementRebuildsTapAfterFormatChangesDuringStart() throws {
+        let service = makeService()
+        try service.startRecording()
+        factory.last.savedOnBuffer?(makeBuffer(frames: 320, value: 0.25))
+        factory.nextStartError = NSError(domain: NSOSStatusErrorDomain, code: Int(kAudioUnitErr_FormatNotSupported))
+        factory.last.savedOnConfigurationChange?()
+        flushMainQueue()
+        XCTAssertEqual(factory.drivers.count, 3)
+        factory.last.savedOnBuffer?(makeBuffer(frames: 320, value: 0.5))
+        let recording = try service.finishRecording()
+        XCTAssertFalse(recording.interrupted)
+        XCTAssertEqual(recording.samples, Array(repeating: 0.25, count: 320) + Array(repeating: 0.5, count: 320))
+        XCTAssertTrue(errors.isEmpty)
+    }
+
+    func testSilentRecordingThresholdAndQuietSpeech() throws {
+        let service = makeService()
+        for level: Float in [0, 0.00001] {
+            try service.startRecording()
+            factory.last.savedOnBuffer?(makeBuffer(frames: 16_000, value: level))
+            XCTAssertThrowsError(try service.finishRecording()) { self.assertCaptureError($0, is: .silentInput) }
+        }
+        try service.startRecording()
+        factory.last.savedOnBuffer?(makeBuffer(frames: 15_999))
+        XCTAssertEqual(try service.stopRecording().count, 15_999)
+        try service.startRecording()
+        factory.last.savedOnBuffer?(makeBuffer(frames: 32_000))
+        factory.last.savedOnBuffer?(makeBuffer(frames: 320, value: -0.0001))
+        XCTAssertEqual(try service.stopRecording().count, 32_320)
+    }
+
+    func testReleaseBeforeQueuedRecoveryReturnsTheRecordedSamples() throws {
+        let service = makeService()
+        try service.startRecording()
+        let old = factory.last
+        old.savedOnBuffer?(makeBuffer(frames: 1600, value: 0.125))
+
+        let notified = DispatchSemaphore(value: 0)
+        DispatchQueue.global(qos: .userInitiated).async {
+            old.savedOnConfigurationChange?()
+            notified.signal()
+        }
+        XCTAssertEqual(notified.wait(timeout: .now() + 5), .success)
+
+        let result = try service.finishRecording()
+        XCTAssertTrue(result.interrupted)
+        XCTAssertEqual(result.samples, Array(repeating: 0.125, count: 1600))
+        XCTAssertEqual(errors.count, 1)
+        assertCaptureError(errors[0], is: .configurationChanged)
+        XCTAssertEqual(old.stopRanOnMainThread, [true])
 
         flushMainQueue()
+        XCTAssertEqual(factory.drivers.count, 1)
         XCTAssertEqual(errors.count, 1)
-        XCTAssertEqual(driver.stopCount, 1)
-        XCTAssertEqual(driver.stopRanOnMainThread, [true])
+    }
+
+    func testReplacementWithNoUsableSamplesFailsButKeepsPriorAudio() throws {
+        let service = makeService()
+        try service.startRecording()
+        factory.last.savedOnBuffer?(makeBuffer(frames: 1600, value: 0.5))
+        factory.last.savedOnConfigurationChange?()
+        flushMainQueue()
+
+        service.checkFirstBufferDeadline()
+        XCTAssertTrue(service.hasInterruptedRecording)
+        XCTAssertEqual(errors.count, 1)
+        assertCaptureError(errors[0], is: .configurationChanged)
+        XCTAssertEqual(factory.drivers.map(\.stopCount), [1, 1])
+        XCTAssertEqual(try service.stopRecording(), Array(repeating: 0.5, count: 1600))
+    }
+
+    func testRepeatedNotificationBeforeRecoveryDoesNotLoop() throws {
+        let service = makeService()
+        try service.startContinuousCapture()
+        factory.fireConfigurationChangeDuringNextStart = true
+        factory.last.savedOnConfigurationChange?()
+        flushMainQueue()
+        flushMainQueue()
+
+        XCTAssertEqual(factory.drivers.count, 2)
+        XCTAssertEqual(factory.drivers.map(\.stopCount), [1, 1])
+        XCTAssertEqual(errors.count, 1)
+        assertCaptureError(errors[0], is: .configurationChanged)
+        service.stopContinuousCapture()
     }
 
     // MARK: 7. Stopped captures are inert
@@ -391,7 +637,7 @@ final class AudioCaptureServiceTests: XCTestCase {
         let cancelled = makeService()
         try cancelled.startRecording()
         factory.last.savedOnBuffer?(makeBuffer(frames: 480, value: 0.3))
-        cancelled.cancelRecording()
+        cancelled.cancelRecording(reason: .shortcutChord)
         cancelled.checkFirstBufferDeadline()
 
         flushMainQueue()
@@ -422,22 +668,18 @@ final class AudioCaptureServiceTests: XCTestCase {
         XCTAssertEqual(stale.stopCount, 1)
     }
 
-    // MARK: 8. Configuration failure during start
+    // MARK: 8. Configuration change during start
 
-    func testConfigurationFailureDuringDriverStartThrowsWithoutOnError() throws {
+    func testConfigurationChangeDuringDriverStartRecoversWithoutOnError() throws {
         let service = makeService()
         factory.fireConfigurationChangeDuringNextStart = true
-
-        XCTAssertThrowsError(try service.startRecording()) { error in
-            assertCaptureError(error, is: .configurationChanged)
-        }
-        XCTAssertEqual(factory.drivers[0].stopCount, 1)
-        flushMainQueue()
-        XCTAssertTrue(errors.isEmpty)
-
         try service.startRecording()
+        flushMainQueue()
+
         XCTAssertEqual(factory.drivers.count, 2)
-        _ = try service.stopRecording()
+        XCTAssertEqual(factory.drivers[0].stopCount, 1)
+        factory.last.savedOnBuffer?(makeBuffer(frames: 500, value: 0.5))
+        XCTAssertEqual(try service.stopRecording().count, 500)
         XCTAssertTrue(errors.isEmpty)
     }
 
@@ -518,7 +760,7 @@ final class AudioCaptureServiceTests: XCTestCase {
         driver.savedOnBuffer?(makeBuffer(frames: 1600, value: 0.2))
         driver.duringStop = { late in late.savedOnConfigurationChange?() }
 
-        service.cancelRecording()
+        service.cancelRecording(reason: .shortcutChord)
         flushMainQueue()
 
         XCTAssertTrue(errors.isEmpty)
@@ -528,7 +770,7 @@ final class AudioCaptureServiceTests: XCTestCase {
 
     // MARK: F2. Failure delivered before stop is still the stop result
 
-    func testFailureDeliveredBeforeStopIsStillThrownAndAcknowledgedOnce() throws {
+    func testFailedRestartIsDeliveredOnceAndReleaseReturnsPriorAudio() throws {
         var received: [Error] = []
         let service = AudioCaptureService(makeDriver: { [factory] in factory!.make() })
         // Records only: it neither cancels nor stops, so the service alone has
@@ -538,23 +780,19 @@ final class AudioCaptureServiceTests: XCTestCase {
         try service.startRecording()
         let driver = factory.last
         driver.savedOnBuffer?(makeBuffer(frames: 8000, value: 0.3))
+        factory.nextStartError = FakeDriverError.hardwareRefused
         driver.savedOnConfigurationChange?()
         flushMainQueue()
 
         XCTAssertEqual(received.count, 1)
         XCTAssertEqual(driver.stopCount, 1)
 
-        XCTAssertThrowsError(try service.stopRecording()) { error in
-            assertCaptureError(error, is: .configurationChanged)
-        }
+        XCTAssertEqual(try service.stopRecording(), Array(repeating: 0.3, count: 8000))
         XCTAssertEqual(received.count, 1)
         XCTAssertEqual(driver.stopCount, 1)
-
-        // That throw acknowledged it: a further stop is a no-op and the next
-        // capture starts cleanly.
         XCTAssertEqual(try service.stopRecording(), [])
         try service.startRecording()
-        XCTAssertEqual(factory.drivers.count, 2)
+        XCTAssertEqual(factory.drivers.count, 3)
         _ = try service.stopRecording()
         XCTAssertEqual(received.count, 1)
     }
@@ -563,6 +801,7 @@ final class AudioCaptureServiceTests: XCTestCase {
         let service = AudioCaptureService(makeDriver: { [factory] in factory!.make() })
         // onError is deliberately never assigned.
         try service.startRecording()
+        factory.nextStartError = FakeDriverError.hardwareRefused
         factory.last.savedOnConfigurationChange?()
         flushMainQueue()
 
@@ -573,7 +812,7 @@ final class AudioCaptureServiceTests: XCTestCase {
         XCTAssertEqual(try service.stopRecording(), [])
 
         try service.startRecording()
-        XCTAssertEqual(factory.drivers.count, 2)
+        XCTAssertEqual(factory.drivers.count, 3)
         _ = try service.stopRecording()
     }
 
@@ -584,12 +823,13 @@ final class AudioCaptureServiceTests: XCTestCase {
         box.service = service
         service.onError = { error in
             received.append(error)
-            box.service?.cancelRecording()
+            box.service?.cancelRecording(reason: .shortcutChord)
         }
 
         try service.startRecording()
         let driver = factory.last
         driver.savedOnBuffer?(makeBuffer(frames: 4000, value: 0.5))
+        factory.nextStartError = FakeDriverError.hardwareRefused
         driver.savedOnConfigurationChange?()
         flushMainQueue()
 
@@ -600,7 +840,7 @@ final class AudioCaptureServiceTests: XCTestCase {
         // next start is not rejected as busy.
         XCTAssertEqual(try service.stopRecording(), [])
         try service.startRecording()
-        XCTAssertEqual(factory.drivers.count, 2)
+        XCTAssertEqual(factory.drivers.count, 3)
         _ = try service.stopRecording()
         XCTAssertEqual(received.count, 1)
     }

@@ -24,11 +24,11 @@ final class DefaultLiveHoldGate {
              DispatchQueue.main.asyncAfter(deadline: .now() + $0, execute: $1)
          }) { self.now = now; self.schedule = schedule }
 
-    func press(onHold: @escaping @MainActor (TimeInterval) -> Void) {
+    func press(began: TimeInterval? = nil, onHold: @escaping @MainActor (TimeInterval) -> Void) {
         cancel()
-        let ticket = Pending(began: now(), onHold: onHold)
+        let ticket = Pending(began: began ?? now(), onHold: onHold)
         pending = ticket
-        enqueue(ticket, after: Self.threshold)
+        enqueue(ticket, after: max(0, Self.threshold - (now() - ticket.began)))
     }
     private func enqueue(_ ticket: Pending, after delay: TimeInterval) {
         let work = DispatchWorkItem { [weak self, weak ticket] in

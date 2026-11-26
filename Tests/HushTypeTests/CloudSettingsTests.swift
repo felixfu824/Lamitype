@@ -33,8 +33,8 @@ final class CloudSettingsTests: XCTestCase {
     func testResetCounterConfirmationIsLocalizedInTraditionalChinese() {
         withInterfaceLanguage(.traditionalChineseTaiwan) {
             XCTAssertEqual(
-                L10n.string("common.button.reset_counter", fallback: "Reset counter"),
-                "重設今日計數…"
+                L10n.string("settings.button.reset_confirm", fallback: "Reset…"),
+                "重設…"
             )
 
             let alert = CloudSettingsModel.makeResetCounterAlert()
