@@ -25,8 +25,13 @@ final class LocalASRIntegrationTests: XCTestCase {
             throw XCTSkip("The complete local Qwen3-ASR cache is unavailable; refusing to download it")
         }
 
-        guard try installMetallibBesideTestExecutable() else {
+        guard let metallib = try prepareMetallibBesideTestExecutable() else {
             throw XCTSkip("mlx.metallib is unavailable; build it locally before running the ASR integration test")
+        }
+        defer {
+            if metallib.installedHere {
+                try? FileManager.default.removeItem(at: metallib.destination)
+            }
         }
 
         let audio: [Float]
@@ -37,6 +42,18 @@ final class LocalASRIntegrationTests: XCTestCase {
         }
 
         XCTAssertGreaterThan(audio.count, 16_000, "The synthesized fixture should contain more than one second of audio")
+
+        // XCTest launches the engine without the app's launch preflight.
+        // Keep the fixture independent of the user's dictionary and settings files.
+        let support = FileManager.default.temporaryDirectory
+            .appendingPathComponent("lamitype-local-asr-\(UUID().uuidString)", isDirectory: true)
+        try FileManager.default.createDirectory(at: support, withIntermediateDirectories: true)
+        AppSupportPaths.resetForTesting()
+        AppSupportPaths.configure(root: support)
+        defer {
+            AppSupportPaths.resetForTesting()
+            try? FileManager.default.removeItem(at: support)
+        }
 
         // Preserve both an absent preference and a custom model preference.
         let modelPreferenceKey = "hushtype.modelId"
@@ -149,14 +166,14 @@ final class LocalASRIntegrationTests: XCTestCase {
     /// MLX resolves its shaders beside the running executable. App builds put
     /// the compiled library there during `make install`, but raw `swift test`
     /// does not. Reuse a locally built copy so the test remains offline.
-    private func installMetallibBesideTestExecutable() throws -> Bool {
+    private func prepareMetallibBesideTestExecutable() throws -> (destination: URL, installedHere: Bool)? {
         let fileManager = FileManager.default
         guard let executableDirectory = Bundle(for: Self.self).executableURL?.deletingLastPathComponent() else {
-            return false
+            return nil
         }
 
         let destination = executableDirectory.appendingPathComponent("mlx.metallib")
-        if fileManager.fileExists(atPath: destination.path) { return true }
+        if fileManager.fileExists(atPath: destination.path) { return (destination, false) }
 
         let repositoryRoot = URL(fileURLWithPath: fileManager.currentDirectoryPath, isDirectory: true)
         let candidates = [
@@ -166,10 +183,10 @@ final class LocalASRIntegrationTests: XCTestCase {
         ]
 
         guard let source = candidates.first(where: { fileManager.fileExists(atPath: $0.path) }) else {
-            return false
+            return nil
         }
         try fileManager.copyItem(at: source, to: destination)
-        return true
+        return (destination, true)
     }
 
     // MARK: - Local audio fixture
