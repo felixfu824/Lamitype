@@ -6,12 +6,15 @@ import XCTest
 
 /// Opt-in: renders every Settings pane, in English and Traditional Chinese,
 /// in light and dark appearances to PNGs and checks the grouped forms for scrolling.
+/// The rendering window stays offscreen.
 ///
 ///     LAMITYPE_SNAPSHOT_DIR=<dir> /usr/bin/lockf -k /tmp/lamitype-swift.lock swift test --disable-sandbox -j 4 --filter SettingsPanesSnapshotTests
 @MainActor
 final class SettingsPanesSnapshotTests: XCTestCase {
     func testRenderAllPanes() throws {
-        guard let dir = ProcessInfo.processInfo.environment["LAMITYPE_SHORTCUT_SNAPSHOT_DIR"] ?? ProcessInfo.processInfo.environment["LAMITYPE_SNAPSHOT_DIR"] else {
+        let environment = ProcessInfo.processInfo.environment
+        let shortcutsDirectory = environment["LAMITYPE_SHORTCUT_SNAPSHOT_DIR"]
+        guard let dir = shortcutsDirectory ?? environment["LAMITYPE_SNAPSHOT_DIR"] else {
             throw XCTSkip("Set LAMITYPE_SNAPSHOT_DIR to render the Settings panes")
         }
         let out = URL(fileURLWithPath: dir, isDirectory: true)
@@ -41,7 +44,7 @@ final class SettingsPanesSnapshotTests: XCTestCase {
                     "hushtype.localModel", "hushtype.modelId", "hushtype.localLivePreviewEnabled"]
         let savedPreferences = keys.compactMap { key in defaults.object(forKey: key).map { (key, $0) } }
         let config = AppConfig.shared
-        config.dictationEngine = ProcessInfo.processInfo.environment["LAMITYPE_SNAPSHOT_ENGINE"]
+        config.dictationEngine = environment["LAMITYPE_SNAPSHOT_ENGINE"]
             .flatMap(AppConfig.DictationEngine.init(rawValue:)) ?? .local
         config.textPolishEnabled = true
         config.autoPolishDictationEnabled = false
@@ -69,7 +72,7 @@ final class SettingsPanesSnapshotTests: XCTestCase {
             AppConfig.shared.interfaceLanguageRaw = language
             L10n.resetLaunchStateForTests()
             for (appearance, tag) in [(NSAppearance.Name.aqua, "light"), (.darkAqua, "dark")] {
-                if ProcessInfo.processInfo.environment["LAMITYPE_SHORTCUT_SNAPSHOT_DIR"] != nil {
+                if shortcutsDirectory != nil {
                     try render(ShortcutsSectionPreview.previews, "\(language)_shortcuts_\(tag)", appearance, out)
                     continue
                 }
@@ -94,6 +97,7 @@ final class SettingsPanesSnapshotTests: XCTestCase {
         let window = NSWindow(contentRect: NSRect(origin: .zero, size: size), styleMask: .borderless, backing: .buffered, defer: false)
         window.appearance = NSAppearance(named: appearance)
         window.contentView = host
+        defer { window.contentView = nil }
         host.frame = NSRect(origin: .zero, size: size)
         host.layoutSubtreeIfNeeded()
         RunLoop.current.run(until: Date().addingTimeInterval(0.1))
@@ -102,7 +106,6 @@ final class SettingsPanesSnapshotTests: XCTestCase {
         host.cacheDisplay(in: host.bounds, to: rep)
         let png = try XCTUnwrap(rep.representation(using: .png, properties: [:]))
         try png.write(to: dir.appendingPathComponent("\(name).png"))
-        defer { window.contentView = nil }
         let scroll = try XCTUnwrap(formScrollView(in: host), "No grouped-form scroll view in \(name)")
         let document = try XCTUnwrap(scroll.documentView, "No grouped-form document view in \(name)")
         let content = document.frame.height

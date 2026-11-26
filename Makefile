@@ -5,6 +5,7 @@ DMG_NAME = $(APP_NAME)-v$(APP_VERSION).dmg
 EXECUTABLE_NAME = Lamitype
 ICON_NAME = Lamitype
 BUILD_DIR = .build/release
+SWIFT_BUILD_FLAGS ?=
 BUNDLE_DIR = $(APP_NAME).app
 SIGN_IDENTITY ?= -
 DEVELOPER_IDENTITY = Developer ID Application: Kuang Cheng Fu (8Z5RQYC6M5)
@@ -31,7 +32,7 @@ l10n-verify-dest:
 	bash scripts/check_localizations.sh --dest "$(BUNDLE_DIR)/Contents/Resources" --source-manifest "$(L10N_SOURCE_MANIFEST)"
 
 build:
-	swift build -c release --disable-sandbox
+	swift build -c release --disable-sandbox $(SWIFT_BUILD_FLAGS)
 	bash scripts/build_mlx_metallib.sh release
 	@echo "Build complete: $(BUILD_DIR)/$(PRODUCT_NAME)"
 
