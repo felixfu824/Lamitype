@@ -155,11 +155,7 @@ struct SystemAudioPermissionView: View {
         .padding(24)
         .frame(width: SystemAudioPermissionWindowController.panelWidth)
         .background(VisualEffectBlur(material: .hudWindow))
-        .clipShape(RoundedRectangle(cornerRadius: 16, style: .continuous))
-        .overlay(
-            RoundedRectangle(cornerRadius: 16, style: .continuous)
-                .stroke(Color.primary.opacity(0.08), lineWidth: 0.5)
-        )
+        .floatingSurface(cornerRadius: 16)
     }
 
     private var header: some View {

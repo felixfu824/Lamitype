@@ -68,10 +68,6 @@ struct TranslationCardView: View {
         .frame(width: 660)
         .fixedSize(horizontal: false, vertical: true)
         .background(.ultraThinMaterial)
-        .clipShape(RoundedRectangle(cornerRadius: 16, style: .continuous))
-        .overlay(
-            RoundedRectangle(cornerRadius: 16, style: .continuous)
-                .stroke(Color.primary.opacity(0.08), lineWidth: 0.5)
-        )
+        .floatingSurface(cornerRadius: 16)
     }
 }
