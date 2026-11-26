@@ -136,7 +136,7 @@ final class SystemAudioPermissionViewModel: ObservableObject {
     }
 }
 
-private struct SystemAudioPermissionView: View {
+struct SystemAudioPermissionView: View {
     @ObservedObject var model: SystemAudioPermissionViewModel
     let appIcon: NSImage
     let onOpenSettings: () -> Void

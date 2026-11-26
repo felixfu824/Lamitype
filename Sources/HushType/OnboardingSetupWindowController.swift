@@ -187,7 +187,7 @@ final class OnboardingSetupViewModel: ObservableObject {
     }
 }
 
-private struct OnboardingSetupView: View {
+struct OnboardingSetupView: View {
     @ObservedObject var model: OnboardingSetupViewModel
     let appIcon: NSImage
     let onOpenAccessibilitySettings: () -> Void

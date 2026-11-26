@@ -110,7 +110,7 @@ final class PermissionSettingsGuidePanel {
     }
 }
 
-private struct PermissionSettingsGuideView: View {
+struct PermissionSettingsGuideView: View {
     let title: String
     let detail: String
     let appURL: URL
