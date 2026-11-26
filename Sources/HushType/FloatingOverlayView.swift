@@ -217,7 +217,6 @@ struct FloatingOverlayView: View {
             RoundedRectangle(cornerRadius: 16, style: .continuous)
                 .stroke(strokeColor, lineWidth: strokeWidth)
         )
-        .shadow(color: .black.opacity(0.18), radius: 12, x: 0, y: 4)
         .fixedSize()
     }
 
