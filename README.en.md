@@ -38,10 +38,6 @@
 
 ---
 
-## What's new in v0.5.19
-
-**Cleaner floating windows.** The dictation indicator, translation and polish cards, Live Caption and other floating windows no longer show square grey corners. Thanks to [@ohong](https://github.com/ohong) for spotting and fixing this (#34).
-
 ## What's new in v0.5.18
 
 **Set your own shortcuts.** In Settings → General → Shortcuts, record a key and pick a gesture for each action: Dictate, Translate selection, Polish selection and Live Caption. Right ⌥ stays the default. Existing users keep their keys.
