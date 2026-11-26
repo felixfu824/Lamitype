@@ -26,11 +26,9 @@
 
 /* Opens a plaintext configuration file in TextEdit. */
 
-"common.button.open_in_textedit" = "Open file in TextEdit";
 
 /* Opens confirmation before resetting today's local cloud-usage counter. */
 
-"common.button.reset_counter" = "Reset today's counter…";
 
 /* Cost-safety confirmation before clearing Lamitype's local usage estimate. */
 "alert.cloud.reset_counter.title" = "Reset today's usage counter?";
@@ -65,11 +63,9 @@
 
 /* Disabled informational row; it must not sound actionable or imply an automatic restart. */
 
-"menu.interface_language.applied_next_launch" = "Applied Next Launch";
 
 /* Accessibility description for the disabled next-launch row; not a restart button. */
 
-"menu.interface_language.applied_next_launch.accessibility" = "Language applies the next time you open Lamitype";
 
 /* Opens the unified seven-pane Lamitype Settings window. */
 
@@ -87,60 +83,48 @@
 
 "settings.tab.cloud" = "Cloud";
 
-"settings.tab.ios" = "iOS";
 
 "settings.tab.about" = "About";
 
 /* Phase 2 unified Settings pane copy. */
 
-"settings.dictation.engine_label" = "Engine:";
+"settings.dictation.engine_label" = "Engine";
 
-"settings.caption.cloud_sub" = "OpenAI realtime · ~$2/hour · these three settings apply to translated caption only";
 
-"settings.caption.note" = "Audio streams Mac → OpenAI directly; Lamitype is never in the middle. Spend counts against the daily cap on the Cloud tab.";
+"settings.caption.note" = "OpenAI realtime, about $2 per hour. Audio goes directly from this Mac to OpenAI and counts toward the daily cap.";
 
-"settings.cloud.cap" = "Daily spend cap:";
+"settings.cloud.cap" = "Daily spend cap";
 
-"settings.cloud.effect.dictation" = "Stops uploading at the cap. No further cloud requests that day.";
 
-"settings.cloud.effect.caption" = "Notifies at the cap. The running session is not interrupted.";
 
 /* Experimental iOS companion-server pane. */
 
-"settings.ios.title" = "iOS Server · Untested";
+"settings.ios.title" = "iOS Server (untested)";
 
-"settings.ios.subtitle" = "An experimental companion feature that has not been maintained or tested recently.";
 
-"settings.ios.status" = "Status:";
+"settings.ios.status" = "Server";
 
 "settings.ios.status.running" = "Running on port 8000";
 
 "settings.ios.status.stopped" = "Stopped";
 
-"settings.ios.start" = "Start iOS server (untested)";
+"settings.ios.start" = "Start";
 
-"settings.ios.stop" = "Stop iOS Server";
+"settings.ios.stop" = "Stop";
 
-"settings.ios.local_model_note" = "The iOS companion sends audio to this Mac for local transcription, so it still uses the local speech-to-text model even when Mac dictation is set to Cloud.";
 
-"settings.ios.port_note" = "The server listens on port 8000 and requires the companion setup and Python dependencies documented in the README.";
 
-"settings.ios.caption_conflict_note" = "Live Caption and the iOS Server cannot run at the same time because they share GPU memory.";
 
-"settings.cloud.key.openai" = "OpenAI key:";
 
-"settings.cloud.key.gemini" = "Gemini key:";
 
-"settings.cloud.key.note" = "Keys stay in local files and are used only for direct requests to each provider. An empty key disables that provider.";
+"settings.cloud.key.note" = "Keys stay in local files and go only to their provider.";
 
 
 /* Informational alert title after changing the next-launch interface language. */
 
-"alert.language_saved.title" = "Language Saved";
 
 /* Passive next-launch explanation; does not offer or imply programmatic quit/restart. */
 
-"alert.language_saved.message" = "It will be used the next time you open Lamitype. Finish any active work before quitting.";
 
 /* Initial status-menu state. */
 
@@ -288,7 +272,7 @@
 
 /* Disabled activation hint; preserve shortcut glyph. */
 
-"menu.translation_hint" = "Tap Right ⌥ to translate";
+"menu.translation_hint" = "Tap %1$@ to translate";
 
 /* Automatic target/detection choice in translation and speech-to-text language menus. */
 
@@ -408,11 +392,10 @@
 
 /* About product description; product names and language codes remain literal. */
 
-"about.body" = "Local voice-to-text for macOS and iOS.\nMultilingual (EN/ZH/JP) with Traditional Chinese output.";
+"about.body" = "Local voice-to-text for macOS. English, Chinese and Japanese, with Traditional Chinese output.";
 
 /* Starts the explicit-consent GitHub update check. */
 
-"about.check_updates" = "Check for Updates";
 
 /* Consent title shown every time before the app makes a GitHub API request. */
 
@@ -532,7 +515,7 @@
 
 /* Preserve approximate three-second cold-start semantics and shortcut glyph. */
 
-"alert.model_unloaded.local.message" = "The speech recognition model has been removed from memory.\n\nVoice input will require a cold start (~3 seconds) the next time you press Right ⌥.";
+"alert.model_unloaded.local.message" = "The speech recognition model has been removed from memory.\n\nVoice input will require a cold start (~3 seconds) the next time you press %1$@.";
 
 /* Cloud-upload gate title; this is Lamitype's local warning, not provider billing enforcement. */
 
@@ -630,23 +613,20 @@
 
 /* Local-engine privacy/cost/memory qualifier; preserve approximation and 2.1 GB. */
 
-"settings.engine.local.detail" = "Private · Free · ~2.1 GB RAM (1 GB cache cap)";
+"settings.engine.local.detail" = "On-device · Free";
 
 /* Argument 1 is a rate string with exact three-decimal USD precision. */
 
-"settings.engine.cloud.detail" = "%1$@ · No model RAM";
+"settings.engine.cloud.detail" = "%1$@ · Your own key";
 
 /* Argument 1 is configured rate. 'Free tier' and metered rate coexist in source; do not strengthen the free claim. */
 
-"settings.engine.gemini.detail" = "%1$@ · No model RAM";
 
 /* Model picker label. */
 
-"settings.engine.openai_model" = "OpenAI model:";
 
 /* Model picker label. */
 
-"settings.engine.gemini_model" = "Gemini model:";
 
 /* Model ID is immutable; only qualifier is localized. */
 
@@ -662,7 +642,7 @@
 
 /* Memory/engine behavior explanation. */
 
-"settings.engine.cloud_unloads_local" = "Cloud dictation sends audio directly to the selected provider using your key. The local speech model stays unloaded.";
+"settings.engine.cloud_unloads_local" = "Audio goes directly to %1$@ with your key. The local model stays unloaded.";
 
 
 
@@ -672,23 +652,20 @@
 
 /* Initial key-status placeholder. */
 
-"settings.key.status.placeholder" = "Status: Not loaded yet";
 
 /* Provider API-key load status. */
 
-"settings.key.status.loaded" = "Status: ✓ Key loaded";
+"settings.key.status.loaded" = "Key loaded";
 
 /* Empty OpenAI key state. */
 
-"settings.key.status.openai_empty" = "Status: Key empty; OpenAI cloud features disabled";
 
 /* Empty Gemini key state. */
 
-"settings.key.status.gemini_empty" = "Status: Key empty; Gemini cloud dictation disabled";
 
 /* Warns that an unusual key is not rejected locally. */
 
-"settings.key.status.unusual" = "Status: Key format unusual; passing through anyway";
+"settings.key.status.unusual" = "Unusual format, used as is";
 
 /* Cloud rate with exactly three decimals; do not use generic currency rounding. */
 
@@ -706,17 +683,17 @@
 
 /* Cloud translated-caption target-language label. */
 
-"settings.translated_caption.target" = "Target language:";
+"settings.translated_caption.target" = "Target language";
 
 /* Toggle for displaying source transcript above translated caption. */
 
-"settings.translated_caption.show_source" = "Show source text above translation";
+"settings.translated_caption.show_source" = "Show source text";
 
 
 
 /* Auto-stop duration control label. */
 
-"settings.cost_guardrails.auto_stop" = "Auto-stop session after:";
+"settings.cost_guardrails.auto_stop" = "Stop automatically after";
 
 
 
@@ -732,9 +709,9 @@
 
 "window.onboarding.title" = "Set Up Lamitype";
 
-/* Permission-purpose summary; Right Option is a key name, not the ⌥ glyph on this surface. */
+/* Permission-purpose summary; The chosen modifier is a key name, not the ⌥ glyph on this surface. */
 
-"onboarding.intro" = "Allow Lamitype to listen for Right Option and record your voice locally.";
+"onboarding.intro" = "Allow Lamitype to listen for %1$@ and record your voice locally.";
 
 /* Apple permission category name. */
 
@@ -742,7 +719,7 @@
 
 /* Explains why Accessibility is required. */
 
-"permission.accessibility.subtitle" = "Required for the Right Option hotkey.";
+"permission.accessibility.subtitle" = "Required for the %1$@ hotkey.";
 
 /* Permission row state after opening relevant settings. */
 
@@ -994,7 +971,7 @@
 
 "caption.live_translated" = "Live · Translated";
 
-/* Temporary gate message when Right Option dictation conflicts with caption capture. */
+/* Temporary gate message when Dictation conflicts with caption capture. */
 
 "caption.stop_to_dictate" = "Stop Live Caption to dictate";
 
@@ -1146,13 +1123,19 @@
 
 "error.audio_capture.no_input_buffer" = "No audio was received from the microphone. Check your audio input in System Settings and try again.";
 
+"error.audio_capture.silent_input" = "The microphone was silent. Check your input or mute switch and try again.";
+
 /* Lamitype-owned terminal error after the audio device configuration changed under an active capture. */
 
-"error.audio_capture.configuration_changed" = "The audio device changed. Start again to use the current microphone.";
+"error.audio_capture.configuration_changed" = "The audio configuration changed and the microphone stopped. Try dictating again.";
+"notice.audio_capture.interrupted_heading" = "Recording interrupted";
+"notice.audio_capture.duration_cap_heading" = "Recording stopped";
+"notice.audio_capture.duration_cap" = "The %1$lld-minute recording limit was reached.";
+"notice.audio_capture.interrupted_partial" = "The microphone stopped after an audio configuration change. Release the shortcut to use the audio already recorded.";
 
-/* Shown when a hold produced too little audio to transcribe. Right Option is the dictation key. */
+/* Shown when a hold produced too little audio to transcribe. The chosen modifier is the dictation key. */
 
-"error.audio_capture.too_short" = "Not enough audio was captured. Hold Right Option and try again.";
+"error.audio_capture.too_short" = "Not enough audio was captured. Hold %1$@ and try again.";
 
 /* Dictation capture failure alert title. */
 
@@ -1168,7 +1151,6 @@
 
 /* Lamitype-owned continuous-capture NSError. */
 
-"error.audio_capture.target_format" = "Failed to create target audio format.";
 
 /* Lamitype-owned backend NSError after authentication failure. */
 
@@ -1220,7 +1202,7 @@
 
 /* Translation card dismissal hint. */
 
-"translation.card.dismiss" = "Esc to dismiss";
+"translation.card.dismiss" = "%1$@ to dismiss";
 
 /* Privacy disclosure; preserve 'may connect' uncertainty. */
 
@@ -1499,107 +1481,97 @@
 "settings.window.title" = "Settings";
 
 /* General Settings interface language row label. */
-"settings.general.language" = "Interface Language:";
+"settings.general.language" = "Language";
 
 /* Follow-System value with the current system language. */
 "settings.general.language.value" = "Follow System (%1$@)";
 
 /* General Settings interface language behavior note. */
-"settings.general.language.note" = "Applied next launch. Menu bar, settings and the caption panel all follow this.";
+"settings.general.language.note" = "Applies the next time you open Lamitype.";
 
 /* General Settings indicator row label. */
-"settings.general.indicator" = "Indicator:";
+"settings.general.indicator" = "Floating indicator";
 
 /* General Settings floating indicator note. */
-"settings.general.indicator.note" = "The small \"Listening / Transcribing\" pill near the bottom of the screen.";
+"settings.general.indicator.note" = "Shows Listening and Transcribing near the bottom of the screen.";
 
 /* Compact fixed-shortcut reference in General Settings. */
-"settings.general.shortcuts" = "Shortcuts:";
-"settings.general.shortcuts.hold_option" = "Hold Right ⌥";
+"settings.general.shortcuts" = "Shortcuts";
 "settings.general.shortcuts.dictate" = "Dictate";
-"settings.general.shortcuts.tap_option" = "Tap Right ⌥";
 "settings.general.shortcuts.translate" = "Translate selection";
-"settings.general.shortcuts.double_tap_option" = "Double-tap Right ⌥";
 "settings.general.shortcuts.proofread" = "Proofread selection";
-"settings.general.shortcuts.caption_key" = "Right ⌘ + /";
 "settings.general.shortcuts.caption_action" = "Toggle Live Caption";
 
 /* About Settings version and build; arguments are the marketing version and build number. */
 "settings.about.version_build" = "Version %1$@ (Build %2$@)";
 
 /* About Settings metadata labels. */
-"settings.about.author" = "Author:";
-"settings.about.coauthors" = "Co-authors:";
-"settings.about.license" = "License:";
-"settings.about.repository" = "Repository:";
+"settings.about.author" = "Author";
+"settings.about.coauthors" = "Co-authors";
+"settings.about.license" = "License";
+"settings.about.repository" = "Repository";
 
 /* Dictation customized dictionary row label. */
-"settings.dictation.dictionary" = "Customized Dictionary:";
+"settings.dictation.dictionary" = "Custom dictionary";
 
 /* Dictation customized dictionary behavior note. */
-"settings.dictation.dictionary.note" = "One replacement per line. Applied after transcription, on every dictation engine including cloud.";
 
 /* Dictation number conversion language scope note. */
-"settings.dictation.number_conversion.note" = "Chinese and English. Japanese and Korean text is left as spoken.";
+"settings.dictation.number_conversion.note" = "Chinese and English only.";
 
 /* Dictation punctuation cleanup note. */
-"settings.dictation.punctuation.note" = "Trims the over-eager Chinese punctuation the model inserts on pauses. Chinese text only.";
+"settings.dictation.punctuation.note" = "Chinese text only.";
 
 /* Caption panel section title. */
-"settings.caption.panel_title" = "Caption Panel";
+"settings.caption.panel_title" = "Caption panel";
 
 /* Caption panel local/shared behavior subtitle. */
-"settings.caption.local_sub" = "Shared by both caption modes. Local caption runs on Qwen3: free, nothing leaves the Mac.";
 
 /* Caption panel default size row label. */
-"settings.caption.panel_size" = "Drag or resize the caption panel; Lamitype remembers its size and position automatically.";
+"settings.caption.panel_size" = "Lamitype remembers where you put the panel.";
 
 /* Caption panel next-start position reset checkbox. */
-"settings.caption.reset_position" = "Reset Size & Position";
 
 /* Caption panel advanced tuning row label. */
-"settings.caption.advanced" = "Advanced tuning:";
+"settings.caption.advanced" = "Tuning file";
 
 /* Caption panel advanced tuning note. */
-"settings.caption.advanced.note" = "VAD thresholds, maxTokens and the MLX cache cap stay in the file, out of the UI.";
+"settings.caption.advanced.note" = "VAD thresholds, token limit and cache cap.";
 
 /* Text Polish section title. */
 "settings.text.polish_title" = "Text Polish";
 
 /* Text Polish on-device subtitle. */
-"settings.text.polish_sub" = "Apple Foundation Models · on-device · limited capability";
+"settings.text.polish_sub" = "On-device with Apple Foundation Models. Capability is limited.";
 
 /* Text Polish enable checkbox. */
-"settings.text.polish.cb" = "Enable Text Polish";
+"settings.text.polish.cb" = "Polish selected text";
 
 /* Auto Polish for local dictation. */
-"settings.text.auto_polish.cb" = "Polish dictated text automatically";
+"settings.text.auto_polish.cb" = "Polish dictation automatically";
 
-"settings.text.auto_polish.note" = "Local dictation only. When off, double-tap Right ⌥ to polish a selection. If automatic polishing fails, the transcript is kept.";
 
-"settings.text.auto_polish.excluded_label" = "Excluded apps:";
+"settings.text.auto_polish.excluded_label" = "Excluded apps";
 
-"settings.text.auto_polish.choose_apps" = "Choose Apps…";
+"settings.text.auto_polish.choose_apps" = "Choose…";
 
-"settings.text.auto_polish.excluded_none" = "No apps excluded. Exclusions apply to Auto Polish and Eval Mode.";
+"settings.text.auto_polish.excluded_none" = "None";
 
 /* Text Polish instructions row label. */
-"settings.text.instructions" = "Polish prompt:";
+"settings.text.instructions" = "Prompt";
 
 /* Text Polish instructions note. */
-"settings.text.instructions.note" = "Edit the complete prompt shared by manual and automatic polishing. Test changes in Eval Mode before saving.";
+"settings.text.instructions.note" = "Shared by manual and automatic polishing.";
 
 /* Text Translation on-device subtitle. */
-"settings.text.translation_sub" = "Apple Translation Framework · on-device · limited language support";
+"settings.text.translation_sub" = "On-device with Apple Translation. Auto picks the opposite of the detected language.";
 
 /* Text Translation enable checkbox. */
-"settings.text.translation.cb" = "Translate selection on tap Right ⌥";
 
 /* Text Translation target row label. */
-"settings.text.translate_to" = "Translate to:";
+"settings.text.translate_to" = "Translate to";
 
-/* Shared Right Option behavior note. */
-"settings.text.note" = "Auto picks the opposite of the detected language. Selection translation and selection proofreading share the Right ⌥ key: one tap translates, two taps proofread.";
+/* Shared dictation-key behavior note. */
 
 /* Eval Mode menu and status. */
 "menu.eval_mode" = "Eval Mode";
@@ -1617,12 +1589,11 @@
 
 /* Eval Mode settings. */
 "settings.text.eval.header" = "Eval Mode";
-"settings.text.eval.note" = "Inspect local dictation and polish results, then try your own prompt. Text only, never uploaded. Entries are cleared on normal quit, or next launch after a crash or force quit. Export cases before quitting to keep them. Saved prompts and exports remain.";
-"settings.text.eval.entries_label" = "Entries:";
-"settings.text.eval.entries_summary" = "%1$@, %2$@ on disk";
-"settings.text.eval.show_window" = "Show Window…";
-"settings.text.eval.reveal" = "Reveal in Finder";
-"settings.text.eval.delete_all" = "Delete All Eval Data…";
+"settings.text.eval.note" = "Text only, never uploaded. Entries are cleared when Lamitype quits. Export cases to keep them.";
+"settings.text.eval.entries_label" = "Entries";
+"settings.text.eval.entries_summary" = "%1$@, %2$@";
+"settings.text.eval.reveal" = "Reveal";
+"settings.text.eval.delete_all" = "Delete all entries…";
 "eval.delete_all.confirm" = "Delete %1$@ (%2$@)? This cannot be undone.";
 "eval.delete_all.button" = "Delete";
 "eval.delete_oldest" = "Delete Oldest 100";
@@ -1723,7 +1694,7 @@
 
 "eval.filter.outcome_title" = "Outcome";
 
-"settings.text.prompt.edit" = "Edit Polish Prompt…";
+"settings.text.prompt.edit" = "Edit…";
 
 "eval.prompt.edit" = "Edit Polish Prompt";
 
@@ -1795,7 +1766,7 @@
 "live.name" = "Local Live";
 "live.cancelling" = "Cancelling…";
 "live.finalizing" = "Finalizing…";
-"live.settings.detail" = "See draft text while you speak. Stops after 60 seconds; final text may change. Always shows the preview and countdown. Turn off for Standard dictation: text appears after recording stops.";
+"live.settings.detail" = "Shows draft text while you speak. Stops after 60 seconds.";
 "live.settings.busy" = "Finish or cancel live dictation before changing these settings.";
 "live.draft.unavailable" = "Preview unavailable · release to finalize";
 "live.draft.slow" = "Still listening… Preview is taking longer.";
@@ -1820,6 +1791,8 @@
 
 "live.result.ready" = "Text ready";
 
+"live.result.secure_discard" = "Secure Input turned on. The Local Live result was cleared for privacy.";
+"live.result.clipboard_notice" = "Text copied. Press ⌘V where you want to paste it.";
 "live.result.manual_notice" = "Automatic paste skipped. Open Dictation mode → Last Live Result… to copy.";
 
 /* Local model switch (Fast / Optimized) */
@@ -1841,16 +1814,137 @@
 "status.model.waiting" = "Waiting for dictation to finish…";
 "settings.local_model.waiting" = "Waiting for dictation to finish…";
 "settings.local_model.load_failed" = "Couldn’t load the %1$@ model. Try again. Lamitype is still using %2$@.";
-"settings.dictation.local_model" = "Local model:";
+"settings.dictation.local_model" = "Local model";
 "settings.local_model.busy" = "Finish the current dictation before switching models.";
-"settings.local_model.fast.detail" = "Fastest";
-"settings.local_model.optimized.detail" = "Recommended · same weight size as Fast";
 "settings.local_model.size" = "%1$ld MB";
-"settings.local_model.in_use_until_ready" = "in use until the new model is ready";
-"settings.local_model.not_downloaded" = "Not downloaded";
 "settings.local_model.downloading" = "Downloading… %1$ld%% of %2$ld MB";
 "settings.local_model.loading" = "Loading model…";
 "settings.local_model.keeps_current" = "Dictation keeps using %1$@ until the new model is ready.";
 "settings.local_model.failed" = "Couldn’t download the %1$@ model. Check your connection, then try again. Lamitype is still using %2$@.";
 "settings.local_model.nothing_loaded" = "Couldn’t load the %1$@ model. Check your connection, then try again.";
 "settings.local_model.try_again" = "Try Again";
+
+/* Configurable shortcuts */
+"shortcut.key.right_option" = "Right ⌥";
+"shortcut.key.right_command" = "Right ⌘";
+"shortcut.key.right_control" = "Right ⌃";
+"shortcut.key.right_control.popup" = "Right ⌃ (external keyboards)";
+"shortcut.key.right_option.spoken" = "Right Option";
+"shortcut.key.right_command.spoken" = "Right Command";
+"shortcut.key.right_control.spoken" = "Right Control";
+"shortcut.caption.right_command" = "Right ⌘ + /";
+"shortcut.caption.left_option" = "⌃ + Left ⌥ + /";
+"shortcut.caption.left_control" = "Left ⌃ + ⌥ + /";
+"shortcut.caption.off" = "Off";
+"shortcut.dictation.label" = "Dictation key";
+"shortcut.caption.label" = "Live Caption";
+"shortcut.gestures" = "Hold %1$@: Dictate";
+"shortcut.gesture.tap" = "Tap: Translate selection";
+"shortcut.gesture.double_tap" = "Double-tap: Proofread selection";
+"shortcut.chord_caution" = "Hold this key alone briefly to start listening. Chords (for example %1$@C) cancel it. The microphone indicator and Bluetooth audio may briefly change if listening already started. Pauses while Secure Input is on (password fields, Terminal Secure Keyboard Entry).";
+"shortcut.conflict.dictation" = "%1$@ is unavailable while %2$@ is your dictation key.";
+"shortcut.caption.moved" = "Live Caption moved to %1$@ because %2$@ is now your dictation key.";
+"shortcut.restore.button" = "Restore Default Shortcuts…";
+"shortcut.restore.title" = "Restore Default Shortcuts?";
+"shortcut.restore.message" = "This restores the default key and gesture for every action.";
+"shortcut.restore.confirm" = "Restore Defaults";
+
+/* ---- daily update check (feature/daily-update) ---- */
+"update.daily.enabled" = "Check automatically every day";
+"update.daily.disclosure" = "Lamitype checks GitHub now and daily. GitHub sees your IP address. Turning this on also permits manual checks.";
+"update.daily.last_checked" = "Last checked: %1$@";
+"update.daily.last_attempt_failed" = "Last attempt failed: %1$@";
+"update.daily.never" = "Not yet checked";
+"update.daily.available" = "v%1$@ is available";
+"update.daily.menu" = "Update Available: v%1$@…";
+
+/* Once-per-session secure-input pause for the selected Command/Control key. */
+"shortcut.secure_input.paused" = "Secure input is on, so %1$@ dictation is paused. Leave the password field or turn off Secure Keyboard Entry.";
+
+/* Settings grouped forms */
+"settings.button.open" = "Open…";
+"settings.button.reset" = "Reset";
+"settings.button.reset_confirm" = "Reset…";
+"settings.file.reveal" = "Reveal in Finder";
+"settings.file.copy_path" = "Copy Path";
+"settings.tab.advanced" = "Advanced";
+"settings.general.appearance" = "Appearance";
+"settings.engine.local.memory" = "Local memory";
+"settings.engine.local.memory.detail" = "Uses about 2.1 GB of memory, including a 1 GB cache cap.";
+"settings.dictation.model" = "Model";
+"settings.dictation.preview" = "Live preview";
+"settings.dictation.experimental" = "Experimental";
+"settings.dictation.output" = "Output";
+"settings.dictation.spoken_language" = "Spoken language";
+"settings.dictation.number_conversion" = "Convert numbers to digits";
+"settings.dictation.punctuation" = "Punctuation cleanup";
+"settings.local_model.size_missing" = "%1$@ · Not downloaded";
+"settings.caption.panel_geometry" = "Size and position";
+"settings.caption.translation" = "Translated captions";
+"settings.text.auto_polish.scope" = "Local dictation only. If polishing fails, the transcript is kept.";
+"settings.text.translation.title" = "Translate selected text";
+"settings.text.translation.header" = "Translation";
+"settings.cloud.spending" = "Spending";
+"settings.cloud.today" = "Today";
+"settings.cloud.spending.note" = "At the cap, dictation stops uploading for the day. A running caption session gets a notice and continues.";
+"settings.cloud.keys" = "API keys";
+"settings.key.status.empty" = "No key";
+"settings.advanced.eval.stored" = "Stored examples";
+"settings.advanced.caption" = "Caption engine";
+"settings.ios.note" = "Experimental and untested. Needs Python dependencies and port 8000, uses the local model on this Mac, and cannot run alongside Live Caption.";
+"settings.about.updates" = "Updates";
+"settings.about.software_update" = "Software update";
+"settings.about.check_updates" = "Check for Updates…";
+
+/* Settings grouped forms */
+"settings.cloud.usage_details" = "Usage breakdown";
+
+"shortcut.action.dictate" = "Dictate";
+"shortcut.action.translate" = "Translate selection";
+"shortcut.action.polish" = "Polish selection";
+"shortcut.action.caption" = "Live Caption";
+"shortcut.mode.hold" = "Hold";
+"shortcut.mode.tap" = "Tap";
+"shortcut.mode.double" = "Double-tap";
+"shortcut.binding.hint" = "%1$@ %2$@";
+"shortcut.key.left" = "Left %1$@";
+"shortcut.key.right" = "Right %1$@";
+"shortcut.key.code" = "Key %1$lld";
+"shortcut.binding.off" = "Off: no shortcut. Set one in General > Shortcuts.";
+"shortcut.dictation.missing" = "No dictation shortcut is set. Choose one in General > Shortcuts.";
+"shortcut.recorder.duplicate" = "Already used by %1$@.";
+"shortcut.recorder.system" = "This shortcut is used by macOS.";
+"shortcut.recorder.prompt" = "Type shortcut…";
+"shortcut.recorder.clear" = "Clear shortcut";
+"shortcut.recorder.reset" = "Reset shortcut";
+"shortcut.recorder.hold" = "Hold to talk, release to insert.";
+"shortcut.recorder.footer" = "Press %1$@ to cancel or %2$@ to clear. Fn and Globe keys aren't supported. Shortcuts may pause in password fields and other places that use Secure Input.";
+"shortcut.recorder.unsupported" = "This shortcut is unsupported.";
+"shortcut.recorder.feature_off" = "Off in Text settings";
+"shortcut.section.title" = "Shortcuts";
+
+/* Settings pane status, shortcut keycaps, and samples. */
+"settings.purpose.general" = "Set your interface language and shortcuts.";
+"settings.purpose.dictation" = "Choose an engine and tune what gets inserted.";
+"settings.purpose.caption" = "Adjust the Live Caption panel and translation.";
+"settings.purpose.text" = "Polish and translate selected text on device.";
+"settings.purpose.cloud" = "Manage API keys and cloud usage limits.";
+"settings.purpose.advanced" = "Manage the experimental iOS dictation server.";
+"settings.status.permissions_granted" = "Permissions granted";
+"settings.status.needs_accessibility" = "Needs Accessibility";
+"settings.status.needs_microphone" = "Needs microphone";
+"settings.status.needs_both" = "Needs Accessibility and microphone";
+"settings.status.microphone_restricted" = "Microphone restricted";
+"settings.status.local_model" = "Local · %1$@";
+"settings.status.caption_off" = "Off";
+"settings.status.caption_system" = "System audio";
+"settings.status.two_keys" = "%1$@ · %2$@";
+"settings.status.polish_available" = "Text Polish available";
+"settings.status.polish_checking" = "Checking Text Polish";
+"settings.status.polish_unavailable" = "Text Polish unavailable";
+"settings.status.key_format" = "Unusual format";
+"settings.status.provider_key" = "%1$@: %2$@";
+"shortcut.keycap.right" = "Right";
+"shortcut.keycap.left" = "Left";
+"settings.sample.before" = "Before";
+"settings.sample.after" = "After";

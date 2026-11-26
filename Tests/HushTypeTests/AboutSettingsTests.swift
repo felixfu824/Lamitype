@@ -25,10 +25,10 @@ final class AboutSettingsTests: XCTestCase {
     func testAboutLabelsAreLocalizedInEnglish() {
         withInterfaceLanguage(.english) {
             XCTAssertEqual(L10n.string("settings.tab.about", fallback: "About"), "About")
-            XCTAssertEqual(L10n.string("settings.about.author", fallback: "Author:"), "Author:")
-            XCTAssertEqual(L10n.string("settings.about.coauthors", fallback: "Co-authors:"), "Co-authors:")
-            XCTAssertEqual(L10n.string("settings.about.license", fallback: "License:"), "License:")
-            XCTAssertEqual(L10n.string("settings.about.repository", fallback: "Repository:"), "Repository:")
+            XCTAssertEqual(L10n.string("settings.about.author", fallback: "Author"), "Author")
+            XCTAssertEqual(L10n.string("settings.about.coauthors", fallback: "Co-authors"), "Co-authors")
+            XCTAssertEqual(L10n.string("settings.about.license", fallback: "License"), "License")
+            XCTAssertEqual(L10n.string("settings.about.repository", fallback: "Repository"), "Repository")
             XCTAssertEqual(
                 L10n.format(
                     "settings.about.version_build",
@@ -43,10 +43,10 @@ final class AboutSettingsTests: XCTestCase {
     func testAboutLabelsAreLocalizedInTraditionalChinese() {
         withInterfaceLanguage(.traditionalChineseTaiwan) {
             XCTAssertEqual(L10n.string("settings.tab.about", fallback: "About"), "關於")
-            XCTAssertEqual(L10n.string("settings.about.author", fallback: "Author:"), "作者：")
-            XCTAssertEqual(L10n.string("settings.about.coauthors", fallback: "Co-authors:"), "共同創作者：")
-            XCTAssertEqual(L10n.string("settings.about.license", fallback: "License:"), "授權：")
-            XCTAssertEqual(L10n.string("settings.about.repository", fallback: "Repository:"), "程式碼儲存庫：")
+            XCTAssertEqual(L10n.string("settings.about.author", fallback: "Author"), "作者")
+            XCTAssertEqual(L10n.string("settings.about.coauthors", fallback: "Co-authors"), "共同作者")
+            XCTAssertEqual(L10n.string("settings.about.license", fallback: "License"), "授權")
+            XCTAssertEqual(L10n.string("settings.about.repository", fallback: "Repository"), "程式碼儲存庫")
             XCTAssertEqual(
                 L10n.format(
                     "settings.about.version_build",
@@ -73,7 +73,7 @@ final class AboutSettingsTests: XCTestCase {
             "CaptionPane.makeSettingsPane",
             "TextPane.makeSettingsPane",
             "CloudPane.makeSettingsPane",
-            "IOSServerPane.makeSettingsPane",
+            "AdvancedPane.makeSettingsPane",
             "AboutPane.makeSettingsPane",
         ]
         let positions = try paneMarkers.map { marker -> String.Index in

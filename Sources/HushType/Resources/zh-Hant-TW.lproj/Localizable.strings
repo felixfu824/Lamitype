@@ -26,11 +26,9 @@
 
 /* Opens a plaintext configuration file in TextEdit. */
 
-"common.button.open_in_textedit" = "在 TextEdit 中開啟檔案";
 
 /* 開啟確認視窗，再重設今日的本機雲端用量計數。 */
 
-"common.button.reset_counter" = "重設今日計數…";
 
 /* 清除 Lamitype 本機用量估算前的費用安全確認。 */
 "alert.cloud.reset_counter.title" = "要重設今日用量計數嗎？";
@@ -65,11 +63,9 @@
 
 /* Disabled informational row; it must not sound actionable or imply an automatic restart. */
 
-"menu.interface_language.applied_next_launch" = "下次啟動時套用";
 
 /* Accessibility description for the disabled next-launch row; not a restart button. */
 
-"menu.interface_language.applied_next_launch.accessibility" = "介面語言會在你下次開啟 Lamitype 時套用";
 
 /* Opens the unified seven-pane Lamitype Settings window. */
 
@@ -87,60 +83,48 @@
 
 "settings.tab.cloud" = "雲端";
 
-"settings.tab.ios" = "iOS";
 
 "settings.tab.about" = "關於";
 
 /* Phase 2 unified Settings pane copy. */
 
-"settings.dictation.engine_label" = "引擎：";
+"settings.dictation.engine_label" = "引擎";
 
-"settings.caption.cloud_sub" = "OpenAI realtime · 約每小時 US$2 · 以下三項只作用於翻譯字幕";
 
-"settings.caption.note" = "音訊會直接從 Mac 串流至 OpenAI，Lamitype 絕不介入其中。費用計入「雲端」分頁的每日上限。";
+"settings.caption.note" = "OpenAI realtime，約每小時 US$2。音訊由這台 Mac 直接傳送至 OpenAI，並計入每日費用上限。";
 
-"settings.cloud.cap" = "每日費用上限：";
+"settings.cloud.cap" = "每日費用上限";
 
-"settings.cloud.effect.dictation" = "達到上限即停止上傳，當天不再送出雲端請求。";
 
-"settings.cloud.effect.caption" = "達到上限時發出通知，不中斷進行中的工作階段。";
 
 /* 實驗性 iOS 輔助伺服器分頁。 */
 
-"settings.ios.title" = "iOS 伺服器 · 尚未測試";
+"settings.ios.title" = "iOS 伺服器（尚未測試）";
 
-"settings.ios.subtitle" = "這是實驗性的輔助功能，近期未持續維護或測試。";
 
-"settings.ios.status" = "狀態：";
+"settings.ios.status" = "伺服器";
 
 "settings.ios.status.running" = "正在連接埠 8000 上執行";
 
 "settings.ios.status.stopped" = "已停止";
 
-"settings.ios.start" = "啟動 iOS 伺服器（尚未測試）";
+"settings.ios.start" = "啟動";
 
-"settings.ios.stop" = "停止 iOS 伺服器";
+"settings.ios.stop" = "停止";
 
-"settings.ios.local_model_note" = "iOS 輔助 App 會將音訊傳送到這台 Mac 進行本機轉錄，因此即使 Mac 語音輸入設為「雲端」，仍會使用本機語音轉文字模型。";
 
-"settings.ios.port_note" = "伺服器會監聽連接埠 8000，且需要依 README 設定輔助 App 與 Python 相依套件。";
 
-"settings.ios.caption_conflict_note" = "即時字幕與 iOS 伺服器無法同時執行，因為兩者共用 GPU 記憶體。";
 
-"settings.cloud.key.openai" = "OpenAI 金鑰：";
 
-"settings.cloud.key.gemini" = "Gemini 金鑰：";
 
-"settings.cloud.key.note" = "金鑰保留在本機檔案中，只用於直接連線至各服務商。金鑰留空即可停用該服務商。";
+"settings.cloud.key.note" = "金鑰只存在本機檔案，並只傳送給對應的服務商。";
 
 
 /* Informational alert title after changing the next-launch interface language. */
 
-"alert.language_saved.title" = "語言已儲存";
 
 /* Passive next-launch explanation; does not offer or imply programmatic quit/restart. */
 
-"alert.language_saved.message" = "這項設定會在你下次開啟 Lamitype 時套用。請先完成進行中的工作，再結束 Lamitype。";
 
 /* Initial status-menu state. */
 
@@ -288,7 +272,7 @@
 
 /* Disabled activation hint; preserve shortcut glyph. */
 
-"menu.translation_hint" = "輕按右 ⌥ 以翻譯";
+"menu.translation_hint" = "輕按%1$@ 以翻譯";
 
 /* Automatic target/detection choice in translation and speech-to-text language menus. */
 
@@ -408,11 +392,10 @@
 
 /* 關於分頁的產品說明；產品名稱與語言代碼維持原文。 */
 
-"about.body" = "適用於 macOS 與 iOS 的本機語音轉文字工具。\n支援多語言（EN/ZH/JP），並輸出繁體中文。";
+"about.body" = "macOS 本機語音轉文字工具。支援英文、中文與日文，輸出繁體中文。";
 
 /* Starts the explicit-consent GitHub update check. */
 
-"about.check_updates" = "檢查更新";
 
 /* Consent title shown every time before the app makes a GitHub API request. */
 
@@ -532,7 +515,7 @@
 
 /* Preserve approximate three-second cold-start semantics and shortcut glyph. */
 
-"alert.model_unloaded.local.message" = "語音辨識模型已從記憶體移除。\n\n下次按下右側 ⌥ 使用語音輸入時，需要冷啟動（約 3 秒）。";
+"alert.model_unloaded.local.message" = "語音辨識模型已從記憶體移除。\n\n下次按下%1$@ 使用語音輸入時，需要冷啟動（約 3 秒）。";
 
 /* Cloud-upload gate title; this is Lamitype's local warning, not provider billing enforcement. */
 
@@ -630,23 +613,20 @@
 
 /* Local-engine privacy/cost/memory qualifier; preserve approximation and 2.1 GB. */
 
-"settings.engine.local.detail" = "隱私 · 免費 · 約 2.1 GB RAM（1 GB 快取）";
+"settings.engine.local.detail" = "在本機執行 · 免費";
 
 /* Argument 1 is a rate string with exact three-decimal USD precision. */
 
-"settings.engine.cloud.detail" = "%1$@ · 不佔用模型 RAM";
+"settings.engine.cloud.detail" = "%1$@ · 使用你的金鑰";
 
 /* Argument 1 is configured rate. 'Free tier' and metered rate coexist in source; do not strengthen the free claim. */
 
-"settings.engine.gemini.detail" = "%1$@ · 不佔用模型 RAM";
 
 /* Model picker label. */
 
-"settings.engine.openai_model" = "OpenAI 模型：";
 
 /* Model picker label. */
 
-"settings.engine.gemini_model" = "Gemini 模型：";
 
 /* Model ID is immutable; only qualifier is localized. */
 
@@ -662,7 +642,7 @@
 
 /* Memory/engine behavior explanation. */
 
-"settings.engine.cloud_unloads_local" = "雲端語音輸入會使用你的金鑰，將音訊直接傳送至所選服務商。本機語音模型會維持卸載。";
+"settings.engine.cloud_unloads_local" = "音訊會以你的金鑰直接傳送至 %1$@。本機模型維持卸載。";
 
 
 
@@ -672,23 +652,20 @@
 
 /* Initial key-status placeholder. */
 
-"settings.key.status.placeholder" = "狀態：尚未載入";
 
 /* Provider API-key load status. */
 
-"settings.key.status.loaded" = "狀態：✓ 已載入金鑰";
+"settings.key.status.loaded" = "已載入金鑰";
 
 /* Empty OpenAI key state. */
 
-"settings.key.status.openai_empty" = "狀態：金鑰空白；OpenAI 雲端功能已停用";
 
 /* Empty Gemini key state. */
 
-"settings.key.status.gemini_empty" = "狀態：金鑰空白；Gemini 雲端語音輸入已停用";
 
 /* Warns that an unusual key is not rejected locally. */
 
-"settings.key.status.unusual" = "狀態：金鑰格式不常見；仍會照原樣使用";
+"settings.key.status.unusual" = "格式不常見，仍照原樣使用";
 
 /* Cloud rate with exactly three decimals; do not use generic currency rounding. */
 
@@ -706,17 +683,17 @@
 
 /* Cloud translated-caption target-language label. */
 
-"settings.translated_caption.target" = "目標語言：";
+"settings.translated_caption.target" = "目標語言";
 
 /* Toggle for displaying source transcript above translated caption. */
 
-"settings.translated_caption.show_source" = "在翻譯上方顯示原文";
+"settings.translated_caption.show_source" = "顯示原文";
 
 
 
 /* Auto-stop duration control label. */
 
-"settings.cost_guardrails.auto_stop" = "自動停止時間：";
+"settings.cost_guardrails.auto_stop" = "自動停止時間";
 
 
 
@@ -732,9 +709,9 @@
 
 "window.onboarding.title" = "設定 Lamitype";
 
-/* Permission-purpose summary; Right Option is a key name, not the ⌥ glyph on this surface. */
+/* Permission-purpose summary; The chosen modifier is a key name, not the ⌥ glyph on this surface. */
 
-"onboarding.intro" = "允許 Lamitype 偵測右側 Option 鍵，並在本機錄下你的語音。";
+"onboarding.intro" = "允許 Lamitype 偵測%1$@ 鍵，並在本機錄下你的語音。";
 
 /* Apple permission category name. */
 
@@ -742,7 +719,7 @@
 
 /* Explains why Accessibility is required. */
 
-"permission.accessibility.subtitle" = "右側 Option 快速鍵需要這項權限。";
+"permission.accessibility.subtitle" = "%1$@ 快捷鍵需要這項權限。";
 
 /* Permission row state after opening relevant settings. */
 
@@ -838,7 +815,7 @@
 
 /* Runtime permission-repair path; Apple breadcrumb should be visually checked on supported macOS versions. */
 
-"alert.accessibility_lost.message" = "Lamitype 已失去輔助使用權限，全域快速鍵目前無法使用。\n\n請在「系統設定 → 隱私權與安全性 → 輔助使用」中重新啟用 Lamitype，然後結束並重新開啟 Lamitype。";
+"alert.accessibility_lost.message" = "Lamitype 已失去輔助使用權限，全域快捷鍵目前無法使用。\n\n請在「系統設定 → 隱私權與安全性 → 輔助使用」中重新啟用 Lamitype，然後結束並重新開啟 Lamitype。";
 
 /* System-audio permission panel title. */
 
@@ -994,7 +971,7 @@
 
 "caption.live_translated" = "進行中 · 翻譯";
 
-/* Temporary gate message when Right Option dictation conflicts with caption capture. */
+/* Temporary gate message when Dictation conflicts with caption capture. */
 
 "caption.stop_to_dictate" = "請停止即時字幕後再使用語音輸入";
 
@@ -1146,13 +1123,19 @@
 
 "error.audio_capture.no_input_buffer" = "未收到麥克風音訊。請在「系統設定」中確認音訊輸入後再試一次。";
 
+"error.audio_capture.silent_input" = "麥克風沒有收到聲音。請確認輸入裝置和靜音開關後再試一次。";
+
 /* Lamitype-owned terminal error after the audio device configuration changed under an active capture. */
 
-"error.audio_capture.configuration_changed" = "音訊裝置已變更。請重新開始以使用目前的麥克風。";
+"error.audio_capture.configuration_changed" = "音訊設定變更，麥克風已停止錄音。請再試一次。";
+"notice.audio_capture.interrupted_heading" = "錄音已中斷";
+"notice.audio_capture.duration_cap_heading" = "錄音已停止";
+"notice.audio_capture.duration_cap" = "已達 %1$lld 分鐘的錄音上限。";
+"notice.audio_capture.interrupted_partial" = "音訊設定變更，麥克風已停止錄音。放開快捷鍵即可使用已錄下的音訊。";
 
-/* Shown when a hold produced too little audio to transcribe. Right Option is the dictation key. */
+/* Shown when a hold produced too little audio to transcribe. The chosen modifier is the dictation key. */
 
-"error.audio_capture.too_short" = "擷取的音訊太短。請按住右側 Option 鍵再試一次。";
+"error.audio_capture.too_short" = "擷取的音訊太短。請按住%1$@ 鍵再試一次。";
 
 /* Dictation capture failure alert title. */
 
@@ -1168,7 +1151,6 @@
 
 /* Lamitype-owned continuous-capture NSError. */
 
-"error.audio_capture.target_format" = "無法建立目標音訊格式。";
 
 /* Lamitype-owned backend NSError after authentication failure. */
 
@@ -1220,7 +1202,7 @@
 
 /* Translation card dismissal hint. */
 
-"translation.card.dismiss" = "按 Esc 關閉";
+"translation.card.dismiss" = "按 %1$@ 關閉";
 
 /* Privacy disclosure; preserve 'may connect' uncertainty. */
 
@@ -1499,107 +1481,97 @@
 "settings.window.title" = "設定";
 
 /* 一般設定介面語言列標籤。 */
-"settings.general.language" = "介面語言：";
+"settings.general.language" = "語言";
 
 /* 跟隨系統值，參數為目前系統語言。 */
 "settings.general.language.value" = "跟隨系統（%1$@）";
 
 /* 一般設定介面語言行為說明。 */
-"settings.general.language.note" = "下次啟動時套用。選單列、設定視窗與字幕面板都會跟著這個設定。";
+"settings.general.language.note" = "下次開啟 Lamitype 時套用。";
 
 /* 一般設定指示器列標籤。 */
-"settings.general.indicator" = "指示器：";
+"settings.general.indicator" = "浮動指示器";
 
 /* 一般設定浮動指示器說明。 */
-"settings.general.indicator.note" = "螢幕下方那個「聆聽中 / 轉錄中」的小標籤。";
+"settings.general.indicator.note" = "在螢幕下方顯示「聆聽中」與「轉錄中」。";
 
-/* 一般設定中的精簡固定快速鍵參考。 */
-"settings.general.shortcuts" = "快速鍵：";
-"settings.general.shortcuts.hold_option" = "按住右 ⌥";
+/* 一般設定中的精簡固定快捷鍵參考。 */
+"settings.general.shortcuts" = "快捷鍵";
 "settings.general.shortcuts.dictate" = "語音輸入";
-"settings.general.shortcuts.tap_option" = "輕點右 ⌥";
 "settings.general.shortcuts.translate" = "翻譯選取文字";
-"settings.general.shortcuts.double_tap_option" = "連按兩下右 ⌥";
 "settings.general.shortcuts.proofread" = "校對選取文字";
-"settings.general.shortcuts.caption_key" = "右 ⌘ + /";
 "settings.general.shortcuts.caption_action" = "切換即時字幕";
 
 /* 關於設定中的版本與版本編號；參數依序為行銷版本與版本編號。 */
 "settings.about.version_build" = "版本 %1$@（組建 %2$@）";
 
 /* 關於設定的中繼資料標籤。 */
-"settings.about.author" = "作者：";
-"settings.about.coauthors" = "共同創作者：";
-"settings.about.license" = "授權：";
-"settings.about.repository" = "程式碼儲存庫：";
+"settings.about.author" = "作者";
+"settings.about.coauthors" = "共同作者";
+"settings.about.license" = "授權";
+"settings.about.repository" = "程式碼儲存庫";
 
 /* 語音輸入自訂字典列標籤。 */
-"settings.dictation.dictionary" = "自訂字典：";
+"settings.dictation.dictionary" = "自訂字典";
 
 /* 語音輸入自訂字典行為說明。 */
-"settings.dictation.dictionary.note" = "一行一組替換，在轉錄完成後套用，三個語音輸入引擎（含雲端）都會套。";
 
 /* 語音輸入數字轉換語言範圍說明。 */
-"settings.dictation.number_conversion.note" = "中文與英文。日文與韓文維持原樣。";
+"settings.dictation.number_conversion.note" = "僅限中文與英文。";
 
 /* 語音輸入標點清理說明。 */
-"settings.dictation.punctuation.note" = "移除模型在停頓處插入的過多中文標點。只作用於中文。";
+"settings.dictation.punctuation.note" = "只作用於中文。";
 
 /* 字幕面板區段標題。 */
 "settings.caption.panel_title" = "字幕面板";
 
 /* 字幕面板本機與共用行為副標。 */
-"settings.caption.local_sub" = "兩種字幕模式共用。本機字幕跑 Qwen3：免費，不離開這台 Mac。";
 
 /* 字幕面板預設尺寸列標籤。 */
-"settings.caption.panel_size" = "拖移或調整字幕面板大小後，Lamitype 會自動記住其尺寸與位置。";
+"settings.caption.panel_size" = "Lamitype 會記住面板的尺寸與位置。";
 
 /* 字幕面板下次開始位置重設 checkbox。 */
-"settings.caption.reset_position" = "重設尺寸與位置";
 
 /* 字幕面板進階調校列標籤。 */
-"settings.caption.advanced" = "進階調校：";
+"settings.caption.advanced" = "調校檔案";
 
 /* 字幕面板進階調校說明。 */
-"settings.caption.advanced.note" = "VAD 門檻、maxTokens、MLX 快取上限等引擎參數維持在檔案裡，不進 UI。";
+"settings.caption.advanced.note" = "VAD 門檻、token 上限與快取上限。";
 
 /* 文字校對區段標題。 */
 "settings.text.polish_title" = "文字校對";
 
 /* 文字校對裝置上副標。 */
-"settings.text.polish_sub" = "Apple Foundation Models · 在裝置上執行 · 能力有限";
+"settings.text.polish_sub" = "使用 Apple Foundation Models 在裝置上執行，能力有限。";
 
 /* 文字校對啟用 checkbox。 */
-"settings.text.polish.cb" = "啟用文字校對";
+"settings.text.polish.cb" = "校對選取文字";
 
 /* Auto Polish for local dictation. */
-"settings.text.auto_polish.cb" = "自動校對聽寫文字";
+"settings.text.auto_polish.cb" = "自動校對語音輸入文字";
 
-"settings.text.auto_polish.note" = "僅限本機聽寫。關閉時，可雙擊右側 ⌥ 校對選取文字。自動校對失敗時會保留逐字稿。";
 
-"settings.text.auto_polish.excluded_label" = "排除的 App：";
+"settings.text.auto_polish.excluded_label" = "排除的 App";
 
-"settings.text.auto_polish.choose_apps" = "選擇 App…";
+"settings.text.auto_polish.choose_apps" = "選擇…";
 
-"settings.text.auto_polish.excluded_none" = "尚未排除任何 App。排除清單適用於自動校對與校對實驗室。";
+"settings.text.auto_polish.excluded_none" = "無";
 
 /* 文字校對指示列標籤。 */
-"settings.text.instructions" = "校對提示詞：";
+"settings.text.instructions" = "提示詞";
 
 /* 文字校對指示說明。 */
-"settings.text.instructions.note" = "編輯手動與自動校對共用的完整提示詞。可先在校對實驗室測試，再儲存套用。";
+"settings.text.instructions.note" = "手動與自動校對共用。";
 
 /* 文字翻譯裝置上副標。 */
-"settings.text.translation_sub" = "Apple Translation Framework · 在裝置上執行 · 支援語言有限";
+"settings.text.translation_sub" = "使用 Apple 翻譯在裝置上執行。「自動」會翻成偵測語言的另一邊。";
 
 /* 文字翻譯啟用 checkbox。 */
-"settings.text.translation.cb" = "輕點右 ⌥ 翻譯選取的文字";
 
 /* 文字翻譯目標列標籤。 */
-"settings.text.translate_to" = "翻譯成：";
+"settings.text.translate_to" = "翻譯成";
 
-/* 共用右 Option 行為說明。 */
-"settings.text.note" = "「自動」會翻成偵測語言的另一邊。選取文字翻譯與選取文字校對共用右 ⌥：點一下翻譯，點兩下校對。";
+/* 共用語音輸入鍵 行為說明。 */
 
 /* 校對實驗室選單與狀態。 */
 "menu.eval_mode" = "校對實驗室";
@@ -1617,12 +1589,11 @@
 
 /* 校對實驗室設定。 */
 "settings.text.eval.header" = "校對實驗室";
-"settings.text.eval.note" = "檢查本機聽寫與校對結果，並試用自己的提示詞。只存文字，不會上傳。正常結束時會清除項目；當機或強制結束後則在下次啟動清除。要保留案例，請在結束前匯出。已儲存的提示詞與匯出檔案不受影響。";
-"settings.text.eval.entries_label" = "項目：";
-"settings.text.eval.entries_summary" = "%1$@，佔用 %2$@";
-"settings.text.eval.show_window" = "顯示視窗…";
-"settings.text.eval.reveal" = "在 Finder 中顯示";
-"settings.text.eval.delete_all" = "刪除所有實驗室資料…";
+"settings.text.eval.note" = "只存文字，不會上傳。結束 Lamitype 時會清除項目；要保留案例請先匯出。";
+"settings.text.eval.entries_label" = "項目";
+"settings.text.eval.entries_summary" = "%1$@，%2$@";
+"settings.text.eval.reveal" = "在 Finder 顯示";
+"settings.text.eval.delete_all" = "刪除所有項目…";
 "eval.delete_all.confirm" = "要刪除 %1$@（%2$@）嗎？此動作無法復原。";
 "eval.delete_all.button" = "刪除";
 "eval.delete_oldest" = "刪除最舊 100 筆";
@@ -1684,7 +1655,7 @@
 /* 校對實驗室來源名稱。 */
 "eval.source.dictation" = "聽寫";
 "eval.source.dictation_local_once" = "聽寫（單次本機）";
-"eval.source.polish_hotkey" = "校對（快速鍵）";
+"eval.source.polish_hotkey" = "校對（快捷鍵）";
 "eval.source.polish_service" = "校對（服務）";
 
 /* 校對實驗室重跑控制。 */
@@ -1723,7 +1694,7 @@
 
 "eval.filter.outcome_title" = "校對結果";
 
-"settings.text.prompt.edit" = "編輯校對提示詞…";
+"settings.text.prompt.edit" = "編輯…";
 
 "eval.prompt.edit" = "編輯校對提示詞";
 
@@ -1794,7 +1765,7 @@
 "live.error.malformed" = "辨識傳回無效的結果。";
 "live.error.incomplete" = "辨識未完成，錄音已保留以便重試。";
 "live.error.empty" = "未辨識到語音。";
-"live.settings.detail" = "說話時即可查看草稿。錄音會在 60 秒後停止，最終文字可能變更。此功能一律顯示預覽及倒數。 關閉後使用標準聽寫：停止錄音後才會顯示文字。";
+"live.settings.detail" = "說話時顯示草稿，60 秒後自動停止。";
 "live.settings.busy" = "請先完成或取消即時語音輸入，再變更這些設定。";
 "common.button.copy" = "複製";
 "live.draft.unavailable" = "無法顯示預覽 · 放開以完成辨識";
@@ -1820,6 +1791,8 @@
 
 "live.result.ready" = "文字已就緒";
 
+"live.result.secure_discard" = "安全輸入已開啟。為保護隱私，已清除本次即時辨識結果。";
+"live.result.clipboard_notice" = "已複製文字。請在要貼上的位置按 ⌘V。";
 "live.result.manual_notice" = "已略過自動貼上。請開啟「聽寫模式 → 上次即時辨識結果⋯」來複製。";
 
 /* Local model switch (Fast / Optimized) */
@@ -1841,16 +1814,137 @@
 "status.model.waiting" = "等待聽寫完成…";
 "settings.local_model.waiting" = "等待聽寫完成…";
 "settings.local_model.load_failed" = "無法載入「%1$@」模型。請再試一次。Lamitype 仍在使用「%2$@」模型。";
-"settings.dictation.local_model" = "本機模型：";
+"settings.dictation.local_model" = "本機模型";
 "settings.local_model.busy" = "請先完成目前的聽寫，再切換模型。";
-"settings.local_model.fast.detail" = "最快";
-"settings.local_model.optimized.detail" = "建議 · 權重大小與快速相同";
 "settings.local_model.size" = "%1$ld MB";
-"settings.local_model.in_use_until_ready" = "新模型就緒前繼續使用";
-"settings.local_model.not_downloaded" = "尚未下載";
 "settings.local_model.downloading" = "下載中… %1$ld%%（共 %2$ld MB）";
 "settings.local_model.loading" = "正在載入模型…";
 "settings.local_model.keeps_current" = "新模型就緒前，聽寫會繼續使用「%1$@」模型。";
 "settings.local_model.failed" = "無法下載「%1$@」模型。請檢查網路連線後再試一次。Lamitype 仍在使用「%2$@」模型。";
 "settings.local_model.nothing_loaded" = "無法載入「%1$@」模型。請檢查網路連線後再試一次。";
 "settings.local_model.try_again" = "再試一次";
+
+/* Configurable shortcuts */
+"shortcut.key.right_option" = "右 ⌥";
+"shortcut.key.right_command" = "右 ⌘";
+"shortcut.key.right_control" = "右 ⌃";
+"shortcut.key.right_control.popup" = "右 ⌃（外接鍵盤）";
+"shortcut.key.right_option.spoken" = "右側 Option";
+"shortcut.key.right_command.spoken" = "右側 Command";
+"shortcut.key.right_control.spoken" = "右側 Control";
+"shortcut.caption.right_command" = "右 ⌘ + /";
+"shortcut.caption.left_option" = "⌃ + 左 ⌥ + /";
+"shortcut.caption.left_control" = "左 ⌃ + ⌥ + /";
+"shortcut.caption.off" = "關閉";
+"shortcut.dictation.label" = "語音輸入鍵";
+"shortcut.caption.label" = "即時字幕";
+"shortcut.gestures" = "按住%1$@：語音輸入";
+"shortcut.gesture.tap" = "輕按：翻譯選取文字";
+"shortcut.gesture.double_tap" = "連按兩下：校對選取文字";
+"shortcut.chord_caution" = "單獨按住片刻才會開始聆聽；搭配其他按鍵（例如 %1$@C）會取消。若已開始聆聽，麥克風指示燈可能閃現，藍牙耳機也可能短暫切換音訊模式。安全輸入開啟時（例如密碼欄位、終端機的安全鍵盤輸入）會暫停。";
+"shortcut.conflict.dictation" = "%2$@ 是語音輸入鍵時，無法使用 %1$@。";
+"shortcut.caption.moved" = "即時字幕已改用 %1$@，因為%2$@ 現在是你的語音輸入鍵。";
+"shortcut.restore.button" = "回復預設快捷鍵…";
+"shortcut.restore.title" = "要回復預設快捷鍵嗎？";
+"shortcut.restore.message" = "所有動作的按鍵和手勢都會回復為預設值。";
+"shortcut.restore.confirm" = "回復預設值";
+
+/* ---- daily update check (feature/daily-update) ---- */
+"update.daily.enabled" = "每天自動檢查更新";
+"update.daily.disclosure" = "開啟後會立即向 GitHub 查詢，之後每天查詢一次，也允許手動檢查。GitHub 會看到你的 IP 位址。";
+"update.daily.last_checked" = "上次檢查：%1$@";
+"update.daily.last_attempt_failed" = "上次嘗試失敗：%1$@";
+"update.daily.never" = "尚未檢查";
+"update.daily.available" = "已有新版本 v%1$@";
+"update.daily.menu" = "有可用更新：v%1$@…";
+
+/* Once-per-session secure-input pause for the selected Command/Control key. */
+"shortcut.secure_input.paused" = "安全輸入已開啟，%1$@ 語音輸入暫停。離開密碼欄位或關閉「安全鍵盤輸入」後即可使用。";
+
+/* Settings grouped forms */
+"settings.button.open" = "開啟…";
+"settings.button.reset" = "重設";
+"settings.button.reset_confirm" = "重設…";
+"settings.file.reveal" = "在 Finder 顯示";
+"settings.file.copy_path" = "複製路徑";
+"settings.tab.advanced" = "進階";
+"settings.general.appearance" = "外觀";
+"settings.engine.local.memory" = "本機記憶體";
+"settings.engine.local.memory.detail" = "約使用 2.1 GB 記憶體，其中快取上限為 1 GB。";
+"settings.dictation.model" = "模型";
+"settings.dictation.preview" = "即時預覽";
+"settings.dictation.experimental" = "實驗功能";
+"settings.dictation.output" = "輸出";
+"settings.dictation.spoken_language" = "語音語言";
+"settings.dictation.number_conversion" = "數字轉為阿拉伯數字";
+"settings.dictation.punctuation" = "標點清理";
+"settings.local_model.size_missing" = "%1$@ · 尚未下載";
+"settings.caption.panel_geometry" = "尺寸與位置";
+"settings.caption.translation" = "即時翻譯字幕";
+"settings.text.auto_polish.scope" = "僅限本機語音輸入。校對失敗時保留原始逐字稿。";
+"settings.text.translation.title" = "翻譯選取文字";
+"settings.text.translation.header" = "文字翻譯";
+"settings.cloud.spending" = "費用";
+"settings.cloud.today" = "今日用量";
+"settings.cloud.spending.note" = "達到上限後，當天停止上傳語音輸入。進行中的字幕工作階段只會收到通知，不會中斷。";
+"settings.cloud.keys" = "API 金鑰";
+"settings.key.status.empty" = "尚未設定金鑰";
+"settings.advanced.eval.stored" = "已儲存的案例";
+"settings.advanced.caption" = "字幕引擎";
+"settings.ios.note" = "實驗功能，尚未測試。需要 Python 相依套件與連接埠 8000，使用這台 Mac 的本機模型，且無法與即時字幕同時執行。";
+"settings.about.updates" = "更新";
+"settings.about.software_update" = "軟體更新";
+"settings.about.check_updates" = "檢查更新…";
+
+/* Settings grouped forms */
+"settings.cloud.usage_details" = "詳細用量";
+
+"shortcut.action.dictate" = "語音輸入";
+"shortcut.action.translate" = "翻譯選取文字";
+"shortcut.action.polish" = "校對選取文字";
+"shortcut.action.caption" = "即時字幕";
+"shortcut.mode.hold" = "按住";
+"shortcut.mode.tap" = "輕按";
+"shortcut.mode.double" = "連按兩下";
+"shortcut.binding.hint" = "%1$@ %2$@";
+"shortcut.key.left" = "左 %1$@";
+"shortcut.key.right" = "右 %1$@";
+"shortcut.key.code" = "按鍵 %1$lld";
+"shortcut.binding.off" = "已關閉：尚未設定快捷鍵。請前往「一般 > 快捷鍵」設定。";
+"shortcut.dictation.missing" = "尚未設定語音輸入快捷鍵。請前往「一般 > 快捷鍵」設定。";
+"shortcut.recorder.duplicate" = "「%1$@」已使用這組快捷鍵。";
+"shortcut.recorder.system" = "macOS 已使用這組快捷鍵。";
+"shortcut.recorder.prompt" = "輸入快捷鍵⋯";
+"shortcut.recorder.clear" = "清除快捷鍵";
+"shortcut.recorder.reset" = "回復此快捷鍵的預設值";
+"shortcut.recorder.hold" = "按住說話，放開後輸入文字。";
+"shortcut.recorder.footer" = "按 %1$@ 取消，按 %2$@ 清除。不支援 Fn 與地球鍵。在密碼欄位等使用安全輸入的地方，快捷鍵可能暫停。";
+"shortcut.recorder.unsupported" = "不支援這組快捷鍵。";
+"shortcut.recorder.feature_off" = "已在「文字」設定中關閉";
+"shortcut.section.title" = "快捷鍵";
+
+/* Settings pane status, shortcut keycaps, and samples. */
+"settings.purpose.general" = "設定介面語言與快捷鍵。";
+"settings.purpose.dictation" = "選擇引擎並調整語音輸出。";
+"settings.purpose.caption" = "調整即時字幕面板與字幕翻譯。";
+"settings.purpose.text" = "在裝置上校對與翻譯選取的文字。";
+"settings.purpose.cloud" = "管理 API 金鑰與雲端用量上限。";
+"settings.purpose.advanced" = "管理實驗性的 iOS 語音輸入伺服器。";
+"settings.status.permissions_granted" = "已授予權限";
+"settings.status.needs_accessibility" = "需要輔助使用權限";
+"settings.status.needs_microphone" = "需要麥克風權限";
+"settings.status.needs_both" = "需要輔助使用與麥克風權限";
+"settings.status.microphone_restricted" = "麥克風使用受限";
+"settings.status.local_model" = "本機 · %1$@";
+"settings.status.caption_off" = "關閉";
+"settings.status.caption_system" = "系統音訊";
+"settings.status.two_keys" = "%1$@ · %2$@";
+"settings.status.polish_available" = "可使用文字校對";
+"settings.status.polish_checking" = "正在檢查文字校對";
+"settings.status.polish_unavailable" = "無法使用文字校對";
+"settings.status.key_format" = "格式異常";
+"settings.status.provider_key" = "%1$@：%2$@";
+"shortcut.keycap.right" = "右";
+"shortcut.keycap.left" = "左";
+"settings.sample.before" = "處理前";
+"settings.sample.after" = "處理後";

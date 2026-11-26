@@ -62,6 +62,29 @@ final class LocalLiveDictationTests: XCTestCase {
     }
 
     @MainActor
+    func testTwoShortReleasesDuringRouteRecoveryEachDeliverATapWithoutRecognition() throws {
+        var taps = 0
+        for count in [0, 1600] {
+            var clock: Double = 0
+            let driver = LiveTestDriver()
+            let capture = AudioCaptureService(makeDriver: { driver })
+            let session = LocalLiveDictationSession(capture: capture, now: { clock }, isSecure: { false }) { _ in
+                XCTFail("A tap must not reach recognition")
+                throw LiveRecognitionError.unavailable
+            }
+            session.onTap = { taps += 1 }
+            session.onCaptureError = { _ in XCTFail("A pending route recovery must not hide the tap") }
+            XCTAssertTrue(try session.start(automaticTicks: false))
+            if count > 0 { driver.emit(count) }
+            driver.fail?()
+            clock = 0.12
+            session.release()
+            XCTAssertEqual(session.phase, .finished)
+        }
+        XCTAssertEqual(taps, 2)
+    }
+
+    @MainActor
     func testLatchedFailureBeforeShortReleaseNeverTriggersSelectionAndPresentsOnce() throws {
         var clock: Double = 0, errors = 0, taps = 0
         let driver = LiveTestDriver(), capture = AudioCaptureService(makeDriver: { driver })
@@ -70,8 +93,34 @@ final class LocalLiveDictationTests: XCTestCase {
         }
         session.onTap = { taps += 1 }; session.onCaptureError = { _ in errors += 1 }
         XCTAssertTrue(try session.start(automaticTicks: false))
-        clock = 0.1; driver.fail?(); session.release()
+        clock = 0.1; capture.checkFirstBufferDeadline(); session.release()
         XCTAssertEqual(taps, 0); XCTAssertEqual(errors, 1)
+        XCTAssertEqual(session.phase, .finished)
+    }
+
+    @MainActor
+    func testInterruptedCaptureFinalizesSavedAudioOnRelease() async throws {
+        var clock: Double = 0
+        let driver = LiveTestDriver(), capture = AudioCaptureService(makeDriver: { driver })
+        let finished = expectation(description: "recorded audio finalized")
+        let session = LocalLiveDictationSession(capture: capture, now: { clock }, isSecure: { false }) { samples in
+            XCTAssertEqual(samples, Array(repeating: 0.5, count: 3200))
+            return LiveRecognition(text: "partial", generatedTokens: 2, endedByEOS: true)
+        }
+        var interruptions = 0
+        session.onCaptureInterrupted = { interruptions += 1 }
+        session.onCaptureError = { _ in XCTFail("Saved audio should still reach recognition") }
+        session.onTap = { XCTFail("An interrupted recording must not translate the selection") }
+        session.prepareFinal = { $0 }
+        session.onResult = { text, _ in XCTAssertEqual(text, "partial") }
+        session.onFinished = { finished.fulfill() }
+        XCTAssertTrue(try session.start(automaticTicks: false))
+        clock = 0.8
+        driver.emit(3200, value: 0.5)
+        driver.fail?()
+        session.release()
+        await fulfillment(of: [finished], timeout: 3)
+        XCTAssertEqual(interruptions, 1)
         XCTAssertEqual(session.phase, .finished)
     }
 
@@ -192,6 +241,52 @@ final class LocalLiveDictationTests: XCTestCase {
         secure = true; session.tick()
         XCTAssertEqual(session.phase, .finished); XCTAssertTrue(session.audio.isEmpty)
         XCTAssertFalse(session.retry())
+    }
+
+    @MainActor
+    func testEmptyPreparedResultRetainsCompletedASRForExplicitCopy() async throws {
+        let driver = LiveTestDriver()
+        var clock: Double = 0
+        let finished = expectation(description: "raw result available")
+        let session = LocalLiveDictationSession(capture: AudioCaptureService(makeDriver: { driver }),
+            now: { clock }, isSecure: { false }) { _ in
+            LiveRecognition(text: "original", generatedTokens: 3, endedByEOS: true)
+        }
+        session.prepareFinal = { _ in " " }
+        session.onResult = { text, _ in
+            XCTAssertEqual(text, "original")
+            XCTAssertEqual(session.copyOnlyReason, .preparationUnavailable)
+            finished.fulfill()
+        }
+        XCTAssertTrue(try session.start(automaticTicks: false))
+        driver.emit(16000); clock = 1; session.release()
+        await fulfillment(of: [finished], timeout: 3)
+        session.onResult = nil
+        XCTAssertTrue(session.audio.isEmpty)
+    }
+
+    @MainActor
+    func testSecureInputObservedDuringPreparationCannotRecoverRawText() async throws {
+        let driver = LiveTestDriver()
+        var clock: Double = 0, secure = false
+        let finished = expectation(description: "secure discard")
+        let session = LocalLiveDictationSession(capture: AudioCaptureService(makeDriver: { driver }),
+            now: { clock }, isSecure: { secure }) { _ in
+            LiveRecognition(text: "private", generatedTokens: 3, endedByEOS: true)
+        }
+        session.prepareFinal = { [weak session] _ in
+            secure = true
+            XCTAssertEqual(session?.canPrepareFinal, false)
+            secure = false
+            return nil
+        }
+        session.onResult = { _, _ in XCTFail("Privacy revocation must survive the await") }
+        session.onFinished = { finished.fulfill() }
+        XCTAssertTrue(try session.start(automaticTicks: false))
+        driver.emit(16000); clock = 1; session.release()
+        await fulfillment(of: [finished], timeout: 3)
+        XCTAssertTrue(session.clearedFinalForSecureInput)
+        XCTAssertTrue(session.audio.isEmpty)
     }
 
     @MainActor

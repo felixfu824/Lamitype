@@ -8,15 +8,9 @@ final class CloudSettingsModel: ObservableObject {
         didSet { AppConfig.shared.cloudDailyCapDollars = dailyCap }
     }
 
-    @Published var usageLine = ""
-    @Published var openAIKeyStatus = L10n.string(
-        "settings.key.status.placeholder",
-        fallback: "Status: Not loaded yet"
-    )
-    @Published var geminiKeyStatus = L10n.string(
-        "settings.key.status.placeholder",
-        fallback: "Status: Not loaded yet"
-    )
+    @Published private(set) var usage: CloudUsageTracker.Snapshot?
+    @Published private(set) var openAIKeyStatus: OpenAIKeyStore.LoadStatus = .empty
+    @Published private(set) var geminiKeyStatus: GeminiKeyStore.LoadStatus = .empty
 
     init() {
         dailyCap = AppConfig.shared.cloudDailyCapDollars
@@ -24,12 +18,12 @@ final class CloudSettingsModel: ObservableObject {
 
     func refreshDerived() {
         dailyCap = AppConfig.shared.cloudDailyCapDollars
-        openAIKeyStatus = Self.openAIStatusLine(OpenAIKeyStore.load())
-        geminiKeyStatus = Self.geminiStatusLine(GeminiKeyStore.load())
+        openAIKeyStatus = OpenAIKeyStore.load()
+        geminiKeyStatus = GeminiKeyStore.load()
         Task { [weak self] in
             let snapshot = await CloudUsageTracker.shared.snapshot()
             await MainActor.run {
-                self?.usageLine = CloudUsageTracker.formatDailyBreakdown(snapshot)
+                self?.usage = snapshot
             }
         }
     }
@@ -78,128 +72,70 @@ final class CloudSettingsModel: ObservableObject {
         }
     }
 
-    private static func openAIStatusLine(_ status: OpenAIKeyStore.LoadStatus) -> String {
-        switch status {
-        case .ok:
-            L10n.string("settings.key.status.loaded", fallback: "Status: ✓ Key loaded")
-        case .empty:
-            L10n.string(
-                "settings.key.status.openai_empty",
-                fallback: "Status: Key empty; OpenAI cloud features disabled"
-            )
-        case .unusualFormat:
-            L10n.string(
-                "settings.key.status.unusual",
-                fallback: "Status: Key format unusual; passing through anyway"
-            )
-        }
-    }
-
-    private static func geminiStatusLine(_ status: GeminiKeyStore.LoadStatus) -> String {
-        switch status {
-        case .ok:
-            L10n.string("settings.key.status.loaded", fallback: "Status: ✓ Key loaded")
-        case .empty:
-            L10n.string(
-                "settings.key.status.gemini_empty",
-                fallback: "Status: Key empty; Gemini cloud dictation disabled"
-            )
-        case .unusualFormat:
-            L10n.string(
-                "settings.key.status.unusual",
-                fallback: "Status: Key format unusual; passing through anyway"
-            )
-        }
-    }
 }
 
 struct CloudPane: View {
     @StateObject private var model = CloudSettingsModel()
 
     var body: some View {
-        VStack(alignment: .leading, spacing: SettingsGrid.rowSpacing) {
-            SettingsRow(L10n.string("settings.cloud.cap", fallback: "Daily spend cap:")) {
-                Stepper(value: Binding(
-                    get: { model.dailyCap },
-                    set: { model.dailyCap = max(0.5, min(100.0, $0)) }
-                ), in: 0.5...100.0, step: 0.5) {
-                    Text(CloudUsageTracker.formatDollars(model.dailyCap))
-                        .monospacedDigit()
-                }
-            }
-
-            SettingsRow {
-                VStack(alignment: .leading, spacing: 8) {
-                    effectRow(
-                        title: L10n.string("settings.tab.dictation", fallback: "Dictation"),
-                        detail: L10n.string(
-                            "settings.cloud.effect.dictation",
-                            fallback: "Stops uploading at the cap. No further cloud requests that day."
-                        )
-                    )
-                    effectRow(
-                        title: L10n.string("settings.tab.caption", fallback: "Caption"),
-                        detail: L10n.string(
-                            "settings.cloud.effect.caption",
-                            fallback: "Notifies at the cap. The running session is not interrupted."
-                        )
-                    )
-                }
-                .padding(.vertical, 10)
-                .padding(.horizontal, 12)
-                .background(
-                    RoundedRectangle(cornerRadius: 8)
-                        .fill(Color(nsColor: .controlBackgroundColor))
-                )
-            }
-
-            SettingsRow {
-                VStack(alignment: .leading, spacing: 5) {
-                    if !model.usageLine.isEmpty {
-                        Text(model.usageLine)
-                            .font(.caption)
-                            .foregroundStyle(.secondary)
-                            .fixedSize(horizontal: false, vertical: true)
+        SettingsPage(height: 480, pane: .cloud) {
+            Section {
+                SettingRow(L10n.string("settings.cloud.cap", fallback: "Daily spend cap")) {
+                    Stepper(value: Binding(
+                        get: { model.dailyCap },
+                        set: { model.dailyCap = max(0.5, min(100.0, $0)) }
+                    ), in: 0.5...100.0, step: 0.5) {
+                        Text(CloudUsageTracker.formatDollars(model.dailyCap))
+                            .monospacedDigit()
                     }
-                    Button(L10n.string(
-                        "common.button.reset_counter",
-                        fallback: "Reset today's counter…"
-                    )) {
-                        model.confirmAndResetCounter()
-                    }
-                    .buttonStyle(.bordered)
                 }
+                SettingRow(L10n.string("settings.cloud.today", fallback: "Today")) {
+                    HStack(spacing: 8) {
+                        if let usage = model.usage {
+                            Text(CloudUsageTracker.formatDollars(usage.dayDollars))
+                                .monospacedDigit()
+                                .foregroundStyle(.secondary)
+                            SettingsInfoButton(
+                                title: L10n.string("settings.cloud.usage_details", fallback: "Usage breakdown"),
+                                detail: CloudUsageTracker.formatDailyBreakdown(usage)
+                            )
+                        }
+                        Button(L10n.string("settings.button.reset_confirm", fallback: "Reset…"), role: .destructive) {
+                            model.confirmAndResetCounter()
+                        }
+                    }
+                }
+            } header: {
+                Text(L10n.string("settings.cloud.spending", fallback: "Spending"))
+            } footer: {
+                SettingsNote(L10n.string("settings.cloud.spending.note", fallback: "At the cap, dictation stops uploading for the day. A running caption session gets a notice and continues."))
             }
 
-            SettingsDivider()
-
-            keyRow(
-                label: L10n.string("settings.cloud.key.openai", fallback: "OpenAI key:"),
-                path: OpenAIKeyStore.displayPath,
-                status: model.openAIKeyStatus,
-                provider: .openai
-            )
-            .padding(.bottom, 8)
-
-            keyRow(
-                label: L10n.string("settings.cloud.key.gemini", fallback: "Gemini key:"),
-                path: GeminiKeyStore.displayPath,
-                status: model.geminiKeyStatus,
-                provider: .gemini
-            )
-            .padding(.bottom, 8)
-
-            SettingsRow {
-                Text(L10n.string(
-                    "settings.cloud.key.note",
-                    fallback: "Keys stay in local files and are used only for direct requests to each provider. An empty key disables that provider."
-                ))
-                .font(.caption)
-                .foregroundStyle(.secondary)
-                .fixedSize(horizontal: false, vertical: true)
+            Section {
+                FileSettingRow(title: "OpenAI", url: URL(fileURLWithPath: OpenAIKeyStore.displayPath)) {
+                    switch model.openAIKeyStatus {
+                    case .ok: keyStatus(.available)
+                    case .empty: keyStatus(.inactive)
+                    case .unusualFormat: keyStatus(.warning)
+                    }
+                } open: {
+                    model.openKeyFile(provider: .openai)
+                }
+                FileSettingRow(title: "Gemini", url: URL(fileURLWithPath: GeminiKeyStore.displayPath)) {
+                    switch model.geminiKeyStatus {
+                    case .ok: keyStatus(.available)
+                    case .empty: keyStatus(.inactive)
+                    case .unusualFormat: keyStatus(.warning)
+                    }
+                } open: {
+                    model.openKeyFile(provider: .gemini)
+                }
+            } header: {
+                Text(L10n.string("settings.cloud.keys", fallback: "API keys"))
+            } footer: {
+                SettingsNote(L10n.string("settings.cloud.key.note", fallback: "Keys stay in local files and go only to their provider."))
             }
         }
-        .settingsPaneLayout()
         .onAppear { model.refreshDerived() }
         .onReceive(NotificationCenter.default.publisher(for: NSApplication.didBecomeActiveNotification)) { _ in
             model.refreshDerived()
@@ -211,51 +147,23 @@ struct CloudPane: View {
         return AppSettings.Pane(
             identifier: .cloud,
             title: title,
-            toolbarIcon: NSImage(
-                systemSymbolName: "dollarsign.circle",
-                accessibilityDescription: title
-            )!
+            toolbarIcon: NSImage(systemSymbolName: "dollarsign.circle", accessibilityDescription: title)!
         ) {
             CloudPane()
         }
     }
 
-    private func effectRow(title: String, detail: String) -> some View {
-        HStack(alignment: .firstTextBaseline, spacing: 8) {
-            Text(title)
-                .font(.caption.bold())
-                .frame(width: 96, alignment: .leading)
-            Text(detail)
-                .font(.caption)
-                .foregroundStyle(.secondary)
-                .fixedSize(horizontal: false, vertical: true)
+    private func keyStatus(_ kind: SettingsStatusLabel.Kind) -> some View {
+        let text: String
+        switch kind {
+        case .available:
+            text = L10n.string("settings.key.status.loaded", fallback: "Key loaded")
+        case .inactive:
+            text = L10n.string("settings.key.status.empty", fallback: "No key")
+        case .warning:
+            text = L10n.string("settings.key.status.unusual", fallback: "Unusual format, used as is")
         }
+        return SettingsStatusLabel(kind: kind, text: text)
+            .font(.caption)
     }
-
-    private func keyRow(
-        label: String,
-        path: String,
-        status: String,
-        provider: CloudUsageTracker.Provider
-    ) -> some View {
-        SettingsRow(label) {
-            VStack(alignment: .leading, spacing: 5) {
-                Text(path)
-                    .font(.system(size: 11, design: .monospaced))
-                    .foregroundStyle(.secondary)
-                    .textSelection(.enabled)
-                Button(L10n.string(
-                    "common.button.open_in_textedit",
-                    fallback: "Open file in TextEdit"
-                )) {
-                    model.openKeyFile(provider: provider)
-                }
-                .buttonStyle(.bordered)
-                Text(status)
-                    .font(.caption)
-                    .foregroundStyle(.secondary)
-            }
-        }
-    }
-
 }

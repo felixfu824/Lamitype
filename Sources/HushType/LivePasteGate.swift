@@ -1,3 +1,40 @@
+/// Fixed public diagnostic tokens. No field contents or app identifiers.
+enum LivePasteReason: String {
+    case targetUnverified = "target_unverified"
+    case missingApplication = "missing_application"
+    case frontmostChanged = "frontmost_changed"
+    case terminated = "terminated"
+    case inactive = "inactive"
+    case activationChanged = "activation_changed"
+    case focusNotification = "focus_notification"
+    case secureBefore = "secure_before"
+    case capturedWindowMissing = "captured_window_missing"
+    case windowChanged = "window_changed"
+    case capturedWindowIDMissing = "captured_window_id_missing"
+    case windowIDChanged = "window_id_changed"
+    case elementDisappeared = "element_disappeared"
+    case elementChanged = "element_changed"
+    case secureSubrole = "secure_subrole"
+    case elementAppeared = "element_appeared"
+    case focusDuringVerification = "focus_during_verification"
+    case secureAfter = "secure_after"
+    case axUnresponsive = "ax_unresponsive"
+    case axReadFailed = "ax_read_failed"
+    case capturedAXUnresponsive = "captured_ax_unresponsive"
+    case capturedAXReadFailed = "captured_ax_read_failed"
+    case unreadableSubrole = "unreadable_subrole"
+    case retryCopyOnly = "retry_copy_only"
+    case eventCreation = "event_creation"
+    case clipboardWrite = "clipboard_write"
+    case emptyText = "empty_text"
+    case cancelled = "cancelled"
+    case superseded = "superseded"
+    case secureInput = "secure_input"
+    case recognitionFailed = "recognition_failed"
+    case preparationUnavailable = "preparation_unavailable"
+    case missingRecipient = "missing_recipient"
+}
+
 /// Pure policy for Live's final paste. AX identities are compared by the caller;
 /// this layer contains no AX objects, application handles, or system reads.
 enum LivePasteGate {
@@ -40,31 +77,36 @@ enum LivePasteGate {
     }
 
     static func allows(captured: Captured, current: Current) -> Bool {
-        denialReason(captured: captured, current: current) == nil
+        denial(captured: captured, current: current) == nil
     }
 
-    /// Also used by the standalone probe; the first failed condition wins.
+    /// Keep the standalone probe on the same policy as the app.
     static func denialReason(captured: Captured, current: Current) -> String? {
-        guard let pid = captured.processIdentifier else { return "captured app unavailable" }
-        guard current.processIdentifier == pid else { return "frontmost app changed" }
-        guard !current.isTerminated else { return "captured app terminated" }
-        guard current.isActive else { return "captured app inactive" }
-        guard !current.activationChanged else { return "app activation changed" }
-        guard !current.focusInvalidatedBeforeVerification else { return "focus/window notification latched" }
-        guard !current.secureInputBeforeVerification else { return "secure input active before verification" }
-        guard captured.hasWindow else { return "captured AX window unavailable" }
-        guard current.windowMatches else { return "AX focused window changed or unavailable" }
-        guard let windowID = captured.windowID else { return "captured CGWindowID unavailable" }
-        guard current.windowID == windowID else { return "CGWindowID changed or unavailable" }
+        denial(captured: captured, current: current)?.rawValue
+    }
+
+    static func denial(captured: Captured, current: Current) -> LivePasteReason? {
+        guard let pid = captured.processIdentifier else { return .missingApplication }
+        guard current.processIdentifier == pid else { return .frontmostChanged }
+        guard !current.isTerminated else { return .terminated }
+        guard current.isActive else { return .inactive }
+        guard !current.activationChanged else { return .activationChanged }
+        guard !current.focusInvalidatedBeforeVerification else { return .focusNotification }
+        guard !current.secureInputBeforeVerification else { return .secureBefore }
+        guard captured.hasWindow else { return .capturedWindowMissing }
+        guard current.windowMatches else { return .windowChanged }
+        guard let windowID = captured.windowID else { return .capturedWindowIDMissing }
+        guard current.windowID == windowID else { return .windowIDChanged }
         if captured.hasElement {
-            guard current.hasElement else { return "focused element disappeared" }
-            guard current.elementMatches else { return "focused element changed" }
-            guard current.subrole.isNonSecure else { return "secure or unreadable subrole" }
+            guard current.hasElement else { return .elementDisappeared }
+            guard current.elementMatches else { return .elementChanged }
+            if case .unreadable = current.subrole { return .unreadableSubrole }
+            guard current.subrole.isNonSecure else { return .secureSubrole }
         } else {
-            guard !current.hasElement else { return "focused element appeared" }
+            guard !current.hasElement else { return .elementAppeared }
         }
-        guard !current.focusInvalidatedAfterVerification else { return "focus/window notification latched during verification" }
-        guard !current.secureInputAfterVerification else { return "secure input active after verification" }
+        guard !current.focusInvalidatedAfterVerification else { return .focusDuringVerification }
+        guard !current.secureInputAfterVerification else { return .secureAfter }
         return nil
     }
 }

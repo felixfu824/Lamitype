@@ -49,7 +49,7 @@ struct TranslationCardView: View {
 
             // Footer
             HStack(alignment: .bottom) {
-                Text(L10n.string("translation.card.dismiss", fallback: "Esc to dismiss"))
+                Text(L10n.format("translation.card.dismiss", "%1$@ to dismiss", arguments: [ShortcutChord.escape.title]))
                     .font(.caption2)
                     .foregroundStyle(.secondary)
 

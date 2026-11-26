@@ -46,6 +46,7 @@ final class StatusBarController: NSObject, NSMenuDelegate, NSMenuItemValidation 
     private var evalModeSubtitleItem: NSMenuItem!
     private var textTranslationEnableItem: NSMenuItem!
     private var translateToItem: NSMenuItem!
+    private let missingDictationItem = NSMenuItem()
     private var translationHintItem: NSMenuItem!
     private var unloadMenuItem: NSMenuItem!
     private var modelMenuAction: ModelMenuAction = .unload
@@ -120,7 +121,7 @@ final class StatusBarController: NSObject, NSMenuDelegate, NSMenuItemValidation 
     var onLiveTranslatedStop: (() -> Void)?
 
     /// Fired when the user clicks the "Live Caption" header itself. Toggles
-    /// the local product with the last-used source (mirrors the Right ⌘ + /
+    /// the local product with the last-used source (mirrors the Live Caption shortcut
     /// hotkey behavior). Without this the header is a non-actionable label
     /// and macOS greys it out, making it visually inconsistent with the
     /// bright-white "Text Translation", "Text Polish", etc. toggle items
@@ -200,7 +201,11 @@ final class StatusBarController: NSObject, NSMenuDelegate, NSMenuItemValidation 
     // MARK: - NSMenuDelegate
 
     func menuWillOpen(_ menu: NSMenu) {
+        // Daily update check: insert or refresh the quiet update notice.
+        if menu === statusItem.menu { refreshMissingDictation(in: menu) }
+        Self.refreshUpdateItem(in: menu, rootMenu: statusItem.menu, coordinator: .shared)
         // Refresh the combined status · memory row each time the menu opens
+        refreshTranslationHint()
         refreshStatusLine()
         updateUnloadMenuItem(for: currentState)
         textSettingsModel.refreshFromConfig(
@@ -208,6 +213,33 @@ final class StatusBarController: NSObject, NSMenuDelegate, NSMenuItemValidation 
         )
         refreshEvalMenuItems()
         refreshDictationModeItems()
+    }
+
+    static func refreshUpdateItem(in menu: NSMenu, rootMenu: NSMenu?, coordinator: UpdateCheckCoordinator) {
+        guard menu === rootMenu else { return }
+        coordinator.refreshMenuItem(in: menu)
+    }
+
+    private func refreshMissingDictation(in menu: NSMenu) {
+        if AppConfig.shared.shortcutBindings[.dictate].chord == nil {
+            missingDictationItem.title = ShortcutDisplay.missingDictation
+            missingDictationItem.isEnabled = false
+            if missingDictationItem.menu == nil { menu.insertItem(missingDictationItem, at: menu.index(of: statusMenuItem) + 1) }
+        } else if missingDictationItem.menu === menu {
+            menu.removeItem(missingDictationItem)
+        }
+    }
+
+    private func refreshTranslationHint() {
+        guard translationHintItem != nil else { return }
+        let hintAttrs: [NSAttributedString.Key: Any] = [
+            .font: NSFont.systemFont(ofSize: 11),
+            .foregroundColor: NSColor.tertiaryLabelColor
+        ]
+        translationHintItem.attributedTitle = NSAttributedString(
+            string: AppConfig.shared.shortcutBindings[.translate].hint,
+            attributes: hintAttrs
+        )
     }
 
     func validateMenuItem(_ menuItem: NSMenuItem) -> Bool {
@@ -244,6 +276,7 @@ final class StatusBarController: NSObject, NSMenuDelegate, NSMenuItemValidation 
         // Combined status + memory row, e.g. "Ready · Memory 2.1 GB"
         refreshStatusLine()
         menu.addItem(statusMenuItem)
+        refreshMissingDictation(in: menu)
 
         menu.addItem(.separator())
 
@@ -328,7 +361,7 @@ final class StatusBarController: NSObject, NSMenuDelegate, NSMenuItemValidation 
                 NotificationCenter.default.post(
                     name: .iosServerStatusDidChange,
                     object: self,
-                    userInfo: [IOSServerPane.runningUserInfoKey: running]
+                    userInfo: [AdvancedPane.runningUserInfoKey: running]
                 )
             }
         }
@@ -351,6 +384,7 @@ final class StatusBarController: NSObject, NSMenuDelegate, NSMenuItemValidation 
             action: #selector(aboutClicked),
             keyEquivalent: ""
         )
+        aboutItem.identifier = UpdateCheckCoordinator.aboutMenuIdentifier
         aboutItem.target = self
         menu.addItem(aboutItem)
 
@@ -454,7 +488,7 @@ final class StatusBarController: NSObject, NSMenuDelegate, NSMenuItemValidation 
         )
 
         // Replaces the old clickable header: toggles the local product with
-        // the user's last-used source (mirrors the Right ⌘ + / hotkey).
+        // the user's last-used source (mirrors the Live Caption shortcut hotkey).
         // Title flips to "Stop Live Caption" in setLiveCaptionState.
         liveCaptionStartStopItem = NSMenuItem(
             title: startTitle,
@@ -609,17 +643,7 @@ final class StatusBarController: NSObject, NSMenuDelegate, NSMenuItemValidation 
         // Translation hotkey hint
         translationHintItem = NSMenuItem(title: "", action: nil, keyEquivalent: "")
         translationHintItem.isEnabled = false
-        let hintAttrs: [NSAttributedString.Key: Any] = [
-            .font: NSFont.systemFont(ofSize: 11),
-            .foregroundColor: NSColor.tertiaryLabelColor
-        ]
-        translationHintItem.attributedTitle = NSAttributedString(
-            string: L10n.string(
-                "menu.translation_hint",
-                fallback: "Tap Right ⌥ to translate"
-            ),
-            attributes: hintAttrs
-        )
+        refreshTranslationHint()
         sub.addItem(translationHintItem)
 
         // Show/hide translation sub-items based on toggle state

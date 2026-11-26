@@ -88,7 +88,9 @@
 		</dict>
 	</dict>
 
-	<key>settings.text.auto_polish.excluded_summary</key>
+
+
+	<key>settings.dictation.dictionary.entries</key>
 	<dict>
 		<key>NSStringLocalizedFormatKey</key>
 		<string>%#@count@</string>
@@ -98,12 +100,28 @@
 			<string>NSStringFormatSpecTypeInt</string>
 			<key>NSStringFormatValueTypeKey</key>
 			<string>l</string>
-			<key>one</key>
-			<string>%1$ld excluded: %2$@</string>
 			<key>other</key>
-			<string>%1$ld excluded: %2$@</string>
+			<string>%1$ld entries. Applies to every engine.</string>
+			<key>one</key>
+			<string>%1$ld entry. Applies to every engine.</string>
 		</dict>
 	</dict>
 
+	<key>settings.text.auto_polish.excluded_count</key>
+	<dict>
+		<key>NSStringLocalizedFormatKey</key>
+		<string>%#@count@</string>
+		<key>count</key>
+		<dict>
+			<key>NSStringFormatSpecTypeKey</key>
+			<string>NSStringFormatSpecTypeInt</string>
+			<key>NSStringFormatValueTypeKey</key>
+			<string>l</string>
+			<key>other</key>
+			<string>%1$ld apps</string>
+			<key>one</key>
+			<string>%1$ld app</string>
+		</dict>
+	</dict>
 </dict>
 </plist>

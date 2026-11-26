@@ -14,7 +14,7 @@ extension AppSettings.PaneIdentifier {
 /// Owns the single seven-pane Settings window for Lamitype.
 @MainActor
 final class LamitypeSettingsWindowController {
-    enum Pane {
+    enum Pane: Hashable {
         case general
         case dictation
         case caption
@@ -120,7 +120,7 @@ final class LamitypeSettingsWindowController {
                 ).asSettingsPane(),
                 TextPane.makeSettingsPane().asSettingsPane(),
                 CloudPane.makeSettingsPane().asSettingsPane(),
-                IOSServerPane.makeSettingsPane(
+                AdvancedPane.makeSettingsPane(
                     onToggle: { [weak iosServerRelay] in
                         iosServerRelay?.toggle()
                     },
@@ -163,6 +163,7 @@ final class LamitypeSettingsWindowController {
         }
         packageController.show(pane: pane?.identifier)
         if let window = packageController.window {
+            ShortcutSettingsModel.shared.observeSettingsWindow(window)
             window.title = L10n.string("settings.window.title", fallback: "Settings")
             window.level = .normal
             NSApp.activate(ignoringOtherApps: true)

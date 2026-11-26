@@ -260,7 +260,7 @@ final class NativeCapReminderE2E {
         key(true); await wait(0.06)
         for down in [true, false] {
             let event = CGEvent(keyboardEventSource: CGEventSource(stateID: .hidSystemState), virtualKey: 44, keyDown: down)!
-            event.flags = CGEventFlags(rawValue: CGEventFlags.maskAlternate.rawValue | CGEventFlags.maskCommand.rawValue | 0x10)
+            event.flags = CGEventFlags(rawValue: CGEventFlags.maskCommand.rawValue | 0x10)
             event.post(tap: .cghidEventTap)
         }
         await wait(0.45); key(false); await wait(0.5)

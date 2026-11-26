@@ -41,6 +41,10 @@ final class UpgradeCompatibilityTests: XCTestCase {
                 for indicator: Bool? in [nil, false, true] {
                     let values = profile(version: version, engine: engine, indicator: indicator)
                     try withStore(values) { config, store, domain in
+                        XCTAssertEqual(config.shortcutBindings, .default)
+                        XCTAssertNil(store.object(forKey: "hushtype.shortcut.dictationKey"))
+                        XCTAssertNil(store.object(forKey: "hushtype.shortcut.liveCaption"))
+                        XCTAssertNil(store.object(forKey: "hushtype.shortcut.bindings"))
                         XCTAssertEqual(config.dictationEngine.rawValue, engine ?? "local")
                         XCTAssertEqual(config.floatingOverlayEnabled, indicator ?? true)
                         XCTAssertTrue(config.localLivePreviewEnabled, "new default must be ON")

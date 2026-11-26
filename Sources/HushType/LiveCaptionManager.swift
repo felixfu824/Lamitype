@@ -69,10 +69,14 @@ final class LiveCaptionManager {
 
     private var backendEventTask: Task<Void, Never>?
     private var stopTeardownTask: Task<Void, Never>?
+    private var isStartingOrRestarting = false
     var isStopping: Bool { stopTeardownTask != nil }
 
     #if DEBUG
     var stopTeardownBarrierForTesting: (() async -> Void)?
+    var makeCaptionPipelineForTesting: ((AppConfig.LiveCaptionEngine, AudioSourceKind)
+        -> (backend: any TranscriptionBackend, source: any AudioSource))?
+    var cloudErrorResponseForTesting: NSApplication.ModalResponse?
     func activateForTesting() { isActive = true }
     #endif
     private var forceSplitTimer: DispatchSourceTimer?
@@ -85,6 +89,7 @@ final class LiveCaptionManager {
     /// Set true the moment auto-stop fires so the watchdog can short-circuit
     /// the rest of the second's checks without racing the teardown path.
     private var autoStopFiring: Bool = false
+    private var autoStopWork: DispatchWorkItem?
 
     /// Raw (un-converted) accumulator for the live target line. Kept
     /// separately from `viewModel.currentTargetLine` only when the cloud
@@ -130,30 +135,64 @@ final class LiveCaptionManager {
 
     /// Turn live caption on with the requested audio source. Idempotent.
     /// Throws if permission is denied or the source fails to start.
-    func start(source requestedSource: AudioSourceKind) async throws {
-        if AppConfig.shared.liveCaptionEngine == .local && LocalModelSwitcher.shared.refusesLocalRequests {
+    func start(source: AudioSourceKind) async throws {
+        try await startSession(source: source, replacingActiveSession: false)
+    }
+
+    private func startSession(
+        source requestedSource: AudioSourceKind,
+        replacingActiveSession: Bool,
+        replacementEngine: AppConfig.LiveCaptionEngine? = nil
+    ) async throws {
+        guard !isStartingOrRestarting, LocalLiveOwnership.beginCaptionTransition() else {
             throw LiveRecognitionError.unavailable
         }
-        guard LocalLiveOwnership.beginCaptionTransition() else { throw LiveRecognitionError.unavailable }
-        defer { LocalLiveOwnership.endCaptionTransition() }
+        let engine = replacementEngine ?? AppConfig.shared.liveCaptionEngine
+        isStartingOrRestarting = true
+        defer {
+            if replacingActiveSession, !isActive {
+                AppConfig.shared.liveCaptionUsesMicSource = false
+                hidePanel()
+            }
+            isStartingOrRestarting = false
+            LocalLiveOwnership.endCaptionTransition()
+        }
+        // A fresh start can follow stop() while its backend still drains.
+        if let stopTeardownTask { await stopTeardownTask.value }
+        if replacingActiveSession {
+            // Keep push-to-talk gated through teardown and startup when
+            // either pipeline needs the shared microphone capture service.
+            publishInactiveState(keepMicGateClosed: currentSource == .mic || requestedSource == .mic)
+            await teardown(releaseLocalResources: replacementEngine != nil)
+        }
+
+        if replacingActiveSession { AppConfig.shared.liveCaptionEngine = engine }
+        if engine == .local && LocalModelSwitcher.shared.refusesLocalRequests {
+            throw LiveRecognitionError.unavailable
+        }
         guard !isActive else { return }
-        let engine = AppConfig.shared.liveCaptionEngine
+        #if DEBUG
+        let testPipeline = makeCaptionPipelineForTesting?(engine, requestedSource)
+        #else
+        let testPipeline: (backend: any TranscriptionBackend, source: any AudioSource)? = nil
+        #endif
         log.info("LiveCaption start requested (source=\(String(describing: requestedSource), privacy: .public), engine=\(engine.rawValue, privacy: .public))")
 
         // Reload tuning at every start so editing the JSON file and toggling
         // off → on is the simple feedback loop for tweaks.
-        tuning = LiveCaptionTuning.load()
+        tuning = testPipeline == nil ? LiveCaptionTuning.load() : .init()
         log.info("Tuning: maxTokens=\(self.tuning.maxTokens, privacy: .public) cacheLimitMB=\(self.tuning.mlxCacheLimitMB, privacy: .public) vadOnset=\(self.tuning.vadOnset, privacy: .public) backpressure=\(self.tuning.backpressureMaxPending, privacy: .public)")
 
         // Bound MLX's buffer pool so a continuous-speech meeting can't push
         // unified memory off a cliff. Cloud engine doesn't transcribe locally
         // but we still hold the loaded ASR model in memory for an instant
         // engine swap, so MLX cache management still applies.
-        MLX.Memory.cacheLimit = tuning.mlxCacheLimitMB * 1024 * 1024
+        if testPipeline == nil {
+            MLX.Memory.cacheLimit = tuning.mlxCacheLimitMB * 1024 * 1024
+        }
 
         // Pre-flight: per-source permission check.
-        switch requestedSource {
-        case .mic:
+        if testPipeline == nil, requestedSource == .mic {
             switch AVCaptureDevice.authorizationStatus(for: .audio) {
             case .authorized:
                 break
@@ -181,14 +220,12 @@ final class LiveCaptionManager {
             @unknown default:
                 break
             }
-        case .system:
-            break
         }
 
         // If cloud is selected, verify the key file before doing anything
         // expensive. Surface a settings-pointing alert if missing.
         var cloudKey: (apiKey: String, organization: String?)? = nil
-        if engine == .cloudTranslate {
+        if testPipeline == nil, engine == .cloudTranslate {
             switch OpenAIKeyStore.load() {
             case .ok(let key, let org), .unusualFormat(let key, let org):
                 cloudKey = (key, org)
@@ -232,7 +269,7 @@ final class LiveCaptionManager {
 
         // VAD model is local-engine-only. The cloud endpoint owns its own
         // server-side segmentation; we don't run SileroVAD on cloud sessions.
-        if engine == .local {
+        if testPipeline == nil, engine == .local {
             // The dictation engine is the single owner/loader of Qwen. A
             // cloud-dictation launch intentionally arrives here with no
             // model; local captions load it lazily and derive a weak handle.
@@ -264,8 +301,8 @@ final class LiveCaptionManager {
                     return
                 } catch {
                     log.error("Qwen model load failed: \(error.localizedDescription, privacy: .public)")
-                    showASRLoadFailedAlert(error)
                     hidePanel()
+                    showASRLoadFailedAlert(error)
                     throw error
                 }
             }
@@ -276,8 +313,8 @@ final class LiveCaptionManager {
                     vadModel = try await SileroVADModel.fromPretrained(engine: .mlx)
                 } catch {
                     log.error("SileroVAD load failed: \(error.localizedDescription, privacy: .public)")
-                    showVADLoadFailedAlert(error)
                     hidePanel()
+                    showVADLoadFailedAlert(error)
                     throw error
                 }
             }
@@ -286,8 +323,10 @@ final class LiveCaptionManager {
 
         // Build the backend per engine.
         let newBackend: any TranscriptionBackend
-        switch engine {
-        case .local:
+        switch (engine, testPipeline?.backend) {
+        case (_, let backend?):
+            newBackend = backend
+        case (.local, nil):
             asrModel = localEngine.loadedModel
             guard let asrModel, let vadModel else {
                 throw NSError(domain: "LiveCaption", code: 20,
@@ -302,7 +341,7 @@ final class LiveCaptionManager {
                 language: AppConfig.shared.language,
                 tuning: tuning
             )
-        case .cloudTranslate:
+        case (.cloudTranslate, nil):
             guard let cloudKey else {
                 throw NSError(domain: "LiveCaption", code: 31,
                               userInfo: [NSLocalizedDescriptionKey: L10n.string(
@@ -324,8 +363,9 @@ final class LiveCaptionManager {
             try await newBackend.start()
         } catch {
             log.error("Backend start failed: \(error.localizedDescription, privacy: .public)")
-            showBackendStartFailedAlert(error, engine: engine)
             hidePanel()
+            await newBackend.stop()
+            if testPipeline == nil { showBackendStartFailedAlert(error, engine: engine) }
             throw error
         }
 
@@ -341,23 +381,22 @@ final class LiveCaptionManager {
         // Held concretely so a terminal failure raised during start can be
         // read back before this manager commits to the active state.
         let micSource: MicAudioSource?
-        switch requestedSource {
-        case .mic:
+        switch (requestedSource, testPipeline?.source) {
+        case (_, let replacement?):
+            micSource = nil
+            source = replacement
+        case (.mic, nil):
             let mic = MicAudioSource(service: captureService)
             micSource = mic
             source = mic
-        case .system(let bundleID):
+        case (.system(let bundleID), nil):
             micSource = nil
             source = SystemAudioSource(bundleID: bundleID)
         }
 
-        // The onSamples callback is captured against the manager (not the
-        // current backend) so engine swaps re-route audio to the new backend
-        // without rebuilding the source. The manager is `@MainActor`; reading
-        // `self.backend` from the IO thread needs a hop, so we read it inside
-        // the spawned Task.
-        source.onSamples = { [weak self] samples in
-            guard let self else { return }
+        // Audio already queued by this source belongs to its own backend.
+        source.onSamples = { [weak self, weak newBackend] samples in
+            guard let self, let newBackend else { return }
             if !pendingFrames.tryReserve(maxPending: maxPendingFrames) {
                 let dropped = pendingFrames.incrementDropped()
                 if dropped & 31 == 1 {
@@ -366,22 +405,18 @@ final class LiveCaptionManager {
                 return
             }
             Task { [weak self] in
-                if let backend = await self?.currentBackend() {
-                    await backend.feed(samples: samples)
+                if await self?.isCurrentBackend(newBackend) == true {
+                    await newBackend.feed(samples: samples)
                 }
                 pendingFrames.release()
             }
         }
-        let usingMicSource = (requestedSource == .mic)
-        source.onError = { [weak self] error in
-            Task { @MainActor in
-                guard let self else { return }
+        source.onError = { [weak self, weak source] error in
+            Task { @MainActor [weak self, weak source] in
+                // The startup catch owns failures from start(). A callback
+                // from the previous source must not stop its replacement.
+                guard let self, let source, self.isActive, self.audioSource === source else { return }
                 log.error("AudioSource error: \(error.localizedDescription, privacy: .public)")
-                // A mic failure seen before activation belongs to the startup
-                // catch, which reads MicAudioSource.terminalError and presents
-                // the one alert. The same guard keeps a late failure from
-                // alerting after the session has already stopped.
-                if usingMicSource, !self.isActive { return }
                 let wasSystem: Bool
                 if case .system = self.currentSource { wasSystem = true } else { wasSystem = false }
                 self.stop()
@@ -419,12 +454,14 @@ final class LiveCaptionManager {
             backendEventTask?.cancel()
             backendEventTask = nil
             backend = nil
-        LocalLiveOwnership.localCaptionActive = false
+            LocalLiveOwnership.localCaptionActive = false
             hidePanel()
-            if case .system = requestedSource {
-                showSystemAudioStartFailedAlert(error)
-            } else {
-                showMicrophoneStartFailedAlert(error)
+            if testPipeline == nil {
+                if case .system = requestedSource {
+                    showSystemAudioStartFailedAlert(error)
+                } else {
+                    showMicrophoneStartFailedAlert(error)
+                }
             }
             throw error
         }
@@ -438,13 +475,13 @@ final class LiveCaptionManager {
 
         isActive = true
         currentSource = requestedSource
+        AppConfig.shared.liveCaptionEngine = engine
         AppConfig.shared.liveCaptionEnabled = true
         let usingMic = (requestedSource == .mic)
         AppConfig.shared.liveCaptionUsesMicSource = usingMic
-        // Persisted "last-started" memory — read by the Right ⌘ + / hotkey
+        // Persisted "last-started" memory — read by the Live Caption shortcut hotkey
         // to honor the user's previous source choice across stops. Distinct
-        // from `liveCaptionUsesMicSource` which is reset on stop (it's the
-        // "currently using mic" flag the dictation gate watches).
+        // from `liveCaptionUsesMicSource`, the session's dictation mic gate.
         AppConfig.shared.lastStartedCaptionUsesMicSource = usingMic
         let mode: AppConfig.CaptionMode = (engine == .cloudTranslate) ? .translated : .local
         AppConfig.shared.lastStartedCaptionMode = mode
@@ -460,8 +497,6 @@ final class LiveCaptionManager {
     /// Engine choice is not affected; only the audio source flips. Engine
     /// changes go through `switchEngine(to:)`.
     func switchSource(to newSource: AudioSourceKind) async throws {
-        guard LocalLiveOwnership.beginCaptionTransition() else { throw LiveRecognitionError.unavailable }
-        defer { LocalLiveOwnership.endCaptionTransition() }
         guard isActive else {
             try await start(source: newSource)
             return
@@ -469,55 +504,20 @@ final class LiveCaptionManager {
         guard currentSource != newSource else { return }
         log.info("LiveCaption switching source \(String(describing: self.currentSource), privacy: .public) → \(String(describing: newSource), privacy: .public)")
 
-        // Tear down source-specific bits but keep panel visible.
-        forceSplitTimer?.cancel()
-        forceSplitTimer = nil
-        cloudWatchdogTimer?.cancel()
-        cloudWatchdogTimer = nil
-
-        audioSource?.stop()
-        audioSource = nil
-
-        // Drain the current backend cleanly; start() below will build a new
-        // one. We re-use the consumer-Task drain pattern from switchEngine
-        // so trailing segments land before we clear the panel.
-        if let backend {
-            await backend.stop()
-        }
-        await backendEventTask?.value
-        backendEventTask = nil
-        backend = nil
-        LocalLiveOwnership.localCaptionActive = false
-
-        // start(source:) will re-instantiate everything. Panel content
-        // clears (matches today's behavior — `start(source:)` calls
-        // `vm.segments.removeAll()` first).
-        isActive = false
-        currentSource = nil
-
-        try await start(source: newSource)
+        try await startSession(source: newSource, replacingActiveSession: true)
     }
 
-    /// Swap the cloud/local engine mid-session per spec §10. The audio source
-    /// stays mounted; only the backend rebuilds. Panel content clears (matches
-    /// the source-swap semantics). If the user just changed `liveCaptionEngine`
-    /// from Settings while Live Caption is not active, call sites should just
-    /// rely on the next `start()` to pick up the new value — this method is
-    /// only meaningful for the active-session swap.
+    /// Rebuild the pipeline for the new engine using the current source.
+    /// If captions are off, select the engine for the next start.
     func switchEngine(to engine: AppConfig.LiveCaptionEngine) async {
-        guard LocalLiveOwnership.beginCaptionTransition() else { return }
-        defer { LocalLiveOwnership.endCaptionTransition() }
+        guard !isStartingOrRestarting, !LocalLiveOwnership.isBusy else { return }
         guard isActive, let source = currentSource else {
             AppConfig.shared.liveCaptionEngine = engine
             return
         }
         log.info("LiveCaption switching engine → \(engine.rawValue, privacy: .public)")
-        AppConfig.shared.liveCaptionEngine = engine
-        // The simplest correct path: stop the audio source + backend cleanly,
-        // then call start(source:) — which picks up the new engine.
-        await teardown(stopAudio: true)
         do {
-            try await start(source: source)
+            try await startSession(source: source, replacingActiveSession: true, replacementEngine: engine)
         } catch {
             log.error("Engine swap restart failed: \(error.localizedDescription, privacy: .public)")
         }
@@ -532,17 +532,13 @@ final class LiveCaptionManager {
     func stop() {
         guard isActive else { return }
         log.info("LiveCaption stop requested")
-        isActive = false
-        currentSource = nil
-        AppConfig.shared.liveCaptionEnabled = false
-        AppConfig.shared.liveCaptionUsesMicSource = false
-        onStateChanged?(nil, nil)
+        publishInactiveState()
         let task = Task { @MainActor [weak self] in
             guard let self else { return }
             #if DEBUG
             await self.stopTeardownBarrierForTesting?()
             #endif
-            await self.teardown(stopAudio: true)
+            await self.teardown()
             self.hidePanel()
             self.stopTeardownTask = nil
             log.info("LiveCaption stopped, source released")
@@ -575,12 +571,8 @@ final class LiveCaptionManager {
             // off state, then fully drain audio/backend ownership before the
             // caller releases the engine or clears MLX memory.
             log.info("LiveCaption local stop requested for model unload")
-            isActive = false
-            currentSource = nil
-            AppConfig.shared.liveCaptionEnabled = false
-            AppConfig.shared.liveCaptionUsesMicSource = false
-            onStateChanged?(nil, nil)
-            await teardown(stopAudio: true)
+            publishInactiveState()
+            await teardown()
             hidePanel()
             log.info("LiveCaption local backend released for model unload")
         } else if hasLocalBackend, let stopTeardownTask {
@@ -621,18 +613,23 @@ final class LiveCaptionManager {
 
     // MARK: - Internal: read backend from off-main contexts
 
-    /// Called from the audio IO Task to fetch the currently-installed
-    /// backend. `@MainActor`-isolated, accessed via `await self?...`.
-    private func currentBackend() -> (any TranscriptionBackend)? {
-        backend
+    private func isCurrentBackend(_ candidate: any TranscriptionBackend) -> Bool {
+        backend === candidate
     }
 
     // MARK: - Teardown helper
 
-    /// Stop tickers, backend, optionally audio source. Does not clear panel
-    /// or reset `isActive` — caller decides whether this is a full stop or
-    /// part of an engine swap.
-    private func teardown(stopAudio: Bool) async {
+    private func publishInactiveState(keepMicGateClosed: Bool = false) {
+        isActive = false
+        currentSource = nil
+        AppConfig.shared.liveCaptionEnabled = false
+        AppConfig.shared.liveCaptionUsesMicSource = keepMicGateClosed
+        onStateChanged?(nil, nil)
+    }
+
+    /// Stop the pipeline. A source-only switch keeps the current VAD model
+    /// and MLX cache for the replacement backend.
+    private func teardown(releaseLocalResources: Bool = true) async {
         // A pending local teardown must retire before live can lease the model.
         LocalLiveOwnership.captionTransitions += 1
         defer { LocalLiveOwnership.endCaptionTransition() }
@@ -641,14 +638,15 @@ final class LiveCaptionManager {
 
         cloudWatchdogTimer?.cancel()
         cloudWatchdogTimer = nil
+        autoStopWork?.cancel()
+        autoStopWork = nil
+        autoStopFiring = false
 
         flashHideWork?.cancel()
         flashHideWork = nil
 
-        if stopAudio {
-            audioSource?.stop()
-            audioSource = nil
-        }
+        audioSource?.stop()
+        audioSource = nil
 
         // Note the backend kind BEFORE we tear it down — we need it to decide
         // whether MLX cache clearing is warranted, and `backend` is nil after
@@ -665,7 +663,7 @@ final class LiveCaptionManager {
 
         // Drop the SileroVAD model — same rationale as before: ~30 MB of
         // MLX-backed weights, holding it cached after stop misleads the user.
-        vadModel = nil
+        if releaseLocalResources { vadModel = nil }
 
         // Only clear the MLX buffer pool if the engine that just finished
         // actually used it. Cloud translate is a pure WebSocket path that
@@ -674,7 +672,7 @@ final class LiveCaptionManager {
         // makes the next push-to-talk dictation slower. Local engine still
         // clears as before because it just filled the pool with decoder KV
         // and segment activations we no longer need.
-        if backendUsedMLX {
+        if releaseLocalResources, backendUsedMLX {
             MLX.Memory.clearCache()
         }
 
@@ -921,6 +919,7 @@ final class LiveCaptionManager {
     private func cloudWatchdogTick() async {
         guard isActive, !autoStopFiring else { return }
         let snap = await CloudUsageTracker.shared.snapshot()
+        guard isActive, !autoStopFiring, AppConfig.shared.liveCaptionEngine == .cloudTranslate else { return }
 
         // Cost ticker chip: "MM:SS · $X.XX"
         let chip = "\(CloudUsageTracker.formatSessionTime(seconds: snap.sessionSeconds)) · \(CloudUsageTracker.formatDollars(snap.sessionDollars))"
@@ -975,10 +974,9 @@ final class LiveCaptionManager {
 
         // Hide panel after 5s so the autoStopped flash is visible. Use main
         // queue async so we don't block the watchdog event handler.
-        DispatchQueue.main.asyncAfter(deadline: .now() + 5.0) { [weak self] in
-            self?.stop()
-            self?.autoStopFiring = false
-        }
+        let work = DispatchWorkItem { [weak self] in self?.stop() }
+        autoStopWork = work
+        DispatchQueue.main.asyncAfter(deadline: .now() + 5.0, execute: work)
     }
 
     /// Best-effort notification. If `UNUserNotificationCenter` permission is
@@ -1147,6 +1145,12 @@ final class LiveCaptionManager {
     }
 
     private func showCloudErrorWithSwitchToLocalAlert(_ error: Error) {
+        #if DEBUG
+        if let cloudErrorResponseForTesting {
+            handleCloudErrorResponse(cloudErrorResponseForTesting)
+            return
+        }
+        #endif
         let alert = NSAlert()
         alert.messageText = L10n.string(
             "alert.caption.connection_lost.title",
@@ -1159,7 +1163,10 @@ final class LiveCaptionManager {
         )
         alert.addButton(withTitle: L10n.string("common.button.switch_to_local", fallback: "Switch to Local"))
         alert.addButton(withTitle: L10n.string("common.button.stop", fallback: "Stop"))
-        let response = alert.runModal()
+        handleCloudErrorResponse(alert.runModal())
+    }
+
+    private func handleCloudErrorResponse(_ response: NSApplication.ModalResponse) {
         if response == .alertFirstButtonReturn {
             Task { @MainActor in await self.switchEngine(to: .local) }
         } else {

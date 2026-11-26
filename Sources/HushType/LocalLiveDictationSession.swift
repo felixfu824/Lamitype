@@ -9,7 +9,8 @@ enum LiveDictationPhase: Equatable { case recording, finalizing, polishing, drai
 /// terminal rights; synchronous inference drains on a serial queue before release.
 @MainActor
 final class LocalLiveDictationSession {
-    let id = UUID()
+    let stageLog = DictationStageLog()
+    var id: UUID { stageLog.pressID }
     private(set) var phase: LiveDictationPhase = .recording
     private(set) var audio: [Float] = []
     private(set) var draft = ""
@@ -32,15 +33,22 @@ final class LocalLiveDictationSession {
     private var previousSampleTime: Double?
     private var maximumSampleGap: Double = 0
     private(set) var retrying = false
+    private(set) var clearedFinalForSecureInput = false
+    private(set) var copyOnlyReason: LivePasteReason?
+    private var finalCharCount = 0
+    private var didLogFinalSkip = false
     private var captureErrorPresented = false
     private let capture: AudioCaptureService
     private let now: () -> TimeInterval
+    private let acquireOwnership: @MainActor (UUID) -> Bool
+    private let releaseOwnership: @MainActor (UUID) -> Void
     private let recognize: ([Float]) throws -> LiveRecognition
     let isSecure: () -> Bool
     var onUpdate: (() -> Void)?
     var onTap: (() -> Void)?
     var onAutoStop: (() -> Void)?
     var onCaptureError: ((Error) -> Void)?
+    var onCaptureInterrupted: (() -> Void)?
     var onFailure: ((Error) -> Void)?
     var prepareRecognition: (() async throws -> Void)?
     var formatDraft: (String) -> String = { $0 }
@@ -51,23 +59,31 @@ final class LocalLiveDictationSession {
     init(capture: AudioCaptureService,
          now: @escaping () -> TimeInterval = { ProcessInfo.processInfo.systemUptime },
          isSecure: @escaping () -> Bool = { SecureInputProbe.isActive() },
+         acquireOwnership: @escaping @MainActor (UUID) -> Bool = { LocalLiveOwnership.acquire($0) },
+         releaseOwnership: @escaping @MainActor (UUID) -> Void = { LocalLiveOwnership.release($0) },
          recognize: @escaping ([Float]) throws -> LiveRecognition) {
         self.capture = capture; self.now = now; self.isSecure = isSecure; self.recognize = recognize
+        self.acquireOwnership = acquireOwnership; self.releaseOwnership = releaseOwnership
     }
 
     @discardableResult
-    func start(automaticTicks: Bool = true, pressUptime: TimeInterval? = nil) throws -> Bool {
-        guard !isSecure(), LocalLiveOwnership.acquire(id) else { return false }
+    func start(automaticTicks: Bool = true, pressUptime: TimeInterval? = nil,
+               captureTiming: DictationCaptureTiming? = nil) throws -> Bool {
+        guard !isSecure(), acquireOwnership(id) else { return false }
+        stageLog.emit(.pressAdmitted)
         startTime = now()
         pressTime = pressUptime ?? startTime
         capture.onError = { [weak self] error in
             guard let self, self.phase == .recording else { return }
-            self.capture.cancelRecording()
+            if self.capture.hasInterruptedRecording {
+                self.onCaptureInterrupted?()
+                return
+            }
             self.reportCaptureError(error)
-            self.cancel()
+            self.cancel(reason: RecordingCancellationReason(error: error))
         }
-        do { try capture.startRecording(limitSeconds: 60) }
-        catch { LocalLiveOwnership.release(id); throw error }
+        do { try capture.startRecording(limitSeconds: 60, timing: captureTiming, stageLog: stageLog) }
+        catch { releaseOwnership(id); throw error }
         if automaticTicks {
             let timer = Timer(timeInterval: 0.1, repeats: true) { [weak self] _ in
                 MainActor.assumeIsolated { self?.tick() }
@@ -80,18 +96,19 @@ final class LocalLiveDictationSession {
 
     func tick() {
         guard phase != .finished else { return }
-        if isSecure() { cancel(); return }
+        if isSecure() { cancel(reason: .secureInput); return }
         let sampleTime = now()
         peakFootprintMiB = max(peakFootprintMiB, Double(MemoryUtils.physFootprintMB()))
         if let previousSampleTime { maximumSampleGap = max(maximumSampleGap, sampleTime - previousSampleTime) }
         previousSampleTime = sampleTime
         guard phase == .recording else { return }
         elapsed = max(0, now() - startTime)
-        onUpdate?()
+        if !capture.hasInterruptedRecording { onUpdate?() }
         if elapsed >= 60 || capture.recordingLimitReached {
             stoppedAtLimit = true
             onAutoStop?(); stop(); return
         }
+        guard !capture.hasInterruptedRecording else { return }
         guard elapsed >= nextTick, !isBusy else { return }
         let snapshot = capture.recordingSnapshot()
         let blockEnd = min(snapshot.count, blockStart + 240_000)
@@ -107,9 +124,9 @@ final class LocalLiveDictationSession {
                 return self.formatDraft(recognition.text)
             }
             isBusy = false
-            if isSecure() { cancel(); return }
+            if isSecure() { cancel(reason: .secureInput); return }
             if cancelled { finishCancelled(); return }
-            if phase == .recording, blockStart == currentBlock {
+            if phase == .recording, !capture.hasInterruptedRecording, blockStart == currentBlock {
                 previewUnavailable = result == nil
                 if completedBlock { blockStart += 240_000; draft = "" }
                 else if let result {
@@ -126,23 +143,25 @@ final class LocalLiveDictationSession {
     func release() {
         guard phase == .recording else { return }
         let releaseTime = now()
-        // A failure latched on the IO thread wins even before onError reaches main.
-        let captured: [Float]
-        do { captured = try capture.stopRecording() }
-        catch { reportCaptureError(error); cancel(); return }
-        if releaseTime - pressTime < 0.3 {
+        let isTap = isTranslationTap(elapsed: releaseTime - pressTime, captureFailed: false)
+        let recording: (samples: [Float], interrupted: Bool)
+        do { recording = try capture.finishRecording(isTap: isTap) }
+        catch { reportCaptureError(error); cancel(reason: RecordingCancellationReason(error: error)); return }
+        if isTap {
             cancelled = true
             finishCancelled()
             onTap?()
-        } else { stop(captured: captured, stoppedAt: releaseTime) }
+        } else { stop(recording: recording, stoppedAt: releaseTime) }
     }
 
-    private func stop(captured: [Float]? = nil, stoppedAt: TimeInterval? = nil) {
+    private func stop(recording: (samples: [Float], interrupted: Bool)? = nil, stoppedAt: TimeInterval? = nil) {
         guard phase == .recording else { return }
         let stopTime = stoppedAt ?? now()
-        do { if let captured { audio = captured } else { audio = try capture.stopRecording() } }
-        catch { reportCaptureError(error); cancel(); return }
-        guard audio.count > 4800 else {
+        let finished: (samples: [Float], interrupted: Bool)
+        do { finished = try recording ?? capture.finishRecording() }
+        catch { reportCaptureError(error); cancel(reason: RecordingCancellationReason(error: error)); return }
+        audio = finished.samples
+        guard finished.interrupted || audio.count > 4800 else {
             reportCaptureError(AudioCaptureError.insufficientLiveAudio)
             cancel(); return
         }
@@ -154,16 +173,20 @@ final class LocalLiveDictationSession {
     private func runFinal() {
         guard finalRequested, !isBusy, !cancelled else { return }
         finalRequested = false; isBusy = true
+        didLogFinalSkip = false
+        finalCharCount = 0
         let samples = audio, thisAttempt = attempt
         Task { [self] in
             do {
                 try await prepareRecognition?()
-                guard !cancelled, !isSecure() else { isBusy = false; cancel(); return }
+                guard !abortFinalIfNeeded(attempt: thisAttempt) else { return }
                 #if DEBUG
                 NativeLocalLiveCounters.finalCalls += 1
                 #endif
+                let recognitionStarted = now()
                 let result = try await LocalLiveInference.run { try self.recognize(samples) }
-                guard !cancelled, thisAttempt == attempt, !isSecure() else { cancel(); isBusy = false; finishCancelled(); return }
+                let recognitionLatency = now() - recognitionStarted
+                guard !abortFinalIfNeeded(attempt: thisAttempt) else { return }
                 #if DEBUG
                 NativeLocalLiveCounters.lastFinalGeneratedTokens = result.generatedTokens
                 NativeLocalLiveCounters.lastFinalEndedByEOS = result.endedByEOS
@@ -174,37 +197,77 @@ final class LocalLiveDictationSession {
                 #endif
                 guard result.isComplete else { throw LiveRecognitionError.incomplete }
                 guard !result.text.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty else { throw LiveRecognitionError.empty }
+                finalCharCount = result.text.count
+                stageLog.emit(.transcriptionDone(text: result.text, latency: recognitionLatency))
                 let stopToASRSeconds = now() - stoppedTime
-                let finalText = await prepareFinal?(result.text)
+                let prepared = await prepareFinal?(result.text)
+                guard !abortFinalIfNeeded(attempt: thisAttempt) else { return }
                 isBusy = false
-                guard !cancelled, thisAttempt == attempt, !isSecure(), let finalText else { cancel(); return }
+                let finalText: String
+                if let prepared, !prepared.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
+                    finalText = prepared
+                } else {
+                    // ASR completed. Preserve its output for explicit Copy when
+                    // preparation could not produce a deliverable result.
+                    finalText = result.text
+                    copyOnlyReason = .preparationUnavailable
+                }
                 audio = []; phase = .finished; timer?.invalidate(); timer = nil
-                LocalLiveOwnership.release(id)
+                releaseOwnership(id)
                 peakFootprintMiB = max(peakFootprintMiB, Double(MemoryUtils.physFootprintMB()))
                 liveLog.info("final samples=\(samples.count, privacy: .public) tokens=\(result.generatedTokens, privacy: .public) firstDraftSeconds=\(self.firstDraftSeconds ?? -1, privacy: .public) stopToASRSeconds=\(stopToASRSeconds, privacy: .public) stopToPreparedTextSeconds=\(self.now() - self.stoppedTime, privacy: .public) sampledAppPeakMiB=\(self.peakFootprintMiB, privacy: .public) maxSampleGapSeconds=\(self.maximumSampleGap, privacy: .public) retry=\(self.retrying, privacy: .public)")
-                onResult?(finalText, retrying)
+                if let onResult { onResult(finalText, retrying) }
+                else { logFinalSkip(.missingRecipient) }
                 onFinished?()
             } catch {
                 isBusy = false
-                if cancelled || isSecure() { cancel(); return }
+                guard !abortFinalIfNeeded(attempt: thisAttempt) else { return }
+                logFinalSkip(.recognitionFailed)
                 phase = .recovery; retainedFailure = error
-                LocalLiveOwnership.release(id)
+                releaseOwnership(id)
                 onFailure?(error); onUpdate?()
             }
         }
     }
 
+    var canPrepareFinal: Bool {
+        guard !isSecure() else {
+            cancel(reason: .secureInput)
+            return false
+        }
+        return !cancelled
+    }
+
+    private func logFinalSkip(_ reason: LivePasteReason) {
+        guard !didLogFinalSkip else { return }
+        didLogFinalSkip = true
+        stageLog.emit(.livePasteSkipped(reason, charCount: finalCharCount, copyAvailable: false))
+    }
+
+    private func abortFinalIfNeeded(attempt expected: UUID) -> Bool {
+        let secure = isSecure()
+        guard cancelled || attempt != expected || secure else { return false }
+        isBusy = false
+        if !secure, !cancelled { logFinalSkip(.superseded) }
+        cancel(reason: secure ? .secureInput : .userDiscarded)
+        return true
+    }
+
     @discardableResult
     func retry() -> Bool {
-        guard phase == .recovery, !isBusy, !audio.isEmpty, !isSecure(), LocalLiveOwnership.acquire(id) else { return false }
+        guard phase == .recovery, !isBusy, !audio.isEmpty, !isSecure(), acquireOwnership(id) else { return false }
         attempt = UUID(); retrying = true; stoppedTime = now(); phase = .finalizing; finalRequested = true
         retainedFailure = nil; onUpdate?(); runFinal(); return true
     }
 
-    func cancel() {
+    func cancel(reason: RecordingCancellationReason = .userDiscarded) {
         guard phase != .finished else { return }
+        if phase == .finalizing || phase == .polishing {
+            if reason == .secureInput { clearedFinalForSecureInput = true }
+            logFinalSkip(reason == .secureInput ? .secureInput : .cancelled)
+        }
         cancelled = true; attempt = UUID(); finalRequested = false
-        capture.cancelRecording(); audio = []; draft = ""
+        capture.cancelRecording(reason: reason); audio = []; draft = ""
         timer?.invalidate(); timer = nil
         if isBusy { phase = .draining; onUpdate?() }
         else { finishCancelled() }
@@ -220,7 +283,7 @@ final class LocalLiveDictationSession {
         guard !isBusy, phase != .finished else { return }
         phase = .finished
         timer?.invalidate(); timer = nil
-        LocalLiveOwnership.release(id)
+        releaseOwnership(id)
         onFinished?()
     }
 }
@@ -229,5 +292,8 @@ private extension AudioCaptureError {
     static var insufficientLiveAudio: AudioCaptureError { .startFailed(LiveShortAudioError()) }
 }
 private struct LiveShortAudioError: LocalizedError {
-    var errorDescription: String? { L10n.string("error.audio_capture.too_short", fallback: "Not enough audio was captured. Hold Right Option and try again.") }
+    var errorDescription: String? { ShortcutDisplay.format(
+                "error.audio_capture.too_short",
+                "Not enough audio was captured. Hold %1$@ and try again.", spoken: true
+            ) }
 }

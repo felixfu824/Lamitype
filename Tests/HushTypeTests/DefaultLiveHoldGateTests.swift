@@ -38,4 +38,23 @@ import XCTest
         XCTAssertEqual(c.work.count, 2)
         c.time = 0.3; c.work[1].perform(); XCTAssertEqual(c.held, [0])
     }
+    func testDeferredAdmissionStillMeasuresConsentThresholdFromPhysicalKeyDown() {
+        let c = Clock(), gate = make(c)
+        c.time = 0.15
+        gate.press(began: 0) { c.held.append($0) }
+        c.time = 0.3
+        c.work[0].perform()
+        XCTAssertEqual(c.held, [0])
+    }
+
+    func testCaptionConflictAfterDeferredAdmissionUsesPhysicalHoldForNoticeInsteadOfTranslation() {
+        let app = AppDelegate()
+        var taps = 0
+        // A 0.4-second physical hold has only 0.25 seconds after admission.
+        XCTAssertTrue(app.releaseLiveCaptionBlockedPressForTesting(elapsed: 0.4, onTap: { taps += 1 }))
+        XCTAssertEqual(taps, 0)
+        XCTAssertFalse(app.releaseLiveCaptionBlockedPressForTesting(elapsed: 0.05, onTap: { taps += 1 }))
+        XCTAssertEqual(taps, 1)
+    }
+
 }

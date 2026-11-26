@@ -1,0 +1,5 @@
+Fraunces
+Copyright 2018 The Fraunces Project Authors (https://github.com/undercasetype/Fraunces)
+Licensed under the SIL Open Font License, Version 1.1. See ../Fonts/OFL.txt.
+
+Source: https://github.com/google/fonts/tree/main/ofl/fraunces

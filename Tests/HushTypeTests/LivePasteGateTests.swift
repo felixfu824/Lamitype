@@ -12,7 +12,7 @@ final class LivePasteGateTests: XCTestCase {
               windowMatches: true, windowID: 130, hasElement: true, elementMatches: true,
               role: "AXTextField", subrole: .value("AXSearchField"))
     }
-    private func check(_ expected: String?,
+    private func check(_ expected: LivePasteReason?,
                        capture: (inout LivePasteGate.Captured) -> Void = { _ in },
                        now: (inout LivePasteGate.Current) -> Void = { _ in },
                        file: StaticString = #filePath, line: UInt = #line) {
@@ -20,7 +20,7 @@ final class LivePasteGateTests: XCTestCase {
         var current = current
         capture(&captured)
         now(&current)
-        XCTAssertEqual(LivePasteGate.denialReason(captured: captured, current: current), expected, file: file, line: line)
+        XCTAssertEqual(LivePasteGate.denial(captured: captured, current: current), expected, file: file, line: line)
         XCTAssertEqual(LivePasteGate.allows(captured: captured, current: current), expected == nil, file: file, line: line)
     }
 
@@ -38,34 +38,34 @@ final class LivePasteGateTests: XCTestCase {
         check(nil, now: { $0.role = "AXWebArea" })
         check(nil, now: { $0.role = "AXWebArea" })
     }
-    func testMissingCapturedAppDenies() { check("captured app unavailable", capture: { $0.processIdentifier = nil }) }
-    func testDifferentAppDenies() { check("frontmost app changed", now: { $0.processIdentifier = 43 }) }
-    func testMissingCurrentAppDenies() { check("frontmost app changed", now: { $0.processIdentifier = nil }) }
-    func testTerminatedAppDenies() { check("captured app terminated", now: { $0.isTerminated = true }) }
-    func testInactiveAppDenies() { check("captured app inactive", now: { $0.isActive = false }) }
-    func testActivationAwayAndBackDenies() { check("app activation changed", now: { $0.activationChanged = true }) }
+    func testMissingCapturedAppDenies() { check(.missingApplication, capture: { $0.processIdentifier = nil }) }
+    func testDifferentAppDenies() { check(.frontmostChanged, now: { $0.processIdentifier = 43 }) }
+    func testMissingCurrentAppDenies() { check(.frontmostChanged, now: { $0.processIdentifier = nil }) }
+    func testTerminatedAppDenies() { check(.terminated, now: { $0.isTerminated = true }) }
+    func testInactiveAppDenies() { check(.inactive, now: { $0.isActive = false }) }
+    func testActivationAwayAndBackDenies() { check(.activationChanged, now: { $0.activationChanged = true }) }
     func testNotificationLatchedBeforeVerificationDenies() {
-        check("focus/window notification latched", now: { $0.focusInvalidatedBeforeVerification = true })
+        check(.focusNotification, now: { $0.focusInvalidatedBeforeVerification = true })
     }
     func testSecureInputBeforeVerificationDenies() {
-        check("secure input active before verification", now: { $0.secureInputBeforeVerification = true })
+        check(.secureBefore, now: { $0.secureInputBeforeVerification = true })
     }
-    func testMissingCapturedWindowDenies() { check("captured AX window unavailable", capture: { $0.hasWindow = false }) }
+    func testMissingCapturedWindowDenies() { check(.capturedWindowMissing, capture: { $0.hasWindow = false }) }
     func testChangedOrMissingAXWindowDenies() {
-        check("AX focused window changed or unavailable", now: { $0.windowMatches = false })
+        check(.windowChanged, now: { $0.windowMatches = false })
     }
-    func testMissingCapturedCGWindowIDDenies() { check("captured CGWindowID unavailable", capture: { $0.windowID = nil }) }
-    func testChangedCGWindowIDDenies() { check("CGWindowID changed or unavailable", now: { $0.windowID = 17205 }) }
-    func testMissingCurrentCGWindowIDDenies() { check("CGWindowID changed or unavailable", now: { $0.windowID = nil }) }
-    func testElementDisappearedDenies() { check("focused element disappeared", now: { $0.hasElement = false }) }
-    func testChangedElementDenies() { check("focused element changed", now: { $0.elementMatches = false }) }
-    func testSecureSubroleDenies() { check("secure or unreadable subrole", now: { $0.subrole = .value("AXSecureTextField") }) }
-    func testUnreadableSubroleDenies() { check("secure or unreadable subrole", now: { $0.subrole = .unreadable }) }
-    func testElementAppearingAfterNilCaptureDenies() { check("focused element appeared", capture: { $0.hasElement = false }) }
+    func testMissingCapturedCGWindowIDDenies() { check(.capturedWindowIDMissing, capture: { $0.windowID = nil }) }
+    func testChangedCGWindowIDDenies() { check(.windowIDChanged, now: { $0.windowID = 17205 }) }
+    func testMissingCurrentCGWindowIDDenies() { check(.windowIDChanged, now: { $0.windowID = nil }) }
+    func testElementDisappearedDenies() { check(.elementDisappeared, now: { $0.hasElement = false }) }
+    func testChangedElementDenies() { check(.elementChanged, now: { $0.elementMatches = false }) }
+    func testSecureSubroleDenies() { check(.secureSubrole, now: { $0.subrole = .value("AXSecureTextField") }) }
+    func testUnreadableSubroleDenies() { check(.unreadableSubrole, now: { $0.subrole = .unreadable }) }
+    func testElementAppearingAfterNilCaptureDenies() { check(.elementAppeared, capture: { $0.hasElement = false }) }
     func testNotificationLatchedDuringVerificationDenies() {
-        check("focus/window notification latched during verification", now: { $0.focusInvalidatedAfterVerification = true })
+        check(.focusDuringVerification, now: { $0.focusInvalidatedAfterVerification = true })
     }
     func testSecureInputAfterVerificationDenies() {
-        check("secure input active after verification", now: { $0.secureInputAfterVerification = true })
+        check(.secureAfter, now: { $0.secureInputAfterVerification = true })
     }
 }

@@ -39,6 +39,69 @@ final class AppConfig {
         static let defaultsProfile = "hushtype.defaultsProfile"
     }
 
+    private var invalidShortcutKeysLogged = Set<String>()
+
+    private func logInvalidShortcutOnce(_ key: String) {
+        guard invalidShortcutKeysLogged.insert(key).inserted else { return }
+        log.warning("Invalid shortcut preference for \(key, privacy: .public); using defaults")
+    }
+
+    /// Reading defaults never writes a preference, including on upgrade.
+    var shortcutBindings: ShortcutBindings {
+        get {
+            // One preference value keeps the pair indivisible. Legacy separate
+            // IDs remain readable until the user's first shortcut edit.
+            if let stored = defaults.object(forKey: "hushtype.shortcut.bindings") {
+                if let data = stored as? Data {
+                    guard let bindings = try? JSONDecoder().decode(ShortcutBindings.self, from: data), bindings.valid else {
+                        logInvalidShortcutOnce("hushtype.shortcut.bindings")
+                        return .default
+                    }
+                    return bindings
+                }
+                guard let pair = stored as? [String: String],
+                      let dictation = pair["dictationKey"].flatMap(DictationKey.init(rawValue:)),
+                      let caption = pair["liveCaption"].flatMap(CaptionShortcut.init(rawValue:)) else {
+                    logInvalidShortcutOnce("hushtype.shortcut.bindings")
+                    return .default
+                }
+                let value = ShortcutBindings(dictation: dictation, liveCaption: caption)
+                guard !value.hasConflict else {
+                    logInvalidShortcutOnce("hushtype.shortcut.bindings")
+                    return .default
+                }
+                return value
+            }
+            let dictation = DictationKey(rawValue: defaults.string(forKey: "hushtype.shortcut.dictationKey") ?? "") ?? .rightOption
+            let caption = CaptionShortcut(rawValue: defaults.string(forKey: "hushtype.shortcut.liveCaption") ?? "") ?? .rightCmdSlash
+            if defaults.object(forKey: "hushtype.shortcut.dictationKey") != nil,
+               DictationKey(rawValue: defaults.string(forKey: "hushtype.shortcut.dictationKey") ?? "") == nil {
+                logInvalidShortcutOnce("hushtype.shortcut.dictationKey")
+            }
+            if defaults.object(forKey: "hushtype.shortcut.liveCaption") != nil,
+               CaptionShortcut(rawValue: defaults.string(forKey: "hushtype.shortcut.liveCaption") ?? "") == nil {
+                logInvalidShortcutOnce("hushtype.shortcut.liveCaption")
+            }
+            let value = ShortcutBindings(dictation: dictation, liveCaption: caption)
+            if value.hasConflict { logInvalidShortcutOnce("conflicting pair") }
+            return value.hasConflict ? .default : value
+        }
+        set {
+            precondition(Thread.isMainThread)
+            guard newValue.valid, newValue != shortcutBindings else { return }
+            if !newValue.edits.isEmpty {
+                guard let data = try? JSONEncoder().encode(newValue) else { return }
+                defaults.set(data, forKey: "hushtype.shortcut.bindings")
+            } else {
+                defaults.set([
+                    "dictationKey": newValue.dictation.rawValue,
+                    "liveCaption": newValue.liveCaption.rawValue,
+                ], forKey: "hushtype.shortcut.bindings")
+            }
+            NotificationCenter.default.post(name: .shortcutBindingsDidChange, object: self)
+        }
+    }
+
     /// Settings defaults that apply to installs first launched on or after the
     /// release that made Optimized the default. Profile 1 (no stored value) is
     /// every earlier install and keeps its old defaults: Fast, Live preview on.
@@ -302,7 +365,7 @@ final class AppConfig {
         }
     }
 
-    /// Whether double-tap Right ⌥ and the Services entry can proofread selected
+    /// Whether double-tap dictation key and the Services entry can proofread selected
     /// text with Apple Foundation Models. On by default; runtime availability
     /// is cached separately so unsupported systems retain immediate single-tap
     /// translation behavior.
@@ -351,7 +414,7 @@ final class AppConfig {
         }
     }
 
-    /// Whether the text-translation hotkey (tap Right ⌥) is active.
+    /// Whether the text-translation hotkey (tap dictation key) is active.
     /// Uses Apple Translation Framework (macOS 14+). Off by default.
     var textTranslationEnabled: Bool {
         get { defaults.bool(forKey: Keys.textTranslationEnabled) }
@@ -391,12 +454,8 @@ final class AppConfig {
         set { defaults.set(newValue, forKey: Keys.evalModeIntroShown) }
     }
 
-    /// True only when Live Caption is active AND the source is `.mic`. Used
-    /// by `AppDelegate.handleHotkeyPress` (running on the CGEvent tap thread,
-    /// outside the main actor) to decide whether to gate dictation - system-
-    /// audio Live Caption doesn't compete with the mic, so dictation works
-    /// concurrently. Maintained by `LiveCaptionManager` alongside
-    /// `liveCaptionEnabled`.
+    /// Gates dictation while Live Caption uses the mic or replaces a session
+    /// whose old or new source uses the mic. Maintained by `LiveCaptionManager`.
     var liveCaptionUsesMicSource: Bool = false
 
     /// Target language for translation. nil = auto (smart direction).
@@ -473,7 +532,7 @@ final class AppConfig {
     }
 
     /// Which of the two caption products the user last started. Persisted so
-    /// the Right ⌘ + / hotkey can toggle "the same one I had running yesterday"
+    /// the Live Caption shortcut hotkey can toggle "the same one I had running yesterday"
     /// instead of always defaulting to local. First-use default = `.local` so
     /// nobody accidentally racks up a translation bill via muscle memory on
     /// day one. Set inside `AppDelegate` whenever a start path succeeds.
@@ -495,9 +554,7 @@ final class AppConfig {
     }
 
     /// What source the user picked the last time they started either caption
-    /// product. PERSISTED - and never reset on stop (unlike
-    /// `liveCaptionUsesMicSource`, which is a "currently active" flag the
-    /// dictation gate relies on). Used by the Right ⌘ + / hotkey handler to
+    /// product. This preference persists across stops. The Live Caption shortcut uses it to
     /// decide whether to re-invoke on mic or system audio. First-use default
     /// = true (mic) so day-one hotkey doesn't pop the system-audio picker.
     var lastStartedCaptionUsesMicSource: Bool {
@@ -563,6 +620,7 @@ final class AppConfig {
 }
 
 extension Notification.Name {
+    static let shortcutBindingsDidChange = Notification.Name("hushtype.shortcutBindingsDidChange")
     static let evalModeDidChange = Notification.Name("hushtype.evalModeDidChange")
     static let evalStoreDidChange = Notification.Name("hushtype.evalStoreDidChange")
     static let evalShowWindowRequested = Notification.Name("hushtype.evalShowWindowRequested")
